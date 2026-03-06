@@ -1,7 +1,7 @@
 /**
- * 试卷导入页面
+ * 试卷导入页面 - 支持SSE实时进度展示
  */
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Card,
   Upload,
@@ -17,6 +17,8 @@ import {
   Row,
   Col,
   Checkbox,
+  Steps,
+  Spin,
 } from 'antd'
 import {
   InboxOutlined,
@@ -25,20 +27,57 @@ import {
   CloseCircleOutlined,
   ExclamationCircleOutlined,
   ReloadOutlined,
+  CloudUploadOutlined,
+  RobotOutlined,
+  DatabaseOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import type { ColumnsType } from 'antd/es/table'
 
-import api from '@/services/api'
-
 const { Title, Text } = Typography
 const { Dragger } = Upload
 
+// ============================================================================
+//  类型定义
+// ============================================================================
+
+/** 处理阶段 */
+type ProcessStage =
+  | 'idle'
+  | 'uploading'
+  | 'uploaded'
+  | 'parsing_filename'
+  | 'parsed_filename'
+  | 'uploading_to_ai'
+  | 'uploaded_to_ai'
+  | 'ai_parsing'
+  | 'ai_parsed'
+  | 'saving'
+  | 'completed'
+  | 'error'
+
+/** SSE进度事件 */
+interface ProgressEvent {
+  stage: ProcessStage
+  message: string
+  progress: number
+  metadata?: {
+    year?: number
+    region?: string
+    grade?: string
+    exam_type?: string
+  }
+  result?: ImportResult
+}
+
+/** 导入结果 */
 interface ImportResult {
   status: 'success' | 'failed' | 'error' | 'exists'
   filename: string
   paper_id?: number
   passages_created?: number
+  questions_created?: number
   error?: string
   message?: string
   metadata?: {
@@ -51,13 +90,130 @@ interface ImportResult {
   confidence?: number
 }
 
+// ============================================================================
+//  阶段配置
+// ============================================================================
+
+const stageConfig: Record<ProcessStage, { icon: React.ReactNode; color: string; stepIndex: number }> = {
+  idle: { icon: <ExclamationCircleOutlined />, color: '#999', stepIndex: -1 },
+  uploading: { icon: <LoadingOutlined spin />, color: '#1890ff', stepIndex: 0 },
+  uploaded: { icon: <CheckCircleOutlined />, color: '#52c41a', stepIndex: 0 },
+  parsing_filename: { icon: <LoadingOutlined spin />, color: '#1890ff', stepIndex: 1 },
+  parsed_filename: { icon: <CheckCircleOutlined />, color: '#52c41a', stepIndex: 1 },
+  uploading_to_ai: { icon: <CloudUploadOutlined />, color: '#1890ff', stepIndex: 2 },
+  uploaded_to_ai: { icon: <CheckCircleOutlined />, color: '#52c41a', stepIndex: 2 },
+  ai_parsing: { icon: <RobotOutlined />, color: '#722ed1', stepIndex: 3 },
+  ai_parsed: { icon: <CheckCircleOutlined />, color: '#52c41a', stepIndex: 3 },
+  saving: { icon: <DatabaseOutlined />, color: '#1890ff', stepIndex: 4 },
+  completed: { icon: <CheckCircleOutlined />, color: '#52c41a', stepIndex: 5 },
+  error: { icon: <CloseCircleOutlined />, color: '#ff4d4f', stepIndex: -1 },
+}
+
+const stageText: Record<ProcessStage, string> = {
+  idle: '等待上传',
+  uploading: '上传文件中...',
+  uploaded: '文件上传完成',
+  parsing_filename: '解析文件名...',
+  parsed_filename: '文件名解析完成',
+  uploading_to_ai: '上传到AI服务...',
+  uploaded_to_ai: 'AI服务已就绪',
+  ai_parsing: '🤖 AI正在解析文档...',
+  ai_parsed: 'AI解析完成',
+  saving: '保存数据中...',
+  completed: '✅ 导入完成',
+  error: '❌ 发生错误',
+}
+
+// ============================================================================
+//  组件
+// ============================================================================
+
 export function ImportPage() {
   const [fileList, setFileList] = useState<UploadFile[]>([])
   const [uploading, setUploading] = useState(false)
   const [results, setResults] = useState<ImportResult[]>([])
+
+  // SSE进度状态
+  const [currentStage, setCurrentStage] = useState<ProcessStage>('idle')
+  const [progressMessage, setProgressMessage] = useState('')
   const [progress, setProgress] = useState(0)
+  const [currentFileIndex, setCurrentFileIndex] = useState(0)
+
   const [forceReimport, setForceReimport] = useState(false)
-  const [useLLM, setUseLLM] = useState(true)  // 默认使用LLM解析
+  const [useLLM, setUseLLM] = useState(true)
+
+  // 使用SSE上传单个文件
+  const uploadWithProgress = useCallback(async (file: UploadFile): Promise<ImportResult> => {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData()
+      formData.append('file', file as any)
+
+      const params = new URLSearchParams()
+      if (forceReimport) params.append('force', 'true')
+      if (useLLM) params.append('use_llm', 'true')
+
+      // 使用fetch读取SSE流
+      fetch(`/api/papers/upload-with-progress?${params.toString()}`, {
+        method: 'POST',
+        body: formData,
+      })
+        .then(async (response) => {
+          const reader = response.body?.getReader()
+          if (!reader) {
+            reject(new Error('无法读取响应流'))
+            return
+          }
+
+          const decoder = new TextDecoder()
+          let lastResult: ImportResult | null = null
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            const text = decoder.decode(value)
+            const lines = text.split('\n')
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const event: ProgressEvent = JSON.parse(line.slice(6))
+                  setCurrentStage(event.stage)
+                  setProgressMessage(event.message)
+                  setProgress(event.progress)
+
+                  if (event.stage === 'completed' && event.result) {
+                    lastResult = event.result
+                  }
+                  if (event.stage === 'error') {
+                    lastResult = {
+                      status: 'error',
+                      filename: file.name,
+                      error: event.message,
+                    }
+                  }
+                } catch {
+                  // 忽略解析错误
+                }
+              }
+            }
+          }
+
+          if (lastResult) {
+            resolve(lastResult)
+          } else {
+            resolve({
+              status: 'error',
+              filename: file.name,
+              error: '未收到完成信号',
+            })
+          }
+        })
+        .catch((error) => {
+          reject(error)
+        })
+    })
+  }, [forceReimport, useLLM])
 
   // 处理文件上传
   const handleUpload = async () => {
@@ -69,44 +225,31 @@ export function ImportPage() {
     setUploading(true)
     setProgress(0)
     setResults([])
+    setCurrentStage('idle')
+    setProgressMessage('')
 
     const uploadResults: ImportResult[] = []
-    const totalFiles = fileList.length
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i]
-      setProgress(Math.round(((i + 1) / totalFiles) * 100))
-
-      const formData = new FormData()
-      formData.append('file', file as any)
+      setCurrentFileIndex(i + 1)
 
       try {
-        const params = new URLSearchParams()
-        if (forceReimport) params.append('force', 'true')
-        if (useLLM) params.append('use_llm', 'true')
-
-        const response = await api.post<ImportResult>(
-          `/papers/upload?${params.toString()}`,
-          formData,
-          {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-          }
-        )
-        uploadResults.push(response.data)
+        const result = await uploadWithProgress(file)
+        uploadResults.push(result)
+        setResults([...uploadResults])
       } catch (error: any) {
         uploadResults.push({
           status: 'error',
           filename: file.name,
-          error: error.response?.data?.detail || '上传失败',
+          error: error.message || '上传失败',
         })
+        setResults([...uploadResults])
       }
-
-      setResults([...uploadResults])
     }
 
     setUploading(false)
+    setCurrentStage('idle')
 
     // 统计结果
     const successCount = uploadResults.filter(r => r.status === 'success').length
@@ -129,6 +272,8 @@ export function ImportPage() {
     setFileList([])
     setResults([])
     setProgress(0)
+    setCurrentStage('idle')
+    setProgressMessage('')
   }
 
   // 结果表格列定义
@@ -180,11 +325,13 @@ export function ImportPage() {
       },
     },
     {
-      title: '文章数',
-      dataIndex: 'passages_created',
-      key: 'passages_created',
-      width: 80,
-      render: (count: number) => count || '-',
+      title: '文章/题目数',
+      key: 'counts',
+      width: 100,
+      render: (_, record) => {
+        if (record.passages_created === undefined) return '-'
+        return `${record.passages_created}篇 / ${record.questions_created || 0}题`
+      },
     },
     {
       title: '解析策略',
@@ -193,12 +340,13 @@ export function ImportPage() {
       width: 100,
       render: (strategy: string) => {
         if (!strategy) return '-'
-        const strategyMap: Record<string, string> = {
-          rule: '规则解析',
-          llm: 'LLM辅助',
-          manual: '人工标注',
+        const strategyMap: Record<string, { text: string; color: string }> = {
+          rule: { text: '规则解析', color: 'blue' },
+          llm: { text: 'AI解析', color: 'purple' },
+          manual: { text: '人工标注', color: 'orange' },
         }
-        return strategyMap[strategy] || strategy
+        const config = strategyMap[strategy] || { text: strategy, color: 'default' }
+        return <Tag color={config.color}>{config.text}</Tag>
       },
     },
     {
@@ -214,6 +362,13 @@ export function ImportPage() {
   const successCount = results.filter(r => r.status === 'success').length
   const failedCount = results.filter(r => r.status === 'failed' || r.status === 'error').length
   const totalPassages = results.reduce((sum, r) => sum + (r.passages_created || 0), 0)
+  const totalQuestions = results.reduce((sum, r) => sum + (r.questions_created || 0), 0)
+
+  // 获取当前步骤索引
+  const getCurrentStep = () => {
+    if (currentStage === 'idle' || currentStage === 'error') return -1
+    return stageConfig[currentStage]?.stepIndex ?? -1
+  }
 
   return (
     <div>
@@ -282,10 +437,52 @@ export function ImportPage() {
           </Space>
         </div>
 
+        {/* SSE进度展示 */}
         {uploading && (
-          <div style={{ marginTop: 16 }}>
-            <Progress percent={progress} status="active" />
-          </div>
+          <Card style={{ marginTop: 16 }} size="small">
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              {/* 当前文件信息 */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text strong>
+                  正在处理: 第 {currentFileIndex} / {fileList.length} 个文件
+                </Text>
+                <Tag color="blue">{fileList[currentFileIndex - 1]?.name}</Tag>
+              </div>
+
+              {/* 进度条 */}
+              <Progress
+                percent={progress}
+                status={currentStage === 'error' ? 'exception' : 'active'}
+                strokeColor={stageConfig[currentStage]?.color}
+              />
+
+              {/* 当前步骤 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Spin spinning={currentStage !== 'completed' && currentStage !== 'error'} />
+                <Text
+                  strong
+                  style={{ color: stageConfig[currentStage]?.color }}
+                >
+                  {progressMessage || stageText[currentStage]}
+                </Text>
+              </div>
+
+              {/* 步骤指示器 */}
+              {useLLM && (
+                <Steps
+                  current={getCurrentStep()}
+                  size="small"
+                  items={[
+                    { title: '上传', icon: <CloudUploadOutlined /> },
+                    { title: '解析文件名', icon: <FileWordOutlined /> },
+                    { title: 'AI准备', icon: <CloudUploadOutlined /> },
+                    { title: 'AI解析', icon: <RobotOutlined /> },
+                    { title: '保存', icon: <DatabaseOutlined /> },
+                  ]}
+                />
+              )}
+            </Space>
+          </Card>
         )}
       </Card>
 
@@ -293,14 +490,14 @@ export function ImportPage() {
       {results.length > 0 && (
         <Card style={{ marginBottom: 16 }}>
           <Row gutter={16}>
-            <Col span={6}>
+            <Col span={4}>
               <Statistic
                 title="总文件数"
                 value={results.length}
                 prefix={<FileWordOutlined />}
               />
             </Col>
-            <Col span={6}>
+            <Col span={4}>
               <Statistic
                 title="成功导入"
                 value={successCount}
@@ -308,7 +505,7 @@ export function ImportPage() {
                 prefix={<CheckCircleOutlined />}
               />
             </Col>
-            <Col span={6}>
+            <Col span={4}>
               <Statistic
                 title="导入失败"
                 value={failedCount}
@@ -316,11 +513,28 @@ export function ImportPage() {
                 prefix={<CloseCircleOutlined />}
               />
             </Col>
-            <Col span={6}>
+            <Col span={4}>
               <Statistic
-                title="提取文章数"
+                title="提取文章"
                 value={totalPassages}
                 valueStyle={{ color: '#1890ff' }}
+                suffix="篇"
+              />
+            </Col>
+            <Col span={4}>
+              <Statistic
+                title="提取题目"
+                value={totalQuestions}
+                valueStyle={{ color: '#722ed1' }}
+                suffix="题"
+              />
+            </Col>
+            <Col span={4}>
+              <Statistic
+                title="已存在"
+                value={results.filter(r => r.status === 'exists').length}
+                valueStyle={{ color: '#faad14' }}
+                prefix={<ExclamationCircleOutlined />}
               />
             </Col>
           </Row>

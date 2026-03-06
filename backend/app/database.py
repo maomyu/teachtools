@@ -21,6 +21,9 @@ async_session = async_sessionmaker(
     autoflush=False
 )
 
+# 为SSE等场景导出的会话工厂别名
+async_session_factory = async_session
+
 # 声明基类
 Base = declarative_base()
 

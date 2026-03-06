@@ -142,12 +142,14 @@ class LLMDocumentParser:
         async with httpx.AsyncClient(timeout=120.0) as client:
             with open(file_path, 'rb') as f:
                 files = {'file': (Path(file_path).name, f, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+                data = {'purpose': 'file-extract'}  # 必须指定purpose (file-extract或batch)
                 headers = {'Authorization': f'Bearer {self.api_key}'}
 
                 response = await client.post(
                     self.UPLOAD_URL,
                     headers=headers,
-                    files=files
+                    files=files,
+                    data=data
                 )
 
             if response.status_code != 200:
@@ -255,6 +257,60 @@ class LLMDocumentParser:
                 success=False,
                 error=f"JSON解析失败: {str(e)}",
                 raw_response=content
+            )
+
+    async def parse_document_with_fileid(self, fileid: str) -> LLMParseResult:
+        """
+        使用已上传的fileid解析文档
+
+        Args:
+            fileid: 已上传到DashScope的文件ID
+
+        Returns:
+            LLMParseResult: 解析结果
+        """
+        try:
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
+                {"role": "system", "content": f"fileid://{fileid}"},
+                {"role": "user", "content": self.EXTRACT_PROMPT}
+            ]
+
+            # 调用LLM API
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                headers = {
+                    'Authorization': f'Bearer {self.api_key}',
+                    'Content-Type': 'application/json'
+                }
+
+                payload = {
+                    "model": "qwen-long",
+                    "messages": messages,
+                    "temperature": 0.1,
+                    "max_tokens": 16000
+                }
+
+                response = await client.post(
+                    self.API_URL,
+                    headers=headers,
+                    json=payload
+                )
+
+                if response.status_code != 200:
+                    return LLMParseResult(
+                        success=False,
+                        error=f"API调用失败: {response.status_code} - {response.text}"
+                    )
+
+                result = response.json()
+                content = result['choices'][0]['message']['content']
+
+                return self._parse_llm_response(content)
+
+        except Exception as e:
+            return LLMParseResult(
+                success=False,
+                error=str(e)
             )
 
 
