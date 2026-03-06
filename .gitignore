@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+.pnpm-debug.log*
+
+# Build outputs
+frontend/dist/
+backend/dist/
+*.egg
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+database/*.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temp files
+temp*/
+*.tmp
+*.temp
+.cache/
+
+# Large files - Documents
+*.pdf
+*.docx
+*.doc
+
+# Project specific - Ignore these directories
+# 试卷资料
+2022-2025北京市各区各学校试题汇总/
+02-北京2020-2025中考/
+北京中考英语07-24/
+
+# PRD and docs (已整理到plan中)
+PRD-*.md
+项目需求整理.*
+技术开发文档.md
+CLAUDE.md
+README.md
+
+# Vite
+frontend/.vite/
+
+# Test coverage
+coverage/
+.nyc_output/
