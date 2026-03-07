@@ -60,6 +60,7 @@ class ReadingPassage(Base):
                 "school": self.paper.school,
                 "grade": self.paper.grade,
                 "exam_type": self.paper.exam_type,
+                "semester": self.paper.semester,
                 "filename": self.paper.filename
             }
         return None

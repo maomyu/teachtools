@@ -61,9 +61,9 @@ class DocxParser:
         "书面表达（共", "九、作文", "十、作文"
     ]
 
-    # 文件名解析正则 - 支持全角和半角括号
+    # 文件名解析正则 - 支持全角和半角括号，学期可选
     FILENAME_PATTERN = re.compile(
-        r'(\d{4})北京(.+?)(初[一二三])[（(](上|下)[）)](期中|期末|一模|二模)英语[（(]?(教师版|学生版|原卷版|解析版)?[）)]?'
+        r'(\d{4})北京(.+?)(初[一二三])(?:[（(](上|下)[）)])?(期中|期末|一模|二模)英语[（(]?(教师版|学生版|原卷版|解析版)?[）)]?'
     )
 
     def __init__(self, file_path: str):
@@ -92,7 +92,7 @@ class DocxParser:
                 "year": int(match.group(1)),
                 "region": match.group(2).strip(),
                 "grade": match.group(3),
-                "semester": match.group(4),
+                "semester": match.group(4),  # 可能为 None
                 "exam_type": match.group(5),
                 "version": match.group(6) or "学生版"
             }

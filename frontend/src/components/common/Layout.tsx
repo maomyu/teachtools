@@ -1,12 +1,16 @@
 /**
  * 页面布局组件
+ *
+ * [INPUT]: 依赖 antd Layout 组件
+ * [OUTPUT]: 对外提供 Layout 组件
+ * [POS]: frontend/src/components/common 的布局组件
+ * [PROTOCOL]: 变更时更新此头部,然后检查 CLAUDE.md
  */
 import { useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Layout as AntLayout, Menu, Typography } from 'antd'
 import {
   ReadOutlined,
-  BookOutlined,
   FileTextOutlined,
   HomeOutlined,
   UploadOutlined,
@@ -29,12 +33,7 @@ const menuItems = [
   {
     key: '/reading',
     icon: <ReadOutlined />,
-    label: '阅读C/D篇',
-  },
-  {
-    key: '/vocabulary',
-    icon: <BookOutlined />,
-    label: '高频词汇',
+    label: '阅读CD篇',
   },
   {
     key: '/handout',
@@ -63,12 +62,21 @@ export function Layout() {
   }
 
   return (
-    <AntLayout style={{ minHeight: '100vh' }}>
+    <AntLayout style={{ height: '100vh', overflow: 'hidden' }}>
+      {/* 侧边栏 - 固定不滚动 */}
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
-        style={{ background: '#001529' }}
+        style={{
+          background: '#001529',
+          height: '100vh',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          overflow: 'auto',
+        }}
       >
         <div
           style={{
@@ -99,25 +107,38 @@ export function Layout() {
           onClick={handleMenuClick}
         />
       </Sider>
-      <AntLayout>
+
+      {/* 右侧内容区 - 独立滚动 */}
+      <AntLayout style={{
+        marginLeft: collapsed ? 80 : 200,
+        transition: 'margin-left 0.2s',
+        height: '100vh',
+        overflow: 'hidden',
+      }}>
+        {/* 顶部Header - 固定 */}
         <Header
           style={{
             padding: '0 24px',
             background: '#fff',
             borderBottom: '1px solid #f0f0f0',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
           }}
         >
           <Title level={4} style={{ margin: '16px 0' }}>
             北京中考英语教研资料系统
           </Title>
         </Header>
+
+        {/* 内容区 - 可滚动 */}
         <Content
           style={{
-            margin: '24px',
-            padding: '24px',
+            margin: 0,
+            padding: '20px 24px',
             background: '#fff',
-            borderRadius: '8px',
-            minHeight: 'calc(100vh - 64px - 48px - 48px)',
+            height: 'calc(100vh - 64px)',
+            overflow: 'auto',
           }}
         >
           <Outlet />

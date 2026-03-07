@@ -14,6 +14,7 @@ class SourceInfo(BaseModel):
     school: Optional[str] = None
     grade: Optional[str] = None
     exam_type: Optional[str] = None
+    semester: Optional[str] = None
     filename: Optional[str] = None
 
 

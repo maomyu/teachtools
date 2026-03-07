@@ -1,9 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from '@/components/common/Layout'
 import { HomePage } from '@/pages/HomePage'
-import { ReadingPage } from '@/pages/ReadingPage'
+import { ReadingTabsPage } from '@/pages/ReadingTabsPage'
 import { PassageDetailPage } from '@/pages/PassageDetailPage'
-import { VocabularyPage } from '@/pages/VocabularyPage'
 import { ImportPage } from '@/pages/ImportPage'
 
 function App() {
@@ -13,9 +12,9 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="import" element={<ImportPage />} />
-          <Route path="reading" element={<ReadingPage />} />
+          <Route path="reading" element={<ReadingTabsPage />} />
           <Route path="reading/:id" element={<PassageDetailPage />} />
-          <Route path="vocabulary" element={<VocabularyPage />} />
+          <Route path="vocabulary" element={<Navigate to="/reading" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

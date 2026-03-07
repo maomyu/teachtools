@@ -21,12 +21,59 @@ from app.schemas.reading import (
 router = APIRouter()
 
 
+@router.get("/filters")
+async def get_passage_filters(db: AsyncSession = Depends(get_db)):
+    """获取文章筛选项（动态从数据库获取）"""
+    # 查询所有不重复的年份
+    years_query = select(ExamPaper.year).distinct().where(ExamPaper.year.isnot(None)).order_by(ExamPaper.year.desc())
+    years_result = await db.execute(years_query)
+    years = [y for y in years_result.scalars().all() if y]
+
+    # 查询所有不重复的年级
+    grades_query = select(ExamPaper.grade).distinct().where(ExamPaper.grade.isnot(None)).order_by(ExamPaper.grade)
+    grades_result = await db.execute(grades_query)
+    grades = [g for g in grades_result.scalars().all() if g]
+
+    # 查询所有不重复的考试类型
+    exam_types_query = select(ExamPaper.exam_type).distinct().where(ExamPaper.exam_type.isnot(None)).order_by(ExamPaper.exam_type)
+    exam_types_result = await db.execute(exam_types_query)
+    exam_types = [e for e in exam_types_result.scalars().all() if e]
+
+    # 查询所有不重复的区县
+    regions_query = select(ExamPaper.region).distinct().where(ExamPaper.region.isnot(None)).order_by(ExamPaper.region)
+    regions_result = await db.execute(regions_query)
+    regions = [r for r in regions_result.scalars().all() if r]
+
+    # 查询实际有文章使用的话题
+    topics_query = select(ReadingPassage.primary_topic).distinct().where(
+        ReadingPassage.primary_topic.isnot(None)
+    ).order_by(ReadingPassage.primary_topic)
+    topics_result = await db.execute(topics_query)
+    topics = [t for t in topics_result.scalars().all() if t]
+
+    # 查询所有不重复的学期
+    semesters_query = select(ExamPaper.semester).distinct().where(ExamPaper.semester.isnot(None)).order_by(ExamPaper.semester)
+    semesters_result = await db.execute(semesters_query)
+    semesters = [s for s in semesters_result.scalars().all() if s]
+
+    return {
+        "years": years,
+        "grades": grades,
+        "exam_types": exam_types,
+        "regions": regions,
+        "topics": topics,
+        "semesters": semesters
+    }
+
+
 @router.get("", response_model=PassageListResponse)
 async def list_passages(
     grade: Optional[str] = None,
     topic: Optional[str] = None,
     year: Optional[int] = None,
     region: Optional[str] = None,
+    exam_type: Optional[str] = None,
+    semester: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
     size: int = 20,
@@ -44,6 +91,10 @@ async def list_passages(
         query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(year=year))
     if region:
         query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(region=region))
+    if exam_type:
+        query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(exam_type=exam_type))
+    if semester:
+        query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(semester=semester))
 
     # FTS5全文搜索
     if search:

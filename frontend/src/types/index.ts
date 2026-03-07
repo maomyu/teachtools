@@ -1,6 +1,60 @@
 /**
- * 类型定义
+ * [INPUT]: 依赖 @ant-design/icons 的图标组件
+ * [OUTPUT]: 对外提供 StepStatus, PipelineStep, StepUpdateEvent 等类型定义
+ * [POS]: frontend/src/types 的核心类型模块，被 ImportPage 和其他页面消费
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+
+// ============================================================================
+//  步骤化进度类型
+// ============================================================================
+
+/** 步骤状态 */
+export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+
+/** 单个步骤 */
+export interface PipelineStep {
+  id: string
+  name: string
+  description: string
+  icon: string
+  status: StepStatus
+  progress: number
+  message: string
+  error: string
+}
+
+/** SSE步骤更新事件 */
+export interface StepUpdateEvent {
+  type: 'step_update' | 'completed'
+  steps: PipelineStep[]
+  current_step: string | null
+  overall_progress: number
+  result?: ImportResult
+}
+
+/** 导入结果（在types中前置声明） */
+export interface ImportResult {
+  status: 'success' | 'failed' | 'error' | 'exists'
+  filename: string
+  paper_id?: number
+  passages_created?: number
+  questions_created?: number
+  error?: string
+  message?: string
+  metadata?: {
+    year?: number
+    region?: string
+    grade?: string
+    exam_type?: string
+  }
+  parse_strategy?: string
+  confidence?: number
+}
+
+// ============================================================================
+//  业务类型
+// ============================================================================
 
 // 出处信息
 export interface SourceInfo {
@@ -9,6 +63,7 @@ export interface SourceInfo {
   school?: string
   grade?: string
   exam_type?: string
+  semester?: string
   filename?: string
 }
 
@@ -37,8 +92,25 @@ export interface PassageListResponse {
 // 词汇出现位置
 export interface VocabularyOccurrence {
   sentence: string
+  passage_id: number
   char_position: number
   end_position?: number
+  source?: string  // 出处信息（年份 区县 年级）用于显示
+  year?: number
+  region?: string
+  grade?: string
+  exam_type?: string
+  semester?: string
+}
+
+// 词汇筛选项响应
+export interface VocabularyFiltersResponse {
+  grades: string[]
+  topics: string[]
+  years: number[]
+  regions: string[]
+  exam_types: string[]
+  semesters: string[]
 }
 
 // 文章详情中的词汇
@@ -115,13 +187,37 @@ export interface VocabularyListResponse {
   items: Vocabulary[]
 }
 
+// 词汇搜索结果（分页）
+export interface VocabularySearchResult {
+  word: string
+  definition?: string
+  frequency: number
+  total: number
+  page: number
+  size: number
+  has_more: boolean
+  occurrences: VocabularyOccurrence[]
+}
+
 // 筛选参数
 export interface PassageFilter {
   grade?: string
   topic?: string
   year?: number
   region?: string
+  exam_type?: string
+  semester?: string
   search?: string
   page?: number
   size?: number
+}
+
+// 筛选项响应
+export interface PassageFiltersResponse {
+  years: number[]
+  grades: string[]
+  exam_types: string[]
+  regions: string[]
+  topics: string[]
+  semesters: string[]
 }

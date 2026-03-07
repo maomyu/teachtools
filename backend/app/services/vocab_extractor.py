@@ -1,30 +1,19 @@
 """
-词汇提取服务
+AI词汇提取服务
 
-从文章中提取高频词汇，记录位置信息用于定位功能
+基于通义千问的语义级词汇提取，分析文章主题，提取与主题相关的核心词汇
+
+[INPUT]: 依赖 httpx、app.config 的 DASHSCOPE_API_KEY
+[OUTPUT]: 对外提供 VocabExtractor 类，提取主题相关核心词汇
+[POS]: backend/app/services 的词汇提取服务
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
-import re
-from typing import List, Dict, Set, Tuple
+import json
+import httpx
+from typing import List, Dict, Optional
 from dataclasses import dataclass
-from collections import Counter
 
-import nltk
-
-# 确保NLTK数据已下载
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', quiet=True)
-
-try:
-    nltk.data.find('taggers/averaged_perceptron_tagger')
-except LookupError:
-    nltk.download('averaged_perceptron_tagger', quiet=True)
-
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords', quiet=True)
+from app.config import settings
 
 
 @dataclass
@@ -32,9 +21,9 @@ class WordOccurrence:
     """词汇出现位置"""
     word: str
     sentence: str
-    char_position: int  # 在原文中的字符位置（起始）
-    end_position: int  # 在原文中的字符位置（结束）
-    word_position: int  # 词序位置
+    char_position: int
+    end_position: int
+    word_position: int
 
 
 @dataclass
@@ -43,210 +32,214 @@ class ExtractedWord:
     word: str
     lemma: str
     frequency: int
+    definition: str
     occurrences: List[WordOccurrence]
 
 
 class VocabExtractor:
-    """词汇提取器"""
+    """基于AI的词汇提取器"""
 
-    # 中考常见简单词（停用词）
-    STOP_WORDS: Set[str] = {
-        # 基础代词
-        "i", "me", "my", "myself", "we", "our", "ours", "ourselves",
-        "you", "your", "yours", "yourself", "yourselves",
-        "he", "him", "his", "himself", "she", "her", "hers", "herself",
-        "it", "its", "itself", "they", "them", "their", "theirs", "themselves",
-        # 基础冠词/介词
-        "a", "an", "the", "and", "but", "or", "nor", "for", "yet", "so",
-        "in", "on", "at", "to", "of", "with", "by", "from", "as", "into",
-        "through", "during", "before", "after", "above", "below", "between",
-        "under", "again", "further", "then", "once", "here", "there", "when",
-        "where", "why", "how", "all", "each", "few", "more", "most", "other",
-        "some", "such", "no", "not", "only", "own", "same", "than", "too",
-        # 基础动词
-        "is", "am", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "having", "do", "does", "did", "doing",
-        "will", "would", "shall", "should", "can", "could", "may", "might",
-        "must", "need", "dare", "ought", "used",
-        # 其他简单词
-        "this", "that", "these", "those", "what", "which", "who", "whom",
-        "any", "both", "either", "neither", "much", "many", "little", "less",
-        "very", "just", "also", "even", "still", "already", "always", "never",
-        "often", "sometimes", "usually", "ever", "never",
-        # 数字
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "first", "second", "third",
-        # 时间词
-        "year", "years", "day", "days", "time", "times", "way", "ways",
-        "thing", "things", "people", "man", "men", "woman", "women", "child", "children",
-    }
-
-    # 最小词长度
-    MIN_WORD_LENGTH = 3
-
-    # 最小词频
-    MIN_FREQUENCY = 1
+    API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
     def __init__(self, min_length: int = 3, min_frequency: int = 1):
         self.min_length = min_length
         self.min_frequency = min_frequency
+        self.api_key = settings.DASHSCOPE_API_KEY
+        if not self.api_key:
+            raise ValueError("DASHSCOPE_API_KEY未配置")
 
-    def extract(self, content: str) -> List[ExtractedWord]:
-        """
-        从文章中提取高频词汇
+    def _build_prompt(self, content: str) -> str:
+        """构建AI提示词"""
+        return f"""你是一个英语教学专家。请分析下面这篇英语阅读文章，提取与文章主题相关的核心词汇。
 
-        Args:
-            content: 文章内容
+## 要求
 
-        Returns:
-            提取的词汇列表
-        """
-        # 1. 分句
-        sentences = self._split_sentences(content)
+1. 提取 8-15 个核心词汇
+2. 词汇应该：
+   - 与文章主题紧密相关
+   - 对中学生有学习价值
+   - 包含关键名词、动词、形容词
+3. 不要提取：
+   - 简单常用词（如 good, bad, make, take）
+   - 人名、地名等专有名词
+   - 已经很基础的词
 
-        # 2. 对每个句子提取词汇
-        all_occurrences: List[WordOccurrence] = []
+## 输出格式
 
-        for sentence in sentences:
-            sentence_occurrences = self._extract_from_sentence(sentence, content)
-            all_occurrences.extend(sentence_occurrences)
+请严格按照以下JSON格式输出，不要包含任何额外文字:
 
-        # 3. 统计词频并分组
-        word_occurrences: Dict[str, List[WordOccurrence]] = {}
-        for occ in all_occurrences:
-            word_lower = occ.word.lower()
-            if word_lower not in word_occurrences:
-                word_occurrences[word_lower] = []
-            word_occurrences[word_lower].append(occ)
+{{"topic": "文章主题（中文）", "words": [{{"word": "单词", "definition": "中文释义"}}]}}
 
-        # 4. 构建结果
-        result = []
-        for word, occurrences in word_occurrences.items():
-            if len(occurrences) >= self.min_frequency:
-                result.append(ExtractedWord(
+## 文章内容
+
+{content[:4000]}"""
+
+    async def extract_async(self, content: str) -> List[ExtractedWord]:
+        """使用AI异步提取核心词汇"""
+        if not content or len(content) < 50:
+            return []
+
+        try:
+            full_prompt = self._build_prompt(content)
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                headers = {
+                    'Authorization': f'Bearer {self.api_key}',
+                    'Content-Type': 'application/json'
+                }
+
+                payload = {
+                    "model": "qwen-plus",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "你是一个专业的英语教学专家，擅长分析英语阅读文章并提取核心词汇。"
+                        },
+                        {
+                            "role": "user",
+                            "content": full_prompt
+                        }
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 2000
+                }
+
+                response = await client.post(
+                    self.API_URL,
+                    headers=headers,
+                    json=payload
+                )
+
+                if response.status_code != 200:
+                    print(f"AI词汇提取失败: {response.status_code} - {response.text}")
+                    return []
+
+                result = response.json()
+                ai_content = result['choices'][0]['message']['content']
+
+                return self._parse_ai_response(ai_content, content)
+
+        except Exception as e:
+            print(f"AI词汇提取异常: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _parse_ai_response(self, ai_content: str, original_content: str) -> List[ExtractedWord]:
+        """解析AI返回的JSON"""
+        try:
+            # 提取JSON部分
+            json_str = ai_content
+
+            if '```json' in ai_content:
+                start = ai_content.find('```json') + 7
+                end = ai_content.find('```', start)
+                json_str = ai_content[start:end].strip()
+            elif '```' in ai_content:
+                start = ai_content.find('```') + 3
+                end = ai_content.find('```', start)
+                json_str = ai_content[start:end].strip()
+
+            data = json.loads(json_str)
+            words_data = data.get('words', [])
+
+            result = []
+            for w in words_data:
+                word = w.get('word', '').lower().strip()
+                if not word or len(word) < self.min_length:
+                    continue
+
+                # 在原文中查找该词的出现位置
+                occurrences = self._find_word_occurrences(word, original_content)
+
+                if occurrences:
+                    result.append(ExtractedWord(
+                        word=word,
+                        lemma=word,
+                        frequency=len(occurrences),
+                        definition=w.get('definition', ''),
+                        occurrences=occurrences
+                    ))
+
+            return result
+
+        except json.JSONDecodeError as e:
+            print(f"JSON解析失败: {e}")
+            print(f"AI返回内容: {ai_content[:500]}")
+            return []
+        except Exception as e:
+            print(f"解析异常: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _find_word_occurrences(self, word: str, content: str) -> List[WordOccurrence]:
+        """在原文中查找词汇出现位置"""
+        occurrences = []
+        content_lower = content.lower()
+
+        start = 0
+        word_pos = 0
+        while True:
+            pos = content_lower.find(word, start)
+            if pos == -1:
+                break
+
+            sentence = self._extract_sentence(content, pos)
+            if sentence:
+                occurrences.append(WordOccurrence(
                     word=word,
-                    lemma=self._get_lemma(word),
-                    frequency=len(occurrences),
-                    occurrences=occurrences
+                    sentence=sentence,
+                    char_position=pos,
+                    end_position=pos + len(word),
+                    word_position=word_pos
                 ))
 
-        # 5. 按词频排序
-        result.sort(key=lambda x: x.frequency, reverse=True)
-
-        return result
-
-    def _split_sentences(self, content: str) -> List[str]:
-        """分割句子"""
-        # 使用NLTK分句
-        sentences = nltk.sent_tokenize(content)
-        # 过滤空句子
-        return [s.strip() for s in sentences if s.strip()]
-
-    def _extract_from_sentence(self, sentence: str, full_content: str) -> List[WordOccurrence]:
-        """从单个句子中提取词汇"""
-        occurrences = []
-
-        # 在原文中找到句子的位置
-        sentence_start = full_content.find(sentence)
-        if sentence_start == -1:
-            return occurrences
-
-        # 分词
-        words = nltk.word_tokenize(sentence)
-
-        # 词性标注
-        tagged = nltk.pos_tag(words)
-
-        word_position = 0
-        current_pos = 0
-
-        for word, pos in tagged:
-            # 过滤条件
-            if self._should_filter(word, pos):
-                current_pos += len(word) + 1  # +1 for space
-                continue
-
-            # 在句子中找到词的位置
-            word_in_sentence = sentence.find(word, current_pos)
-            if word_in_sentence == -1:
-                current_pos += len(word) + 1
-                continue
-
-            # 计算在原文中的绝对位置
-            char_position = sentence_start + word_in_sentence
-            end_position = char_position + len(word)
-
-            occurrences.append(WordOccurrence(
-                word=word.lower(),
-                sentence=sentence,
-                char_position=char_position,
-                end_position=end_position,
-                word_position=word_position
-            ))
-
-            word_position += 1
-            current_pos = word_in_sentence + len(word)
+            start = pos + len(word)
+            word_pos += 1
 
         return occurrences
 
-    def _should_filter(self, word: str, pos: str) -> bool:
-        """判断是否应该过滤该词"""
-        word_lower = word.lower()
+    def _extract_sentence(self, content: str, pos: int) -> str:
+        """提取包含指定位置的句子"""
+        start = pos
+        while start > 0 and content[start-1] not in '.!?':
+            start -= 1
+            if pos - start > 500:
+                break
 
-        # 过滤短词
-        if len(word_lower) < self.min_length:
-            return True
+        end = pos
+        while end < len(content) and content[end] not in '.!?':
+            end += 1
+            if end - pos > 500:
+                break
 
-        # 过滤停用词
-        if word_lower in self.STOP_WORDS:
-            return True
+        if end < len(content):
+            end += 1
 
-        # 过滤纯数字
-        if word.isdigit():
-            return True
+        sentence = content[start:end].strip()
+        return sentence if sentence else ""
 
-        # 过滤标点符号
-        if not word.isalpha():
-            # 允许带连字符的词（如well-known）
-            if '-' not in word or not all(part.isalpha() for part in word.split('-')):
-                return True
-
-        return False
-
-    def _get_lemma(self, word: str) -> str:
-        """获取词元形式（简化版）"""
-        # 简单的词形还原规则
-        if word.endswith('ies') and len(word) > 4:
-            return word[:-3] + 'y'  # stories -> story
-        elif word.endswith('es') and len(word) > 3:
-            return word[:-2]  # watches -> watch
-        elif word.endswith('s') and not word.endswith('ss') and len(word) > 2:
-            return word[:-1]  # books -> book
-        elif word.endswith('ed') and len(word) > 3:
-            return word[:-2]  # worked -> work
-        elif word.endswith('ing') and len(word) > 4:
-            return word[:-3]  # working -> work
-        elif word.endswith('ly') and len(word) > 3:
-            return word[:-2]  # quickly -> quick
-        elif word.endswith('er') and len(word) > 3:
-            return word[:-2]  # taller -> tall
-        elif word.endswith('est') and len(word) > 4:
-            return word[:-3]  # tallest -> tall
-        return word
+    def extract(self, content: str) -> List[ExtractedWord]:
+        """同步提取方法（兼容旧接口）"""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        self.extract_async(content)
+                    )
+                    return future.result()
+            else:
+                return loop.run_until_complete(self.extract_async(content))
+        except RuntimeError:
+            return asyncio.run(self.extract_async(content))
 
 
-# 便捷函数
-def extract_vocabulary(content: str, min_length: int = 3, min_frequency: int = 1) -> List[ExtractedWord]:
-    """
-    从文章中提取高频词汇
-
-    Args:
-        content: 文章内容
-        min_length: 最小词长度
-        min_frequency: 最小词频
-
-    Returns:
-        提取的词汇列表
-    """
-    extractor = VocabExtractor(min_length=min_length, min_frequency=min_frequency)
-    return extractor.extract(content)
+async def extract_vocabulary_async(content: str) -> List[ExtractedWord]:
+    """便捷函数：使用AI从文章中提取核心词汇"""
+    extractor = VocabExtractor()
+    return await extractor.extract_async(content)

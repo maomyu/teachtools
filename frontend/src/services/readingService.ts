@@ -8,7 +8,16 @@ import type {
   TopicUpdateRequest,
   TopicListResponse,
   PassageFilter,
+  PassageFiltersResponse,
 } from '@/types'
+
+/**
+ * 获取文章筛选项（动态从数据库获取）
+ */
+export async function getPassageFilters(): Promise<PassageFiltersResponse> {
+  const response = await api.get<PassageFiltersResponse>('/passages/filters')
+  return response.data
+}
 
 /**
  * 获取文章列表

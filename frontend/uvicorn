@@ -1,0 +1,6 @@
+tail: /Users/maoyu/Downloads/personal/项目-code/teachtools/backend/app/main.log: No such file or directory
+tail: --reload: No such file or directory
+tail: --port: No such file or directory
+tail: 8000: No such file or directory
+tail: --log: No such file or directory
+tail: debug: No such file or directory
