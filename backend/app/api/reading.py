@@ -75,6 +75,7 @@ async def list_passages(
     exam_type: Optional[str] = None,
     semester: Optional[str] = None,
     search: Optional[str] = None,
+    passage_type: Optional[str] = None,  # C 或 D
     page: int = 1,
     size: int = 20,
     db: AsyncSession = Depends(get_db)
@@ -95,6 +96,8 @@ async def list_passages(
         query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(exam_type=exam_type))
     if semester:
         query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(semester=semester))
+    if passage_type:
+        query = query.where(ReadingPassage.passage_type == passage_type)
 
     # FTS5全文搜索
     if search:
@@ -109,6 +112,16 @@ async def list_passages(
     # 统计总数
     count_query = select(func.count()).select_from(query.subquery())
     total = await db.scalar(count_query)
+
+    # 统计 C 篇和 D 篇数量（无筛选时的总数）
+    c_count_query = select(func.count()).select_from(
+        select(ReadingPassage).where(ReadingPassage.passage_type == 'C').subquery()
+    )
+    d_count_query = select(func.count()).select_from(
+        select(ReadingPassage).where(ReadingPassage.passage_type == 'D').subquery()
+    )
+    c_count = await db.scalar(c_count_query) or 0
+    d_count = await db.scalar(d_count_query) or 0
 
     # 分页
     query = query.offset((page - 1) * size).limit(size)
@@ -138,7 +151,9 @@ async def list_passages(
 
     return PassageListResponse(
         total=total or 0,
-        items=items
+        items=items,
+        c_count=c_count,
+        d_count=d_count
     )
 
 

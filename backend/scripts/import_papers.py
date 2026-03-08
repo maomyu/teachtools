@@ -5,6 +5,7 @@
 遍历试卷目录，解析并导入数据库
 """
 import asyncio
+import json
 import sys
 import time
 from pathlib import Path
@@ -19,7 +20,11 @@ from app.database import async_session, engine
 from app.models.paper import ExamPaper
 from app.models.reading import ReadingPassage
 from app.models.topic import Topic
-from app.services.docx_parser import DocxParser, ParseStrategy
+from app.models.cloze import ClozePassage, ClozePoint
+from app.services.docx_parser import DocxParser
+from app.services.llm_parser import LLMDocumentParser
+from app.services.cloze_analyzer import ClozeAnalyzer
+from app.services.topic_classifier import TopicClassifier
 
 
 async def get_or_create_paper(
@@ -58,82 +63,178 @@ async def get_or_create_paper(
     return paper
 
 
-async def import_paper(file_path: Path, batch_id: str) -> Dict:
-    """导入单个试卷"""
+async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> Dict:
+    """
+    导入单个试卷
+
+    完全依赖 AI 解析，不使用正则匹配
+    """
     start_time = time.time()
     result = {
         "filename": file_path.name,
         "status": "pending",
         "error": None,
-        "passages": 0
+        "passages": 0,
+        "cloze_points": 0
     }
 
     try:
-        # 初始化解析器
+        # 解析文件名获取元数据（仅用于记录，不用于内容提取）
         parser = DocxParser(str(file_path))
-
-        # 解析文件名获取元数据
         metadata = parser.parse_filename()
 
         # 从文件路径提取目录结构信息（如果有）
-        # 目录格式: {年份}/{年级}{学期类型}/{区县}/
         parent_dir = file_path.parent
         if parent_dir.name in ["东城", "西城", "海淀", "朝阳", "丰台", "石景山",
                                "通州", "顺义", "昌平", "大兴", "房山", "门头沟",
                                "怀柔", "平谷", "密云", "延庆"]:
             metadata["region"] = parent_dir.name
 
-        # 加载文档
-        if not parser.load():
-            result["status"] = "failed"
-            result["error"] = "无法加载文档"
-            return result
-
         async with async_session() as session:
             # 创建试卷记录
             paper = await get_or_create_paper(session, file_path.name, file_path, metadata)
 
-            # 提取阅读C/D篇
-            parse_result = parser.extract_reading_passages()
-
-            if parse_result.success:
-                paper.import_status = "completed"
-                paper.parse_strategy = parse_result.strategy.value
-                paper.confidence = parse_result.confidence
-
-                # 保存C篇
-                if parse_result.data and "c_passage" in parse_result.data:
-                    c_data = parse_result.data["c_passage"]
-                    content = c_data.content if hasattr(c_data, 'content') else c_data["content"]
-                    c_passage = ReadingPassage(
-                        paper_id=paper.id,
-                        passage_type="C",
-                        content=content,
-                        word_count=len(content.split())
-                    )
-                    session.add(c_passage)
-                    result["passages"] += 1
-
-                # 保存D篇
-                if parse_result.data and "d_passage" in parse_result.data:
-                    d_data = parse_result.data["d_passage"]
-                    content = d_data.content if hasattr(d_data, 'content') else d_data["content"]
-                    d_passage = ReadingPassage(
-                        paper_id=paper.id,
-                        passage_type="D",
-                        content=content,
-                        word_count=len(content.split())
-                    )
-                    session.add(d_passage)
-                    result["passages"] += 1
-
-                result["status"] = "completed"
-
-            else:
-                paper.import_status = "failed"
-                paper.error_message = parse_result.error
+            if not use_llm:
                 result["status"] = "failed"
-                result["error"] = parse_result.error
+                result["error"] = "必须使用 AI 解析模式"
+                return result
+
+            # ============================================================================
+            #  统一使用 AI 解析文档
+            # ============================================================================
+            llm_parser = LLMDocumentParser()
+            llm_result = await llm_parser.parse_document(str(file_path))
+
+            if not llm_result.success:
+                paper.import_status = "failed"
+                paper.error_message = llm_result.error
+                result["status"] = "failed"
+                result["error"] = f"AI解析失败: {llm_result.error}"
+                await session.commit()
+                return result
+
+            paper.import_status = "completed"
+            paper.parse_strategy = "llm"
+            paper.confidence = 0.95
+            result["status"] = "completed"
+
+            # 初始化话题分类器（复用实例）
+            topic_classifier = TopicClassifier()
+            grade = metadata.get("grade", "初二")
+
+            # ============================================================================
+            #  处理阅读文章
+            # ============================================================================
+            if llm_result.passages:
+                for passage_data in llm_result.passages:
+                    # 创建阅读文章记录
+                    content = passage_data["content"]
+                    passage = ReadingPassage(
+                        paper_id=paper.id,
+                        passage_type=passage_data["passage_type"],
+                        content=content,
+                        word_count=passage_data.get("word_count") or len(content.split())
+                    )
+                    session.add(passage)
+                    await session.flush()
+
+                    # 调用 AI 分类话题
+                    try:
+                        topic_result = await topic_classifier.classify(
+                            content,
+                            grade=grade
+                        )
+                        if topic_result.success and topic_result.primary_topic:
+                            passage.primary_topic = topic_result.primary_topic
+                            passage.secondary_topics = json.dumps(
+                                topic_result.secondary_topics or [],
+                                ensure_ascii=False
+                            )
+                            passage.topic_confidence = topic_result.confidence
+                    except Exception as e:
+                        print(f"  ⚠ 阅读文章{passage_data['passage_type']}话题分类失败: {e}")
+
+                    result["passages"] += 1
+                    print(f"  ✓ 阅读文章{passage_data['passage_type']}: {passage.primary_topic or '未分类'}")
+
+            # ============================================================================
+            #  处理完形填空
+            # ============================================================================
+            if llm_result.cloze and llm_result.cloze.get("found"):
+                cloze_data = llm_result.cloze
+                content_with_blanks = cloze_data.get("content_with_blanks", "")
+                blanks = cloze_data.get("blanks", [])
+
+                if content_with_blanks and blanks:
+                    # 创建完形文章记录
+                    cloze_passage = ClozePassage(
+                        paper_id=paper.id,
+                        content=content_with_blanks,
+                        word_count=len(content_with_blanks.split())
+                    )
+                    session.add(cloze_passage)
+                    await session.flush()
+
+                    # 调用 AI 分类主题
+                    try:
+                        topic_result = await topic_classifier.classify(
+                            content_with_blanks,
+                            grade=grade
+                        )
+                        if topic_result.success and topic_result.primary_topic:
+                            cloze_passage.primary_topic = topic_result.primary_topic
+                            cloze_passage.secondary_topics = json.dumps(
+                                topic_result.secondary_topics or [],
+                                ensure_ascii=False
+                            )
+                            cloze_passage.topic_confidence = topic_result.confidence
+                            print(f"  ✓ 完形主题: {topic_result.primary_topic}")
+                    except Exception as e:
+                        print(f"  ⚠ 完形主题分类失败: {e}")
+
+                    # 初始化考点分析器
+                    cloze_analyzer = ClozeAnalyzer()
+
+                    # 遍历每个空格，分析考点并保存
+                    for blank in blanks:
+                        blank_number = blank.get("blank_number")
+                        options = blank.get("options", {})
+                        correct_answer = blank.get("correct_answer")
+                        correct_word = blank.get("correct_word")
+
+                        if not blank_number or not options:
+                            continue
+
+                        # 调用 AI 分析考点
+                        analysis = await cloze_analyzer.analyze_point(
+                            blank_number=blank_number,
+                            correct_word=correct_word or "",
+                            options=options,
+                            context=content_with_blanks
+                        )
+
+                        # 提取上下文句子
+                        sentence = cloze_analyzer.extract_context(
+                            content_with_blanks, blank_number
+                        )
+
+                        # 创建考点记录
+                        cloze_point = ClozePoint(
+                            cloze_id=cloze_passage.id,
+                            blank_number=blank_number,
+                            correct_answer=correct_answer,
+                            correct_word=correct_word,
+                            options=json.dumps(options, ensure_ascii=False),
+                            point_type=analysis.point_type if analysis.success else "词汇",
+                            translation=analysis.translation if analysis.success else None,
+                            explanation=analysis.explanation if analysis.success else None,
+                            confusion_words=json.dumps(analysis.confusion_words, ensure_ascii=False) if analysis.success and analysis.confusion_words else None,
+                            sentence=sentence
+                        )
+                        session.add(cloze_point)
+                        result["cloze_points"] += 1
+
+                    print(f"  ✓ 完形填空: {len(blanks)} 个空格已分析")
 
             await session.commit()
 

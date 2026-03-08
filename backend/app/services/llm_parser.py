@@ -18,6 +18,7 @@ class LLMParseResult:
     """LLM解析结果"""
     success: bool
     passages: List[Dict] = None  # [{"type": "C", "content": "...", "word_count": 300}, ...]
+    cloze: Dict = None  # {"found": True, "content_with_blanks": "...", "blanks": [...]}
     metadata: Dict = None  # {"year": 2022, "region": "东城", ...}
     error: str = None
     raw_response: str = None
@@ -58,11 +59,24 @@ class LLMDocumentParser:
 - correct_answer: 正确答案（A/B/C/D，如果是教师版能找到答案的话）
 - answer_explanation: 答案解析（如果是教师版能找到解析的话）
 
+### 4. 完形填空
+提取完形填空部分（如果存在）：
+- found: 是否找到完形填空（true/false）
+- content_with_blanks: 带空格标记的原文（保留空格编号如①②③或(1)(2)(3)）
+- content_full: 填入正确答案后的完整文章（如果教师版有答案）
+- word_count: 词数（完整文章的英文单词数）
+- blanks: 空格列表，每个空格包含：
+  - blank_number: 空格编号（1-12）
+  - options: 四个选项 {"A": "...", "B": "...", "C": "...", "D": "..."}
+  - correct_answer: 正确答案（A/B/C/D，如果教师版有）
+  - correct_word: 正确答案对应的词
+
 ## 注意事项
 - 如果是教师版试卷，注意区分题目、学生版内容和答案解析
 - 题目通常紧跟在文章后面，题号一般是连续的
 - 确保选项内容完整，不要截断
 - 如果找不到答案或解析，对应字段可以省略
+- 完形填空通常在阅读理解之前，一般有12个空格
 
 ## 输出格式
 
@@ -117,12 +131,33 @@ class LLMDocumentParser:
                 }
             ]
         }
-    ]
+    ],
+    "cloze": {
+        "found": true,
+        "content_with_blanks": "I have always ① reading. I remember the day when I ② my first book...",
+        "content_full": "I have always enjoyed reading. I remember the day when I bought my first book...",
+        "word_count": 280,
+        "blanks": [
+            {
+                "blank_number": 1,
+                "options": {"A": "hated", "B": "disliked", "C": "enjoyed", "D": "avoided"},
+                "correct_answer": "C",
+                "correct_word": "enjoyed"
+            },
+            {
+                "blank_number": 2,
+                "options": {"A": "bought", "B": "borrowed", "C": "sold", "D": "lost"},
+                "correct_answer": "A",
+                "correct_word": "bought"
+            }
+        ]
+    }
 }
 ```
 
 如果无法找到C篇或D篇，passages数组中可以只包含找到的文章。如果完全找不到，passages为空数组。
-如果找不到某篇文章的题目，questions数组可以为空。"""
+如果找不到某篇文章的题目，questions数组可以为空。
+如果找不到完形填空，cloze.found设为false，其他字段可省略。"""
 
     def __init__(self):
         self.api_key = settings.DASHSCOPE_API_KEY
@@ -249,6 +284,7 @@ class LLMDocumentParser:
                 success=True,
                 metadata=data.get('metadata', {}),
                 passages=data.get('passages', []),
+                cloze=data.get('cloze', {}),
                 raw_response=content
             )
 

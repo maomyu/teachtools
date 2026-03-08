@@ -14,6 +14,8 @@ import {
   FileTextOutlined,
   HomeOutlined,
   UploadOutlined,
+  EditOutlined,
+  BookOutlined,
 } from '@ant-design/icons'
 
 const { Header, Sider, Content } = AntLayout
@@ -33,7 +35,17 @@ const menuItems = [
   {
     key: '/reading',
     icon: <ReadOutlined />,
-    label: '阅读CD篇',
+    label: '阅读文章',
+  },
+  {
+    key: '/cloze',
+    icon: <EditOutlined />,
+    label: '完形文章',
+  },
+  {
+    key: '/vocabulary',
+    icon: <BookOutlined />,
+    label: '高频词库',
   },
   {
     key: '/handout',

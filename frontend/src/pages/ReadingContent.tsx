@@ -3,7 +3,7 @@
  *
  * [INPUT]: 依赖 antd 组件、readingService、PassageDetailContent
  * [OUTPUT]: 对外提供 ReadingContent 组件
- * [POS]: frontend/src/pages 的阅读文章列表内容，用于 ReadingTabsPage
+ * [POS]: frontend/src/pages 的阅读文章列表页面
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { useState, useEffect } from 'react'
@@ -17,6 +17,8 @@ import {
   Button,
   message,
   Popconfirm,
+  Tabs,
+  Badge,
 } from 'antd'
 import { SearchOutlined, DeleteOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
@@ -31,6 +33,11 @@ export function ReadingContent() {
   const [loading, setLoading] = useState(false)
   const [passages, setPassages] = useState<Passage[]>([])
   const [total, setTotal] = useState(0)
+  const [cCount, setCCount] = useState(0)
+  const [dCount, setDCount] = useState(0)
+
+  // 文章类型筛选（C/D篇）
+  const [passageType, setPassageType] = useState<'C' | 'D' | undefined>(undefined)
 
   // 抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -60,7 +67,7 @@ export function ReadingContent() {
   // 加载文章列表
   useEffect(() => {
     loadPassages()
-  }, [filter])
+  }, [filter, passageType])
 
   const loadFilterOptions = async () => {
     try {
@@ -74,9 +81,14 @@ export function ReadingContent() {
   const loadPassages = async () => {
     setLoading(true)
     try {
-      const response = await getPassages(filter)
+      const response = await getPassages({
+        ...filter,
+        passage_type: passageType,
+      })
       setPassages(response.items)
       setTotal(response.total)
+      setCCount(response.c_count || 0)
+      setDCount(response.d_count || 0)
     } catch (error) {
       message.error('加载文章列表失败')
       console.error(error)
@@ -85,8 +97,9 @@ export function ReadingContent() {
     }
   }
 
-  const handleSearch = (value: string) => {
-    setFilter({ ...filter, search: value, page: 1 })
+  const handleViewPassage = (id: number) => {
+    setSelectedPassageId(id)
+    setDrawerOpen(true)
   }
 
   const handleDelete = async (id: number) => {
@@ -100,16 +113,51 @@ export function ReadingContent() {
     }
   }
 
-  // 打开文章详情抽屉
-  const handleViewPassage = (passageId: number) => {
-    setSelectedPassageId(passageId)
-    setDrawerOpen(true)
+  const handleSearch = (value: string) => {
+    setFilter({ ...filter, search: value, page: 1 })
   }
 
   // 关闭抽屉
   const handleCloseDrawer = () => {
     setDrawerOpen(false)
   }
+
+  // Tab 切换处理
+  const handleTabChange = (key: string) => {
+    setPassageType(key === 'all' ? undefined : (key as 'C' | 'D'))
+    setFilter({ ...filter, page: 1 })
+  }
+
+  // Tab 配置
+  const tabItems = [
+    {
+      key: 'all',
+      label: (
+        <Space size={4}>
+          <span>全部</span>
+          <Badge count={cCount + dCount} showZero style={{ backgroundColor: '#999' }} />
+        </Space>
+      ),
+    },
+    {
+      key: 'C',
+      label: (
+        <Space size={4}>
+          <span>C篇</span>
+          <Badge count={cCount} showZero style={{ backgroundColor: '#1890ff' }} />
+        </Space>
+      ),
+    },
+    {
+      key: 'D',
+      label: (
+        <Space size={4}>
+          <span>D篇</span>
+          <Badge count={dCount} showZero style={{ backgroundColor: '#52c41a' }} />
+        </Space>
+      ),
+    },
+  ]
 
   // 表格列定义
   const columns: ColumnsType<Passage> = [
@@ -136,42 +184,11 @@ export function ReadingContent() {
       render: (_, record) => record.source?.region || '-',
     },
     {
-      title: '年级',
-      key: 'grade',
-      width: 60,
-      render: (_, record) => record.source?.grade || '-',
-    },
-    {
-      title: '考试类型',
-      key: 'exam_type',
-      width: 90,
-      render: (_, record) => record.source?.exam_type || '-',
-    },
-    {
-      title: '学期',
-      key: 'semester',
-      width: 60,
-      render: (_, record) => record.source?.semester ? `${record.source.semester}学期` : '-',
-    },
-    {
-      title: '主话题',
+      title: '话题',
       dataIndex: 'primary_topic',
       key: 'primary_topic',
-      width: 120,
-      render: (topic: string, record) => (
-        <Space>
-          <span>{topic || '-'}</span>
-          {record.topic_verified && <Tag color="success">已校对</Tag>}
-        </Space>
-      ),
-    },
-    {
-      title: '词数',
-      dataIndex: 'word_count',
-      key: 'word_count',
-      width: 70,
-      sorter: (a, b) => (a.word_count || 0) - (b.word_count || 0),
-      render: (count: number) => count || '-',
+      width: 100,
+      render: (topic: string) => topic || '-',
     },
     {
       title: '内容预览',
@@ -212,13 +229,21 @@ export function ReadingContent() {
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff' }}>
-      <Card style={{ marginBottom: 16, flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* C/D 篇 Tab 切换 */}
+      <Tabs
+        activeKey={passageType || 'all'}
+        onChange={handleTabChange}
+        items={tabItems}
+        style={{ marginBottom: 8 }}
+      />
+
+      <Card size="small" style={{ marginBottom: 12 }}>
         <Space wrap>
           <Select
             placeholder="选择年级"
             allowClear
-            style={{ width: 120 }}
+            style={{ width: 100 }}
             value={filter.grade}
             onChange={(value) => setFilter({ ...filter, grade: value, page: 1 })}
             options={filterOptions.grades.map(g => ({ value: g, label: g }))}
@@ -226,7 +251,7 @@ export function ReadingContent() {
           <Select
             placeholder="选择区县"
             allowClear
-            style={{ width: 120 }}
+            style={{ width: 100 }}
             value={filter.region}
             onChange={(value) => setFilter({ ...filter, region: value, page: 1 })}
             options={filterOptions.regions.map(r => ({ value: r, label: r }))}
@@ -234,7 +259,7 @@ export function ReadingContent() {
           <Select
             placeholder="选择年份"
             allowClear
-            style={{ width: 120 }}
+            style={{ width: 100 }}
             value={filter.year}
             onChange={(value) => setFilter({ ...filter, year: value, page: 1 })}
             options={filterOptions.years.map(y => ({ value: y, label: `${y}` }))}
@@ -242,24 +267,16 @@ export function ReadingContent() {
           <Select
             placeholder="考试类型"
             allowClear
-            style={{ width: 120 }}
+            style={{ width: 100 }}
             value={filter.exam_type}
             onChange={(value) => setFilter({ ...filter, exam_type: value, page: 1 })}
             options={filterOptions.exam_types.map(e => ({ value: e, label: e }))}
           />
           <Select
-            placeholder="学期"
-            allowClear
-            style={{ width: 100 }}
-            value={filter.semester}
-            onChange={(value) => setFilter({ ...filter, semester: value, page: 1 })}
-            options={filterOptions.semesters.map(s => ({ value: s, label: `${s}学期` }))}
-          />
-          <Select
             placeholder="选择话题"
             allowClear
             showSearch
-            style={{ width: 200 }}
+            style={{ width: 140 }}
             value={filter.topic}
             onChange={(value) => setFilter({ ...filter, topic: value, page: 1 })}
             options={filterOptions.topics.map(t => ({ value: t, label: t }))}
@@ -270,7 +287,7 @@ export function ReadingContent() {
           <Search
             placeholder="搜索文章内容..."
             allowClear
-            style={{ width: 300 }}
+            style={{ width: 250 }}
             onSearch={handleSearch}
             enterButton={<SearchOutlined />}
           />

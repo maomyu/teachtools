@@ -71,6 +71,8 @@ class PassageListResponse(BaseModel):
     """文章列表响应"""
     total: int
     items: List[PassageResponse]
+    c_count: int = 0  # C 篇数量
+    d_count: int = 0  # D 篇数量
 
 
 class VocabularyOccurrenceInPassage(BaseModel):

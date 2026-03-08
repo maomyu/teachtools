@@ -306,8 +306,6 @@ export function PassageDetailContent({
           <div
             ref={contentRef}
             style={{
-              height: 200,
-              overflowY: 'auto',
               padding: '8px 0',
               lineHeight: 1.8,
               fontSize: 14,
@@ -318,16 +316,15 @@ export function PassageDetailContent({
         </Card>
 
         {/* 词汇和题目区 */}
-        <Card size="small" style={{ flex: 1 }} styles={{ body: { padding: 0 } }}>
+        <Card size="small" styles={{ body: { padding: 0 } }}>
           <Tabs
             defaultActiveKey="vocabulary"
-            style={{ height: '100%' }}
             items={[
               {
                 key: 'vocabulary',
                 label: `高频词汇 (${passage.vocabulary?.length || 0})`,
                 children: (
-                  <div style={{ height: 250, overflowY: 'auto', padding: '0 12px' }}>
+                  <div style={{ padding: '0 12px' }}>
                     {passage.vocabulary && passage.vocabulary.length > 0 ? (
                       <List
                         dataSource={passage.vocabulary}
@@ -365,7 +362,7 @@ export function PassageDetailContent({
                 key: 'questions',
                 label: `题目 (${passage.questions?.length || 0})`,
                 children: (
-                  <div style={{ height: 250, overflowY: 'auto', padding: '0 12px' }}>
+                  <div style={{ padding: '0 12px' }}>
                     {passage.questions && passage.questions.length > 0 ? (
                       <Space direction="vertical" style={{ width: '100%' }} size="small">
                         {passage.questions.map((q, idx) => (

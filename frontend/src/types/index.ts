@@ -96,6 +96,7 @@ export interface VocabularyOccurrence {
   char_position: number
   end_position?: number
   source?: string  // 出处信息（年份 区县 年级）用于显示
+  source_type?: 'reading' | 'cloze'  // 来源类型
   year?: number
   region?: string
   grade?: string
@@ -111,6 +112,7 @@ export interface VocabularyFiltersResponse {
   regions: string[]
   exam_types: string[]
   semesters: string[]
+  sources: string[]  // 来源：阅读、完形
 }
 
 // 文章详情中的词汇
@@ -178,6 +180,7 @@ export interface Vocabulary {
   phonetic?: string
   pos?: string
   frequency: number
+  sources?: string[]  // 来源：阅读、完形
   occurrences: VocabularyOccurrence[]
 }
 
@@ -208,6 +211,7 @@ export interface PassageFilter {
   exam_type?: string
   semester?: string
   search?: string
+  passage_type?: 'C' | 'D'  // 文章类型筛选
   page?: number
   size?: number
 }
@@ -219,5 +223,107 @@ export interface PassageFiltersResponse {
   exam_types: string[]
   regions: string[]
   topics: string[]
+  semesters: string[]
+}
+
+// ============================================================================
+//  完形填空类型
+// ============================================================================
+
+// 完形考点
+export interface ClozePoint {
+  id: number
+  blank_number?: number
+  correct_answer?: string
+  correct_word?: string
+  options?: QuestionOptions
+  point_type?: string  // 词汇 | 固定搭配 | 词义辨析 | 熟词僻义
+  translation?: string
+  explanation?: string
+  confusion_words?: Array<{word: string; meaning: string; reason: string}>
+  sentence?: string
+}
+
+// 完形词汇
+export interface VocabularyInCloze {
+  id: number
+  word: string
+  definition?: string
+  frequency: number
+  sentence?: string
+  char_position?: number
+}
+
+// 完形文章
+export interface ClozePassage {
+  id: number
+  paper_id: number
+  content: string  // 带空格原文
+  original_content?: string  // 完整原文
+  word_count?: number
+  primary_topic?: string
+  secondary_topics?: string[]
+  topic_confidence?: number
+  source?: SourceInfo
+  points: ClozePoint[]
+}
+
+// 完形列表响应
+export interface ClozeListResponse {
+  total: number
+  items: ClozePassage[]
+}
+
+// 完形详情响应
+export interface ClozeDetailResponse extends ClozePassage {
+  point_distribution: Record<string, number>  // {"固定搭配": 4, "词义辨析": 5}
+  vocabulary: VocabularyInCloze[]  // 完形相关词汇
+}
+
+// 完形考点出现位置
+export interface PointOccurrence {
+  sentence: string
+  source: string
+  blank_number: number
+  point_type: string
+  explanation?: string
+}
+
+// 完形考点汇总
+export interface PointSummary {
+  word: string
+  definition?: string
+  frequency: number
+  point_type: string
+  occurrences: PointOccurrence[]
+}
+
+// 完形考点汇总响应
+export interface PointListResponse {
+  total: number
+  items: PointSummary[]
+}
+
+// 完形筛选参数
+export interface ClozeFilter {
+  grade?: string
+  topic?: string
+  point_type?: string
+  exam_type?: string
+  semester?: string
+  region?: string
+  year?: number
+  page?: number
+  size?: number
+}
+
+// 完形筛选项响应
+export interface ClozeFiltersResponse {
+  grades: string[]
+  topics: string[]
+  years: number[]
+  regions: string[]
+  exam_types: string[]
+  point_types: string[]
   semesters: string[]
 }

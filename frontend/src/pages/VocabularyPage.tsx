@@ -30,6 +30,7 @@ import { getVocabulary, getVocabularyFilters } from '@/services/vocabularyServic
 import type { Vocabulary, VocabularyFiltersResponse } from '@/types'
 import { VocabularyDetailPanel } from '@/components/vocabulary/VocabularyDetailPanel'
 import { PassageDetailContent } from '@/components/vocabulary/PassageDetailContent'
+import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
 
 const { Text } = Typography
 const { Search } = Input
@@ -50,6 +51,7 @@ export function VocabularyPage() {
     regions: [],
     exam_types: [],
     semesters: [],
+    sources: [],
   })
 
   const [grade, setGrade] = useState<string | undefined>()
@@ -60,6 +62,7 @@ export function VocabularyPage() {
   const [semester, setSemester] = useState<string | undefined>()
   const [minFrequency, setMinFrequency] = useState<number>(1)
   const [searchWord, setSearchWord] = useState<string | undefined>(undefined)
+  const [source, setSource] = useState<string | undefined>(undefined)
 
   const [page, setPage] = useState(1)
   const [size, setSize] = useState(50)
@@ -71,6 +74,7 @@ export function VocabularyPage() {
   const [passageDrawerOpen, setPassageDrawerOpen] = useState(false)
   const [viewingPassageId, setViewingPassageId] = useState<number | null>(null)
   const [viewingCharPosition, setViewingCharPosition] = useState<number | undefined>(undefined)
+  const [viewingSourceType, setViewingSourceType] = useState<'reading' | 'cloze' | null>(null)
 
   // ============================================================================
   //  数据加载
@@ -82,7 +86,7 @@ export function VocabularyPage() {
 
   useEffect(() => {
     loadVocabulary()
-  }, [grade, topic, year, region, examType, semester, minFrequency, searchWord, page, size])
+  }, [grade, topic, year, region, examType, semester, minFrequency, searchWord, source, page, size])
 
   const loadFilters = async () => {
     try {
@@ -105,6 +109,7 @@ export function VocabularyPage() {
         semester,
         min_frequency: minFrequency,
         search: searchWord || undefined,
+        source: source as 'reading' | 'cloze' | 'all' | undefined,
         page,
         size,
       })
@@ -116,7 +121,7 @@ export function VocabularyPage() {
     } finally {
       setLoading(false)
     }
-  }, [grade, topic, year, region, examType, semester, minFrequency, searchWord, page, size])
+  }, [grade, topic, year, region, examType, semester, minFrequency, searchWord, source, page, size])
 
   const handleSearch = (value: string) => {
     const trimmed = value.trim()
@@ -133,13 +138,15 @@ export function VocabularyPage() {
     setSemester(undefined)
     setMinFrequency(1)
     setSearchWord(undefined)
+    setSource(undefined)
     setPage(1)
   }
 
   // 查看完整文章（打开抽屉）
-  const handleViewFullPassage = useCallback((passageId: number, charPosition?: number) => {
+  const handleViewFullPassage = useCallback((passageId: number, charPosition?: number, sourceType?: 'reading' | 'cloze') => {
     setViewingPassageId(passageId)
     setViewingCharPosition(charPosition)
+    setViewingSourceType(sourceType || 'reading')
     setPassageDrawerOpen(true)
   }, [])
 
@@ -183,6 +190,23 @@ export function VocabularyPage() {
           {freq}
         </Tag>
       ),
+    },
+    {
+      title: '来源',
+      key: 'sources',
+      width: 100,
+      render: (_, record) => {
+        if (!record.sources || record.sources.length === 0) return <Text type="secondary">-</Text>
+        return (
+          <Space size={4}>
+            {record.sources.map(s => (
+              <Tag key={s} color={s === '阅读' ? 'blue' : 'green'} style={{ margin: 0 }}>
+                {s}
+              </Tag>
+            ))}
+          </Space>
+        )
+      },
     },
     {
       title: '例句预览',
@@ -280,7 +304,7 @@ export function VocabularyPage() {
     },
   ]
 
-  const hasActiveFilters = grade || topic || year || region || examType || semester || minFrequency > 1
+  const hasActiveFilters = grade || topic || year || region || examType || semester || minFrequency > 1 || source
 
   // ============================================================================
   //  渲染
@@ -374,6 +398,19 @@ export function VocabularyPage() {
                   options={filters.semesters.map(s => ({ value: s, label: `${s}学期` }))}
                 />
 
+                <Select
+                  placeholder="来源"
+                  allowClear
+                  style={{ width: 100 }}
+                  value={source}
+                  onChange={setSource}
+                  options={[
+                    { value: 'all', label: '全部' },
+                    { value: 'reading', label: '阅读' },
+                    { value: 'cloze', label: '完形' },
+                  ]}
+                />
+
                 <InputNumber
                   placeholder="最低词频"
                   min={1}
@@ -421,6 +458,7 @@ export function VocabularyPage() {
                   {region && <Tag color="purple" closable onClose={() => setRegion(undefined)}>{region}</Tag>}
                   {examType && <Tag color="cyan" closable onClose={() => setExamType(undefined)}>{examType}</Tag>}
                   {semester && <Tag color="geekblue" closable onClose={() => setSemester(undefined)}>{semester}学期</Tag>}
+                  {source && <Tag color="cyan" closable onClose={() => setSource(undefined)}>{source === 'reading' ? '阅读' : source === 'cloze' ? '完形' : '全部'}</Tag>}
                   {minFrequency > 1 && (
                     <Tag color="red" closable onClose={() => setMinFrequency(1)}>
                       词频 ≥ {minFrequency}
@@ -520,14 +558,14 @@ export function VocabularyPage() {
       )}
 
       {/* 右侧:完整文章抽屉 */}
-      {passageDrawerOpen && viewingPassageId && (
+      {passageDrawerOpen && viewingPassageId && viewingSourceType && (
         <div
           style={{
             width: 520,
             flexShrink: 0,
             height: '100%',
             overflow: 'hidden',
-            borderLeft: '3px solid #52c41a',
+            borderLeft: viewingSourceType === 'reading' ? '3px solid #52c41a' : '3px solid #722ed1',
             background: '#fafcff',
             display: 'flex',
             flexDirection: 'column',
@@ -541,13 +579,23 @@ export function VocabularyPage() {
               padding: 16,
             }}
           >
-            <PassageDetailContent
-              passageId={viewingPassageId}
-              highlightWord={selectedWord?.word}
-              charPosition={viewingCharPosition}
-              onBack={handleClosePassageDrawer}
-              showBackButton={true}
-            />
+            {viewingSourceType === 'reading' ? (
+              <PassageDetailContent
+                passageId={viewingPassageId}
+                highlightWord={selectedWord?.word}
+                charPosition={viewingCharPosition}
+                onBack={handleClosePassageDrawer}
+                showBackButton={true}
+              />
+            ) : (
+              <ClozeDetailContent
+                clozeId={viewingPassageId}
+                highlightWord={selectedWord?.word}
+                charPosition={viewingCharPosition}
+                onBack={handleClosePassageDrawer}
+                showBackButton={true}
+              />
+            )}
           </div>
         </div>
       )}

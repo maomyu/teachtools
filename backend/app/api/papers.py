@@ -31,11 +31,14 @@ def count_english_words(text: str) -> int:
 from app.models.paper import ExamPaper
 from app.models.reading import ReadingPassage, Question
 from app.models.vocabulary import Vocabulary, VocabularyPassage
+from app.models.cloze import ClozePassage, ClozePoint
+from app.models.vocabulary_cloze import VocabularyCloze
 from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse
 from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser
 from app.services.topic_classifier import TopicClassifier
 from app.services.vocab_extractor import VocabExtractor
+from app.services.cloze_analyzer import ClozeAnalyzer
 
 router = APIRouter()
 
@@ -74,6 +77,8 @@ PIPELINE_CONFIG = [
     {"id": "ai_parse", "name": "AI解析文档", "description": "提取C/D篇阅读和题目", "icon": "🤖"},
     {"id": "save_passages", "name": "保存文章", "description": "保存阅读文章到数据库", "icon": "💾"},
     {"id": "save_questions", "name": "保存题目", "description": "保存阅读题目到数据库", "icon": "❓"},
+    {"id": "save_cloze", "name": "保存完形填空", "description": "提取并保存完形文章", "icon": "📝"},
+    {"id": "cloze_analyze", "name": "考点分析", "description": "AI分析四类考点", "icon": "🔬"},
     {"id": "topic_classify", "name": "AI话题分类", "description": "提炼文章主题", "icon": "🎯"},
     {"id": "vocab_extract", "name": "词汇提取", "description": "提取高频词汇", "icon": "📚"},
 ]
@@ -227,13 +232,17 @@ async def upload_paper_with_progress(
                         yield emit()
                         # 跳过后续步骤
                         for step_id in ["upload_to_ai", "ai_parse", "save_passages",
-                                       "save_questions", "topic_classify", "vocab_extract"]:
+                                       "save_questions", "save_cloze", "cloze_analyze",
+                                       "topic_classify", "vocab_extract"]:
                             reporter.skip_step(step_id, "试卷已存在")
                         yield emit()
                         return
                     # 强制模式：删除旧记录
                     await db.execute(
                         delete(ReadingPassage).where(ReadingPassage.paper_id == existing_paper.id)
+                    )
+                    await db.execute(
+                        delete(ClozePassage).where(ClozePassage.paper_id == existing_paper.id)
                     )
                     await db.delete(existing_paper)
                     await db.flush()
@@ -371,7 +380,107 @@ async def upload_paper_with_progress(
                 reporter.complete_step("save_questions", f"已保存{questions_created}道题目")
                 yield emit()
 
-                # ===== Step 7: AI话题分类 =====
+                # ===== Step 7: 保存完形填空 =====
+                reporter.start_step("save_cloze", "正在提取完形填空...")
+                yield emit()
+
+                cloze_created = False
+                cloze_passage = None
+                blanks_created = 0
+
+                if llm_result.cloze and llm_result.cloze.get("found"):
+                    cloze_data = llm_result.cloze
+
+                    # 创建完形文章
+                    cloze_passage = ClozePassage(
+                        paper_id=paper.id,
+                        content=cloze_data.get("content_with_blanks", ""),
+                        original_content=cloze_data.get("content_full"),
+                        word_count=cloze_data.get("word_count", 0)
+                    )
+                    db.add(cloze_passage)
+                    await db.flush()
+
+                    # 保存空格
+                    blanks_data = cloze_data.get("blanks", [])
+                    for blank_data in blanks_data:
+                        options = blank_data.get("options", {})
+                        point = ClozePoint(
+                            cloze_id=cloze_passage.id,
+                            blank_number=blank_data.get("blank_number"),
+                            correct_answer=blank_data.get("correct_answer"),
+                            options=json.dumps(options, ensure_ascii=False),
+                            correct_word=blank_data.get("correct_word")
+                        )
+                        db.add(point)
+                        blanks_created += 1
+
+                    cloze_created = True
+                    reporter.complete_step("save_cloze", f"已提取{blanks_created}个空格")
+                else:
+                    reporter.skip_step("save_cloze", "未找到完形填空")
+                yield emit()
+
+                # ===== Step 8: 考点分析 =====
+                if cloze_created:
+                    reporter.start_step("cloze_analyze", "🔬 AI正在分析考点...")
+                    yield emit()
+
+                    try:
+                        analyzer = ClozeAnalyzer()
+                        analyzed_count = 0
+
+                        # 获取刚创建的空格列表
+                        result = await db.execute(
+                            select(ClozePoint).where(ClozePoint.cloze_id == cloze_passage.id)
+                        )
+                        points = result.scalars().all()
+
+                        for i, point in enumerate(points):
+                            if point.correct_word and point.options:
+                                reporter.update_step("cloze_analyze",
+                                    progress=int((i + 1) / len(points) * 100),
+                                    message=f"分析第{point.blank_number}空...")
+                                yield emit()
+
+                                # 解析选项
+                                options = json.loads(point.options) if isinstance(point.options, str) else point.options
+
+                                # 提取上下文
+                                context = analyzer.extract_context(
+                                    cloze_passage.content,
+                                    point.blank_number
+                                )
+
+                                # AI分析考点
+                                analysis_result = await analyzer.analyze_point(
+                                    blank_number=point.blank_number,
+                                    correct_word=point.correct_word,
+                                    options=options,
+                                    context=context
+                                )
+
+                                if analysis_result.success:
+                                    point.point_type = analysis_result.point_type
+                                    point.translation = analysis_result.translation
+                                    point.explanation = analysis_result.explanation
+                                    if analysis_result.confusion_words:
+                                        point.confusion_words = json.dumps(
+                                            analysis_result.confusion_words, ensure_ascii=False
+                                        )
+                                    analyzed_count += 1
+
+                        reporter.complete_step("cloze_analyze", f"已分析{analyzed_count}个考点")
+                        yield emit()
+
+                    except Exception as e:
+                        reporter.skip_step("cloze_analyze", f"跳过: {str(e)}")
+                        yield emit()
+                else:
+                    reporter.skip_step("cloze_analyze", "无完形文章")
+                    yield emit()
+
+                # ===== Step 9: AI话题分类 =====
                 reporter.start_step("topic_classify", "🎯 AI正在提炼主题...")
                 yield emit()
 
@@ -379,10 +488,11 @@ async def upload_paper_with_progress(
                     classifier = TopicClassifier()
                     topics_found = []
 
+                    # 阅读文章话题分类
                     for i, passage in enumerate(saved_passages):
                         if passage.content and len(passage.content) > 50:
                             reporter.update_step("topic_classify",
-                                progress=int((i + 1) / len(saved_passages) * 100),
+                                progress=int((i + 1) / (len(saved_passages) + (1 if cloze_created else 0)) * 50),
                                 message=f"分析{passage.passage_type}篇主题...")
                             yield emit()
 
@@ -396,6 +506,20 @@ async def upload_paper_with_progress(
                                 if topic_result.keywords:
                                     passage.keywords = json.dumps(topic_result.keywords, ensure_ascii=False)
                                 topics_found.append(topic_result.primary_topic)
+
+                    # 完形文章话题分类
+                    if cloze_created and cloze_passage.original_content:
+                        reporter.update_step("topic_classify", progress=75, message="分析完形文章主题...")
+                        yield emit()
+
+                        topic_result = await classifier.classify(cloze_passage.original_content, paper.grade)
+                        if topic_result.success:
+                            cloze_passage.primary_topic = topic_result.primary_topic
+                            cloze_passage.secondary_topics = json.dumps(
+                                topic_result.secondary_topics or [], ensure_ascii=False
+                            )
+                            cloze_passage.topic_confidence = topic_result.confidence
+                            topics_found.append(topic_result.primary_topic)
 
                     reporter.complete_step("topic_classify", f"已分类{len(topics_found)}篇文章主题")
                     yield emit()
@@ -466,6 +590,61 @@ async def upload_paper_with_progress(
                                         word_position=occ.word_position
                                     )
                                     db.add(vocab_passage)
+                                    total_words += 1
+
+                    # 完形文章词汇提取
+                    # 注意：使用 content（带空格标记），而非 original_content
+                    # 这样 char_position 与前端渲染的文本位置一致
+                    if cloze_created and cloze_passage:
+                        content_for_vocab = cloze_passage.content
+                        if content_for_vocab and len(content_for_vocab) > 50:
+                            reporter.update_step("vocab_extract", progress=75, message="AI分析完形文章核心词汇...")
+                            yield emit()
+
+                            # 使用AI异步提取
+                            extracted_words = await vocab_extractor.extract_async(content_for_vocab)
+
+                            for word_data in extracted_words:
+                                # 查找或创建词汇记录
+                                result = await db.execute(
+                                    select(Vocabulary).where(Vocabulary.word == word_data.word)
+                                )
+                                vocab = result.scalar_one_or_none()
+
+                                if not vocab:
+                                    vocab = Vocabulary(
+                                        word=word_data.word,
+                                        lemma=word_data.lemma,
+                                        frequency=0,
+                                        definition=word_data.definition
+                                    )
+                                    db.add(vocab)
+                                    await db.flush()
+                                else:
+                                    if not vocab.definition and word_data.definition:
+                                        vocab.definition = word_data.definition
+
+                                # 创建完形词汇关联记录
+                                for occ in word_data.occurrences:
+                                    existing = await db.execute(
+                                        select(VocabularyCloze).where(
+                                            VocabularyCloze.vocabulary_id == vocab.id,
+                                            VocabularyCloze.cloze_id == cloze_passage.id,
+                                            VocabularyCloze.char_position == occ.char_position
+                                        )
+                                    )
+                                    if existing.scalar_one_or_none():
+                                        continue
+
+                                    vocab_cloze = VocabularyCloze(
+                                        vocabulary_id=vocab.id,
+                                        cloze_id=cloze_passage.id,
+                                        sentence=occ.sentence,
+                                        char_position=occ.char_position,
+                                        end_position=occ.end_position,
+                                        word_position=occ.word_position
+                                    )
+                                    db.add(vocab_cloze)
                                     total_words += 1
 
                     reporter.complete_step("vocab_extract", f"AI已提取{total_words}个核心词汇")
@@ -582,6 +761,9 @@ async def delete_paper(paper_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.execute(
         delete(ReadingPassage).where(ReadingPassage.paper_id == paper_id)
+    )
+    await db.execute(
+        delete(ClozePassage).where(ClozePassage.paper_id == paper_id)
     )
     await db.delete(paper)
     await db.commit()

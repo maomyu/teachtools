@@ -88,7 +88,7 @@ class DocxParser:
 
         match = self.FILENAME_PATTERN.search(filename)
         if match:
-            return {
+            result = {
                 "year": int(match.group(1)),
                 "region": match.group(2).strip(),
                 "grade": match.group(3),
@@ -96,9 +96,26 @@ class DocxParser:
                 "exam_type": match.group(5),
                 "version": match.group(6) or "学生版"
             }
+            # 如果学期为空，根据考试类型推断
+            if result["semester"] is None:
+                result["semester"] = self._infer_semester(result["exam_type"])
+            return result
 
         # 尝试从目录结构推断
         return self._parse_from_directory()
+
+    def _infer_semester(self, exam_type: str) -> Optional[str]:
+        """根据考试类型推断学期"""
+        if not exam_type:
+            return None
+        # 一模、二模通常在下学期（春季）
+        if exam_type in ["一模", "二模"]:
+            return "下"
+        # 开学考、月考通常在上学期（秋季）
+        if exam_type in ["开学考", "月考"]:
+            return "上"
+        # 期中、期末无法确定，需要更多信息
+        return None
 
     def _parse_from_directory(self) -> Dict:
         """从目录结构推断元数据"""

@@ -1,5 +1,10 @@
 /**
  * 阅读文章列表页
+ *
+ * [INPUT]: 依赖 antd 组件、@/services/readingService、@/types
+ * [OUTPUT]: 对外提供 ReadingPage 组件
+ * [POS]: frontend/src/pages 的阅读文章列表页面
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -14,6 +19,8 @@ import {
   Typography,
   message,
   Popconfirm,
+  Tabs,
+  Badge,
 } from 'antd'
 import { SearchOutlined, EyeOutlined, DeleteOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
@@ -29,7 +36,12 @@ export function ReadingPage() {
   const [loading, setLoading] = useState(false)
   const [passages, setPassages] = useState<Passage[]>([])
   const [total, setTotal] = useState(0)
+  const [cCount, setCCount] = useState(0)
+  const [dCount, setDCount] = useState(0)
   const [topics, setTopics] = useState<Record<string, Topic[]>>({})
+
+  // 文章类型筛选（C/D篇）
+  const [passageType, setPassageType] = useState<'C' | 'D' | undefined>(undefined)
 
   // 筛选条件
   const [filter, setFilter] = useState<PassageFilter>({
@@ -45,7 +57,7 @@ export function ReadingPage() {
   // 加载文章列表
   useEffect(() => {
     loadPassages()
-  }, [filter])
+  }, [filter, passageType])
 
   const loadTopics = async () => {
     try {
@@ -59,9 +71,15 @@ export function ReadingPage() {
   const loadPassages = async () => {
     setLoading(true)
     try {
-      const response = await getPassages(filter)
+      const response = await getPassages({
+        ...filter,
+        passage_type: passageType,
+      })
       setPassages(response.items)
       setTotal(response.total)
+      // 分别统计 C 篇和 D 篇数量
+      setCCount(response.c_count || 0)
+      setDCount(response.d_count || 0)
     } catch (error) {
       message.error('加载文章列表失败')
       console.error(error)
@@ -87,6 +105,12 @@ export function ReadingPage() {
       message.error('删除失败')
       console.error(error)
     }
+  }
+
+  // Tab 切换处理
+  const handleTabChange = (key: string) => {
+    setPassageType(key === 'all' ? undefined : (key as 'C' | 'D'))
+    setFilter({ ...filter, page: 1 })  // 切换 Tab 时重置分页
   }
 
   // 表格列定义
@@ -194,9 +218,48 @@ export function ReadingPage() {
     return options
   }
 
+  // Tab 配置
+  const tabItems = [
+    {
+      key: 'all',
+      label: (
+        <Space size={4}>
+          <span>全部</span>
+          <Badge count={cCount + dCount} showZero style={{ backgroundColor: '#999' }} />
+        </Space>
+      ),
+    },
+    {
+      key: 'C',
+      label: (
+        <Space size={4}>
+          <span>C篇</span>
+          <Badge count={cCount} showZero style={{ backgroundColor: '#1890ff' }} />
+        </Space>
+      ),
+    },
+    {
+      key: 'D',
+      label: (
+        <Space size={4}>
+          <span>D篇</span>
+          <Badge count={dCount} showZero style={{ backgroundColor: '#52c41a' }} />
+        </Space>
+      ),
+    },
+  ]
+
   return (
     <div>
       <Title level={3}>阅读C/D篇</Title>
+
+      {/* C/D 篇 Tab 切换 */}
+      <Tabs
+        activeKey={passageType || 'all'}
+        onChange={handleTabChange}
+        items={tabItems}
+        style={{ marginBottom: 16 }}
+      />
 
       <Card style={{ marginBottom: 16 }}>
         <Space wrap>

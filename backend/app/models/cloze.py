@@ -43,7 +43,8 @@ class ClozePoint(Base):
     cloze_id = Column(Integer, ForeignKey("cloze_passages.id"), nullable=False)
 
     blank_number = Column(Integer)  # 第几个空
-    correct_answer = Column(String(100))
+    correct_answer = Column(String(100))  # 正确答案选项 (A/B/C/D)
+    correct_word = Column(String(255))  # 正确答案对应的词
     options = Column(Text)  # JSON: {"A": "...", "B": "...", ...}
 
     # 四类考点

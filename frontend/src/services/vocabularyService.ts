@@ -18,7 +18,7 @@ export async function getVocabularyFilters(): Promise<VocabularyFiltersResponse>
 }
 
 /**
- * 获取词汇列表（支持多维筛选）
+ * 获取词汇列表（支持多维筛选 + 来源筛选）
  */
 export async function getVocabulary(params: {
   grade?: string
@@ -29,6 +29,7 @@ export async function getVocabulary(params: {
   semester?: string
   min_frequency?: number
   search?: string
+  source?: 'reading' | 'cloze' | 'all'
   page?: number
   size?: number
 }): Promise<VocabularyListResponse> {
@@ -66,6 +67,12 @@ export interface VocabularySearchResult {
     char_position: number
     end_position?: number
     source?: string
+    source_type?: 'reading' | 'cloze'
+    year?: number
+    region?: string
+    grade?: string
+    exam_type?: string
+    semester?: string
   }>
 }
 

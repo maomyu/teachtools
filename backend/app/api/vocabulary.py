@@ -9,12 +9,14 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, distinct, and_
+from sqlalchemy import select, func, distinct, and_, union_all
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.vocabulary import Vocabulary, VocabularyPassage
+from app.models.vocabulary_cloze import VocabularyCloze
 from app.models.reading import ReadingPassage
+from app.models.cloze import ClozePassage
 from app.models.paper import ExamPaper
 from app.schemas.vocabulary import (
     VocabularyResponse,
@@ -36,7 +38,7 @@ async def get_vocabulary_filters(db: AsyncSession = Depends(get_db)):
     """
     获取词汇库的筛选项
 
-    返回所有可用的年级、主题、年份、区县、考试类型、学期列表
+    返回所有可用的年级、主题、年份、区县、考试类型、学期、来源列表
     """
     # 获取年级列表（去重）
     grades_query = select(distinct(ExamPaper.grade)).where(
@@ -45,12 +47,22 @@ async def get_vocabulary_filters(db: AsyncSession = Depends(get_db)):
     grades_result = await db.execute(grades_query)
     grades = [g for g in grades_result.scalars().all() if g]
 
-    # 获取主题列表（从阅读文章表）
+    # 获取主题列表（从阅读文章表 + 完形文章表）
     topics_query = select(distinct(ReadingPassage.primary_topic)).where(
         ReadingPassage.primary_topic.isnot(None)
     ).order_by(ReadingPassage.primary_topic)
     topics_result = await db.execute(topics_query)
     topics = [t for t in topics_result.scalars().all() if t]
+
+    # 完形主题
+    cloze_topics_query = select(distinct(ClozePassage.primary_topic)).where(
+        ClozePassage.primary_topic.isnot(None)
+    )
+    cloze_topics_result = await db.execute(cloze_topics_query)
+    for t in cloze_topics_result.scalars().all():
+        if t and t not in topics:
+            topics.append(t)
+    topics = sorted(topics)
 
     # 获取年份列表
     years_query = select(distinct(ExamPaper.year)).where(
@@ -86,7 +98,8 @@ async def get_vocabulary_filters(db: AsyncSession = Depends(get_db)):
         years=years,
         regions=regions,
         exam_types=exam_types,
-        semesters=semesters
+        semesters=semesters,
+        sources=["阅读", "完形"]
     )
 
 
@@ -107,21 +120,74 @@ async def list_vocabulary(
     semester: Optional[str] = Query(None, description="学期筛选"),
     min_frequency: int = Query(1, ge=1, description="最低词频"),
     search: Optional[str] = Query(None, description="单词搜索"),
+    source: Optional[str] = Query(None, description="来源筛选: reading/cloze/all"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    获取高频词汇列表（支持多维度筛选）
+    获取高频词汇列表（支持多维度筛选 + 来源筛选）
 
     筛选逻辑：
-    - 词频基于 VocabularyPassage 实际记录数计算
-    - 有筛选条件时：通过 VocabularyPassage → ReadingPassage → ExamPaper 关联筛选
+    - source=reading → 只查阅读词汇
+    - source=cloze → 只查完形词汇
+    - source=all 或 None → 联合查询，聚合词频
     """
-    # 判断是否需要关联查询
+    items = []
+    total = 0
+
+    # ============================================================================
+    #  阅读来源查询
+    # ============================================================================
+    if source == 'reading' or source is None or source == 'all':
+        reading_items, reading_total = await _query_reading_vocabulary(
+            db, grade, topic, year, region, exam_type, semester,
+            min_frequency, search, page, size, source == 'reading'
+        )
+        items.extend(reading_items)
+        total += reading_total
+
+    # ============================================================================
+    #  完形来源查询
+    # ============================================================================
+    if source == 'cloze' or source is None or source == 'all':
+        cloze_items, cloze_total = await _query_cloze_vocabulary(
+            db, grade, topic, year, region, exam_type, semester,
+            min_frequency, search, page, size, source == 'cloze'
+        )
+        items.extend(cloze_items)
+        total += cloze_total
+
+    # ============================================================================
+    #  聚合模式：合并相同词汇的词频
+    # ============================================================================
+    if source is None or source == 'all':
+        # 合并相同词汇
+        vocab_map = {}
+        for item in items:
+            if item.word not in vocab_map:
+                vocab_map[item.word] = item
+            else:
+                existing = vocab_map[item.word]
+                existing.frequency += item.frequency
+                existing.sources = list(set(existing.sources + item.sources))
+                existing.occurrences.extend(item.occurrences)
+
+        # 重新排序并分页
+        sorted_items = sorted(vocab_map.values(), key=lambda x: x.frequency, reverse=True)
+        total = len(sorted_items)
+        items = sorted_items[(page - 1) * size: page * size]
+
+    return VocabularyListResponse(total=total, items=items)
+
+
+async def _query_reading_vocabulary(
+    db: AsyncSession,
+    grade, topic, year, region, exam_type, semester,
+    min_frequency, search, page, size, exclusive
+):
+    """查询阅读来源的词汇"""
     needs_join = any([grade, topic, year, region, exam_type, semester])
 
     if needs_join:
-        # 带筛选条件的查询
-        # 步骤1: 找出符合筛选条件的 (vocabulary_id, count) 列表
         vocab_count_subquery = (
             select(
                 VocabularyPassage.vocabulary_id,
@@ -134,7 +200,6 @@ async def list_vocabulary(
             .having(func.count(VocabularyPassage.id) >= min_frequency)
         )
 
-        # 应用筛选条件
         conditions = []
         if grade:
             conditions.append(ExamPaper.grade == grade)
@@ -153,63 +218,7 @@ async def list_vocabulary(
             vocab_count_subquery = vocab_count_subquery.where(and_(*conditions))
 
         vocab_count_subquery = vocab_count_subquery.subquery()
-
-        # 步骤2: 主查询 - 关联 Vocabulary 表获取词汇信息
-        query = (
-            select(Vocabulary, vocab_count_subquery.c.freq)
-            .join(vocab_count_subquery, Vocabulary.id == vocab_count_subquery.c.vocabulary_id)
-        )
-
-        # 搜索条件
-        if search:
-            query = query.where(Vocabulary.word == search.lower())
-
-        # 统计总数
-        count_query = select(func.count()).select_from(query.subquery())
-        total = await db.scalar(count_query) or 0
-
-        # 排序和分页（按实际词频降序）
-        query = query.order_by(vocab_count_subquery.c.freq.desc())
-        query = query.offset((page - 1) * size).limit(size)
-
-        result = await db.execute(query)
-        rows = result.all()
-
-        # 构建响应
-        items = []
-        for word, actual_frequency in rows:
-            occ_query = (
-                select(VocabularyPassage)
-                .where(VocabularyPassage.vocabulary_id == word.id)
-                .options(selectinload(VocabularyPassage.passage).selectinload(ReadingPassage.paper))
-                .limit(20)
-            )
-            occ_result = await db.execute(occ_query)
-            occurrences = occ_result.scalars().all()
-
-            items.append(VocabularyResponse(
-                id=word.id,
-                word=word.word,
-                lemma=word.lemma,
-                definition=word.definition,
-                phonetic=word.phonetic,
-                pos=word.pos,
-                frequency=actual_frequency,
-                occurrences=[
-                    VocabularyOccurrence(
-                        sentence=occ.sentence,
-                        passage_id=occ.passage_id,
-                        char_position=occ.char_position,
-                        end_position=occ.end_position,
-                        source=_format_source(occ.passage),
-                        **_get_source_info(occ.passage)
-                    )
-                    for occ in occurrences
-                ]
-            ))
-
     else:
-        # 无筛选条件的查询 - 直接从 VocabularyPassage 计算词频
         vocab_count_subquery = (
             select(
                 VocabularyPassage.vocabulary_id,
@@ -220,65 +229,172 @@ async def list_vocabulary(
             .subquery()
         )
 
-        # 主查询
-        query = (
-            select(Vocabulary, vocab_count_subquery.c.freq)
-            .join(vocab_count_subquery, Vocabulary.id == vocab_count_subquery.c.vocabulary_id)
-        )
+    query = (
+        select(Vocabulary, vocab_count_subquery.c.freq)
+        .join(vocab_count_subquery, Vocabulary.id == vocab_count_subquery.c.vocabulary_id)
+    )
 
-        # 搜索条件
-        if search:
-            query = query.where(Vocabulary.word == search.lower())
+    if search:
+        query = query.where(Vocabulary.word == search.lower())
 
-        # 统计总数
-        count_query = select(func.count()).select_from(query.subquery())
-        total = await db.scalar(count_query) or 0
+    count_query = select(func.count()).select_from(query.subquery())
+    total = await db.scalar(count_query) or 0
 
-        # 排序和分页
-        query = query.order_by(vocab_count_subquery.c.freq.desc())
+    query = query.order_by(vocab_count_subquery.c.freq.desc())
+
+    # 只在独占模式下分页
+    if exclusive:
         query = query.offset((page - 1) * size).limit(size)
 
-        result = await db.execute(query)
-        rows = result.all()
+    result = await db.execute(query)
+    rows = result.all()
 
-        # 构建响应
-        items = []
-        for word, actual_frequency in rows:
-            occ_query = (
-                select(VocabularyPassage)
-                .where(VocabularyPassage.vocabulary_id == word.id)
-                .options(selectinload(VocabularyPassage.passage).selectinload(ReadingPassage.paper))
-                .limit(20)
+    items = []
+    for word, actual_frequency in rows:
+        occ_query = (
+            select(VocabularyPassage)
+            .where(VocabularyPassage.vocabulary_id == word.id)
+            .options(selectinload(VocabularyPassage.passage).selectinload(ReadingPassage.paper))
+            .limit(20)
+        )
+        occ_result = await db.execute(occ_query)
+        occurrences = occ_result.scalars().all()
+
+        items.append(VocabularyResponse(
+            id=word.id,
+            word=word.word,
+            lemma=word.lemma,
+            definition=word.definition,
+            phonetic=word.phonetic,
+            pos=word.pos,
+            frequency=actual_frequency,
+            sources=["阅读"],
+            occurrences=[
+                VocabularyOccurrence(
+                    sentence=occ.sentence,
+                    passage_id=occ.passage_id,
+                    char_position=occ.char_position,
+                    end_position=occ.end_position,
+                    source=_format_source_reading(occ.passage),
+                    source_type="reading",
+                    **_get_source_info_reading(occ.passage)
+                )
+                for occ in occurrences
+            ]
+        ))
+
+    return items, total
+
+
+async def _query_cloze_vocabulary(
+    db: AsyncSession,
+    grade, topic, year, region, exam_type, semester,
+    min_frequency, search, page, size, exclusive
+):
+    """查询完形来源的词汇"""
+    needs_join = any([grade, topic, year, region, exam_type, semester])
+
+    if needs_join:
+        vocab_count_subquery = (
+            select(
+                VocabularyCloze.vocabulary_id,
+                func.count(VocabularyCloze.id).label('freq')
             )
-            occ_result = await db.execute(occ_query)
-            occurrences = occ_result.scalars().all()
+            .select_from(VocabularyCloze)
+            .join(ClozePassage, VocabularyCloze.cloze_id == ClozePassage.id)
+            .join(ExamPaper, ClozePassage.paper_id == ExamPaper.id)
+            .group_by(VocabularyCloze.vocabulary_id)
+            .having(func.count(VocabularyCloze.id) >= min_frequency)
+        )
 
-            items.append(VocabularyResponse(
-                id=word.id,
-                word=word.word,
-                lemma=word.lemma,
-                definition=word.definition,
-                phonetic=word.phonetic,
-                pos=word.pos,
-                frequency=actual_frequency,
-                occurrences=[
-                    VocabularyOccurrence(
-                        sentence=occ.sentence,
-                        passage_id=occ.passage_id,
-                        char_position=occ.char_position,
-                        end_position=occ.end_position,
-                        source=_format_source(occ.passage),
-                        **_get_source_info(occ.passage)
-                    )
-                    for occ in occurrences
-                ]
-            ))
+        conditions = []
+        if grade:
+            conditions.append(ExamPaper.grade == grade)
+        if topic:
+            conditions.append(ClozePassage.primary_topic == topic)
+        if year:
+            conditions.append(ExamPaper.year == year)
+        if region:
+            conditions.append(ExamPaper.region == region)
+        if exam_type:
+            conditions.append(ExamPaper.exam_type == exam_type)
+        if semester:
+            conditions.append(ExamPaper.semester == semester)
 
-    return VocabularyListResponse(total=total, items=items)
+        if conditions:
+            vocab_count_subquery = vocab_count_subquery.where(and_(*conditions))
+
+        vocab_count_subquery = vocab_count_subquery.subquery()
+    else:
+        vocab_count_subquery = (
+            select(
+                VocabularyCloze.vocabulary_id,
+                func.count(VocabularyCloze.id).label('freq')
+            )
+            .group_by(VocabularyCloze.vocabulary_id)
+            .having(func.count(VocabularyCloze.id) >= min_frequency)
+            .subquery()
+        )
+
+    query = (
+        select(Vocabulary, vocab_count_subquery.c.freq)
+        .join(vocab_count_subquery, Vocabulary.id == vocab_count_subquery.c.vocabulary_id)
+    )
+
+    if search:
+        query = query.where(Vocabulary.word == search.lower())
+
+    count_query = select(func.count()).select_from(query.subquery())
+    total = await db.scalar(count_query) or 0
+
+    query = query.order_by(vocab_count_subquery.c.freq.desc())
+
+    # 只在独占模式下分页
+    if exclusive:
+        query = query.offset((page - 1) * size).limit(size)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    items = []
+    for word, actual_frequency in rows:
+        occ_query = (
+            select(VocabularyCloze)
+            .where(VocabularyCloze.vocabulary_id == word.id)
+            .options(selectinload(VocabularyCloze.cloze).selectinload(ClozePassage.paper))
+            .limit(20)
+        )
+        occ_result = await db.execute(occ_query)
+        occurrences = occ_result.scalars().all()
+
+        items.append(VocabularyResponse(
+            id=word.id,
+            word=word.word,
+            lemma=word.lemma,
+            definition=word.definition,
+            phonetic=word.phonetic,
+            pos=word.pos,
+            frequency=actual_frequency,
+            sources=["完形"],
+            occurrences=[
+                VocabularyOccurrence(
+                    sentence=occ.sentence,
+                    passage_id=occ.cloze_id,
+                    char_position=occ.char_position or 0,
+                    end_position=occ.end_position,
+                    source=_format_source_cloze(occ.cloze),
+                    source_type="cloze",
+                    **_get_source_info_cloze(occ.cloze)
+                )
+                for occ in occurrences
+            ]
+        ))
+
+    return items, total
 
 
-def _format_source(passage: ReadingPassage) -> str:
-    """格式化出处信息（用于显示）"""
+def _format_source_reading(passage: ReadingPassage) -> str:
+    """格式化阅读文章出处信息"""
     if not passage or not passage.paper:
         return ""
     parts = []
@@ -291,8 +407,8 @@ def _format_source(passage: ReadingPassage) -> str:
     return " ".join(parts)
 
 
-def _get_source_info(passage: ReadingPassage) -> dict:
-    """获取结构化的出处信息"""
+def _get_source_info_reading(passage: ReadingPassage) -> dict:
+    """获取阅读文章结构化的出处信息"""
     if not passage or not passage.paper:
         return {}
     return {
@@ -301,6 +417,33 @@ def _get_source_info(passage: ReadingPassage) -> dict:
         "grade": passage.paper.grade,
         "exam_type": passage.paper.exam_type,
         "semester": passage.paper.semester,
+    }
+
+
+def _format_source_cloze(cloze: ClozePassage) -> str:
+    """格式化完形文章出处信息"""
+    if not cloze or not cloze.paper:
+        return ""
+    parts = []
+    if cloze.paper.year:
+        parts.append(str(cloze.paper.year))
+    if cloze.paper.region:
+        parts.append(cloze.paper.region)
+    if cloze.paper.grade:
+        parts.append(cloze.paper.grade)
+    return " ".join(parts)
+
+
+def _get_source_info_cloze(cloze: ClozePassage) -> dict:
+    """获取完形文章结构化的出处信息"""
+    if not cloze or not cloze.paper:
+        return {}
+    return {
+        "year": cloze.paper.year,
+        "region": cloze.paper.region,
+        "grade": cloze.paper.grade,
+        "exam_type": cloze.paper.exam_type,
+        "semester": cloze.paper.semester,
     }
 
 
@@ -326,7 +469,7 @@ async def search_vocabulary(
     搜索单词详情
 
     返回单词的出现位置和例句（分页）
-    支持与左侧词汇列表相同的筛选条件
+    支持阅读和完形两种来源
     """
     # 查找单词
     query = select(Vocabulary).where(Vocabulary.word == word.lower())
@@ -335,24 +478,65 @@ async def search_vocabulary(
     if not vocab:
         raise HTTPException(status_code=404, detail="单词不存在")
 
-    # 判断是否有筛选条件
+    # ============================================================================
+    #  查询阅读来源
+    # ============================================================================
+    reading_occurrences = await _search_reading_occurrences(
+        db, vocab.id, grade, topic, year, region, exam_type, semester
+    )
+
+    # ============================================================================
+    #  查询完形来源
+    # ============================================================================
+    cloze_occurrences = await _search_cloze_occurrences(
+        db, vocab.id, grade, topic, year, region, exam_type, semester
+    )
+
+    # ============================================================================
+    #  合并结果
+    # ============================================================================
+    all_occurrences = reading_occurrences + cloze_occurrences
+    total = len(all_occurrences)
+
+    # 分页
+    start = (page - 1) * size
+    end = start + size
+    paginated = all_occurrences[start:end]
+
+    has_more = end < total
+
+    return VocabularySearchResponse(
+        word=vocab.word,
+        definition=vocab.definition,
+        frequency=total,
+        total=total,
+        page=page,
+        size=size,
+        has_more=has_more,
+        occurrences=paginated
+    )
+
+
+async def _search_reading_occurrences(
+    db: AsyncSession,
+    vocab_id: int,
+    grade, topic, year, region, exam_type, semester
+) -> List[VocabularyOccurrence]:
+    """查询阅读来源的出现位置"""
     has_filters = any([grade, topic, year, region, exam_type, semester])
 
-    # 基础查询
     base_query = (
         select(VocabularyPassage)
-        .where(VocabularyPassage.vocabulary_id == vocab.id)
+        .where(VocabularyPassage.vocabulary_id == vocab_id)
     )
 
     if has_filters:
-        # 带筛选：JOIN ReadingPassage 和 ExamPaper
         base_query = (
             base_query
             .join(ReadingPassage, VocabularyPassage.passage_id == ReadingPassage.id)
             .join(ExamPaper, ReadingPassage.paper_id == ExamPaper.id)
         )
 
-        # 应用筛选条件
         conditions = []
         if grade:
             conditions.append(ExamPaper.grade == grade)
@@ -370,44 +554,82 @@ async def search_vocabulary(
         if conditions:
             base_query = base_query.where(and_(*conditions))
 
-    # 统计总数
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total = await db.scalar(count_query) or 0
-
-    # 获取出现位置（包含关联的文章和试卷信息）- 分页
-    occ_query = (
-        base_query
-        .options(selectinload(VocabularyPassage.passage).selectinload(ReadingPassage.paper))
-        .order_by(VocabularyPassage.id)
-        .offset((page - 1) * size)
-        .limit(size)
+    occ_query = base_query.options(
+        selectinload(VocabularyPassage.passage).selectinload(ReadingPassage.paper)
     )
 
     result = await db.execute(occ_query)
     occurrences = result.scalars().all()
 
-    # 计算是否有更多
-    has_more = (page * size) < total
+    return [
+        VocabularyOccurrence(
+            sentence=occ.sentence,
+            passage_id=occ.passage_id,
+            char_position=occ.char_position,
+            end_position=occ.end_position,
+            source=_format_source_reading(occ.passage),
+            source_type="reading",
+            **_get_source_info_reading(occ.passage)
+        )
+        for occ in occurrences
+        if occ.passage  # 过滤掉无效数据
+    ]
 
-    # 计算当前筛选条件下的词频
-    filtered_frequency = total
 
-    return VocabularySearchResponse(
-        word=vocab.word,
-        definition=vocab.definition,
-        frequency=filtered_frequency,  # 使用筛选后的词频
-        total=total,
-        page=page,
-        size=size,
-        has_more=has_more,
-        occurrences=[
-            VocabularyOccurrence(
-                sentence=occ.sentence,
-                passage_id=occ.passage_id,
-                char_position=occ.char_position,
-                end_position=occ.end_position,
-                source=_format_source(occ.passage)
-            )
-            for occ in occurrences
-        ]
+async def _search_cloze_occurrences(
+    db: AsyncSession,
+    vocab_id: int,
+    grade, topic, year, region, exam_type, semester
+) -> List[VocabularyOccurrence]:
+    """查询完形来源的出现位置"""
+    has_filters = any([grade, topic, year, region, exam_type, semester])
+
+    base_query = (
+        select(VocabularyCloze)
+        .where(VocabularyCloze.vocabulary_id == vocab_id)
     )
+
+    if has_filters:
+        base_query = (
+            base_query
+            .join(ClozePassage, VocabularyCloze.cloze_id == ClozePassage.id)
+            .join(ExamPaper, ClozePassage.paper_id == ExamPaper.id)
+        )
+
+        conditions = []
+        if grade:
+            conditions.append(ExamPaper.grade == grade)
+        if topic:
+            conditions.append(ClozePassage.primary_topic == topic)
+        if year:
+            conditions.append(ExamPaper.year == year)
+        if region:
+            conditions.append(ExamPaper.region == region)
+        if exam_type:
+            conditions.append(ExamPaper.exam_type == exam_type)
+        if semester:
+            conditions.append(ExamPaper.semester == semester)
+
+        if conditions:
+            base_query = base_query.where(and_(*conditions))
+
+    occ_query = base_query.options(
+        selectinload(VocabularyCloze.cloze).selectinload(ClozePassage.paper)
+    )
+
+    result = await db.execute(occ_query)
+    occurrences = result.scalars().all()
+
+    return [
+        VocabularyOccurrence(
+            sentence=occ.sentence or "",
+            passage_id=occ.cloze_id,  # 完形用 cloze_id
+            char_position=occ.char_position or 0,
+            end_position=occ.end_position,
+            source=_format_source_cloze(occ.cloze),
+            source_type="cloze",
+            **_get_source_info_cloze(occ.cloze)
+        )
+        for occ in occurrences
+        if occ.cloze  # 过滤掉无效数据
+    ]

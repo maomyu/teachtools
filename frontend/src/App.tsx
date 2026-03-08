@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from '@/components/common/Layout'
 import { HomePage } from '@/pages/HomePage'
-import { ReadingTabsPage } from '@/pages/ReadingTabsPage'
+import { ReadingContent } from '@/pages/ReadingContent'
 import { PassageDetailPage } from '@/pages/PassageDetailPage'
 import { ImportPage } from '@/pages/ImportPage'
+import { VocabularyPage } from '@/pages/VocabularyPage'
+import { ClozePage } from '@/pages/ClozePage'
 
 function App() {
   return (
@@ -12,9 +14,10 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="import" element={<ImportPage />} />
-          <Route path="reading" element={<ReadingTabsPage />} />
+          <Route path="reading" element={<ReadingContent />} />
           <Route path="reading/:id" element={<PassageDetailPage />} />
-          <Route path="vocabulary" element={<Navigate to="/reading" replace />} />
+          <Route path="vocabulary" element={<VocabularyPage />} />
+          <Route path="cloze" element={<ClozePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

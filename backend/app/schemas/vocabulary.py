@@ -19,6 +19,7 @@ class VocabularyFiltersResponse(BaseModel):
     regions: List[str] = []
     exam_types: List[str] = []
     semesters: List[str] = []
+    sources: List[str] = []  # 来源：阅读、完形
 
 
 class VocabularyOccurrence(BaseModel):
@@ -28,6 +29,7 @@ class VocabularyOccurrence(BaseModel):
     char_position: int
     end_position: Optional[int] = None
     source: Optional[str] = None  # 出处信息字符串（用于显示）
+    source_type: Optional[str] = None  # 来源类型：reading/cloze
     year: Optional[int] = None
     region: Optional[str] = None
     grade: Optional[str] = None
@@ -44,6 +46,7 @@ class VocabularyResponse(BaseModel):
     phonetic: Optional[str] = None
     pos: Optional[str] = None
     frequency: int
+    sources: List[str] = []  # 来源列表：阅读、完形
     occurrences: List[VocabularyOccurrence] = []
 
     class Config:

@@ -37,7 +37,7 @@ export interface VocabularyFilters {
 interface VocabularyDetailPanelProps {
   word: Vocabulary
   filters?: VocabularyFilters
-  onViewFullPassage: (passageId: number, charPosition?: number) => void
+  onViewFullPassage: (passageId: number, charPosition?: number, sourceType?: 'reading' | 'cloze') => void
 }
 
 const PAGE_SIZE = 10
@@ -108,7 +108,7 @@ export function VocabularyDetailPanel({
 
   // 点击例句卡片 -> 直接打开抽屉
   const handleOccurrenceClick = (occ: VocabularyOccurrence) => {
-    onViewFullPassage(occ.passage_id, occ.char_position)
+    onViewFullPassage(occ.passage_id, occ.char_position, occ.source_type)
   }
 
   return (
