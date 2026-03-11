@@ -1,13 +1,12 @@
 /**
- * 例句卡片组件（简化版）
+ * 例句卡片组件（紧凑版）
  *
  * [INPUT]: 依赖 VocabularyOccurrence 类型
  * [OUTPUT]: 对外提供 OccurrenceCard 组件
  * [POS]: frontend/src/components/vocabulary 的例句卡片
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { Card, Tag, Typography, Space } from 'antd'
-import { FileTextOutlined } from '@ant-design/icons'
+import { Tag, Typography, Space } from 'antd'
 
 import type { VocabularyOccurrence } from '@/types'
 
@@ -22,51 +21,53 @@ export function OccurrenceCard({
   occurrence,
   onClick,
 }: OccurrenceCardProps) {
+  // 格式化出处信息：年份 + 区县 + 学校 + 年级 + 考试类型
+  // 区县和学校都显示，没有的就空着
+  const sourceParts: string[] = []
+  if (occurrence.year) sourceParts.push(String(occurrence.year))
+  if (occurrence.region) sourceParts.push(occurrence.region)
+  if (occurrence.school) sourceParts.push(occurrence.school)
+  if (occurrence.grade) sourceParts.push(occurrence.grade)
+  if (occurrence.exam_type) sourceParts.push(occurrence.exam_type)
+
   return (
-    <Card
-      size="small"
-      hoverable
+    <div
       onClick={onClick}
       style={{
-        marginBottom: 8,
+        padding: '6px 10px',
+        marginBottom: 4,
         cursor: 'pointer',
         transition: 'all 0.2s ease',
-        borderLeft: '3px solid #1890ff',
+        borderLeft: '2px solid #1890ff',
+        background: '#fafafa',
+        borderRadius: '0 4px 4px 0',
       }}
-      styles={{ body: { padding: '12px 16px' } }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = '#f0f5ff'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = '#fafafa'
+      }}
     >
-      <Space direction="vertical" style={{ width: '100%' }} size="small">
-        {/* 出处标签 */}
-        <Space>
-          <Tag color="green">{occurrence.source || '未知出处'}</Tag>
-          {occurrence.char_position !== undefined && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              位置: {occurrence.char_position}
-            </Text>
-          )}
-        </Space>
+      {/* 出处信息 - 单行紧凑 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+        <Text style={{ fontSize: 11, color: '#666' }}>
+          {sourceParts.join(' ')}
+        </Text>
+      </div>
 
-        {/* 例句内容 */}
-        <Paragraph
-          italic
-          style={{
-            margin: '8px 0 0 0',
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: '#333',
-          }}
-        >
-          "{occurrence.sentence}"
-        </Paragraph>
-
-        {/* 点击提示 */}
-        <Space style={{ marginTop: 4 }}>
-          <FileTextOutlined style={{ fontSize: 12, color: '#1890ff' }} />
-          <Text type="secondary" style={{ fontSize: 12, color: '#1890ff' }}>
-            点击查看原文
-          </Text>
-        </Space>
-      </Space>
-    </Card>
+      {/* 例句内容 */}
+      <Paragraph
+        italic
+        style={{
+          margin: 0,
+          fontSize: 12,
+          lineHeight: 1.4,
+          color: '#333',
+        }}
+      >
+        "{occurrence.sentence}"
+      </Paragraph>
+    </div>
   )
 }

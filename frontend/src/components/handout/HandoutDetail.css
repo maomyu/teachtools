@@ -1,0 +1,367 @@
+/**
+ * A4 讲义文档样式
+ *
+ * 设计原则：
+ * 1. A4 纸张规格：210mm × 297mm
+ * 2. 打印友好的黑白配色
+ * 3. 合理的页边距和排版
+ * 4. 内容自动分页，不截断
+ */
+
+/* ============================================================================
+ *  容器样式
+ * ============================================================================ */
+
+.handout-container {
+  background: #f0f0f0;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+/* ============================================================================
+ *  A4 页面基础样式
+ * ============================================================================ */
+
+.handout-page {
+  width: 210mm;
+  /* 严格限制 A4 尺寸 */
+  height: 297mm;
+  min-height: 297mm;
+  max-height: 297mm;
+  /* 页边距：上25mm 右20mm 下25mm 左20mm */
+  padding: 25mm 20mm;
+  margin: 0 auto 20px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  page-break-after: always;
+  position: relative;
+  /* 内容超出时隐藏，强制在 React 层面分页 */
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* ============================================================================
+ *  操作栏（屏幕显示，打印隐藏）
+ * ============================================================================ */
+
+.handout-toolbar {
+  max-width: 210mm;
+  margin: 0 auto 16px;
+  padding: 12px 20mm;
+  background: white;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.no-print {
+  /* 打印时隐藏 */
+}
+
+/* ============================================================================
+ *  封面页样式
+ * ============================================================================ */
+
+.cover-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cover-content {
+  text-align: center;
+  width: 100%;
+}
+
+.cover-content h1 {
+  font-size: 32pt !important;
+  margin-bottom: 24px !important;
+}
+
+.cover-content h2 {
+  font-size: 24pt !important;
+  font-weight: normal !important;
+}
+
+/* ============================================================================
+ *  目录页样式
+ * ============================================================================ */
+
+.toc-page {
+  /* 目录页使用默认样式 */
+}
+
+.toc-list {
+  margin-top: 32px;
+}
+
+.toc-item {
+  padding: 16px 0;
+  border-bottom: 1px dashed #d9d9d9;
+  display: flex;
+  align-items: baseline;
+}
+
+.toc-item:last-child {
+  border-bottom: none;
+}
+
+/* ============================================================================
+ *  主题标题页样式
+ * ============================================================================ */
+
+.topic-title-page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.topic-title-page h2 {
+  font-size: 24pt !important;
+  margin-bottom: 16px !important;
+}
+
+/* ============================================================================
+ *  表格样式
+ * ============================================================================ */
+
+.handout-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11pt;
+}
+
+.handout-table th,
+.handout-table td {
+  border: 1px solid #333;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.handout-table th {
+  background: #f5f5f5;
+  font-weight: bold;
+  text-align: center;
+}
+
+.handout-table tr:nth-child(even) {
+  background: #fafafa;
+}
+
+/* 词汇表格 */
+.vocabulary-table td:nth-child(2) {
+  font-weight: bold;
+}
+
+/* ============================================================================
+ *  文章内容样式
+ * ============================================================================ */
+
+.passage-content {
+  font-size: 12pt;
+  line-height: 1.8;
+}
+
+.passage-header {
+  margin-bottom: 16px;
+}
+
+.passage-body {
+  margin-bottom: 24px;
+}
+
+.passage-body p {
+  text-indent: 2em;
+  line-height: 2;
+  margin-bottom: 16px;
+}
+
+/* ============================================================================
+ *  题目样式
+ * ============================================================================ */
+
+.questions-section {
+  margin-top: 24px;
+}
+
+.question-item {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px dotted #e8e8e8;
+}
+
+.question-item:last-child {
+  border-bottom: none;
+}
+
+.options {
+  padding-left: 24px;
+  line-height: 2;
+}
+
+.answer-section {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  border-left: 3px solid #1890ff;
+}
+
+/* ============================================================================
+ *  分页控制
+ * ============================================================================ */
+
+/* 避免表格内部分页 */
+.handout-table {
+  page-break-inside: avoid;
+}
+
+/* 避免题目内部分页 */
+.question-item {
+  page-break-inside: avoid;
+}
+
+/* 文章内容后强制分页 */
+.passage-page {
+  page-break-after: always;
+}
+
+/* ============================================================================
+ *  打印样式 - 保持与屏幕显示完全一致
+ * ============================================================================ */
+
+/* 设置 A4 页面尺寸 */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  /* 隐藏操作栏 */
+  .no-print,
+  .handout-toolbar {
+    display: none !important;
+  }
+
+  /* 重置容器样式 */
+  .handout-container {
+    background: white;
+    padding: 0;
+    min-height: auto;
+  }
+
+  /* 页面样式 - 与屏幕显示完全一致 */
+  .handout-page {
+    box-shadow: none;
+    margin: 0;
+    padding: 25mm 20mm !important;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    page-break-after: always;
+    page-break-inside: avoid;
+  }
+
+  /* 最后一页不分页 */
+  .handout-page:last-child {
+    page-break-after: auto;
+  }
+
+  /* 保持字体大小与屏幕一致 */
+  body {
+    font-size: 12pt !important;
+  }
+
+  .passage-content {
+    font-size: 12pt !important;
+    line-height: 1.8 !important;
+  }
+
+  .passage-body p {
+    text-indent: 2em !important;
+    line-height: 2 !important;
+    margin-bottom: 16px !important;
+  }
+
+  .handout-table {
+    font-size: 11pt !important;
+  }
+
+  /* 表格边框打印优化 */
+  .handout-table th,
+  .handout-table td {
+    border: 1px solid #000;
+  }
+
+  /* 链接不显示 URL */
+  a[href]:after {
+    content: none !important;
+  }
+
+  /* 确保背景色和字体打印 */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* 隐藏 antd 图标 */
+  .anticon {
+    display: none !important;
+  }
+
+  /* 答案区域打印样式 */
+  .answer-section {
+    background: #f0f0f0 !important;
+    border-left: 3px solid #333 !important;
+  }
+
+  .answer-section span {
+    color: #333 !important;
+  }
+
+  /* 标题样式保持一致 */
+  .cover-content h1 {
+    font-size: 32pt !important;
+  }
+
+  .cover-content h2 {
+    font-size: 24pt !important;
+  }
+
+  h2 {
+    font-size: 24pt !important;
+  }
+
+  h3 {
+    font-size: 16pt !important;
+  }
+
+  h4 {
+    font-size: 14pt !important;
+  }
+}
+
+/* ============================================================================
+ *  屏幕阅读优化（可选）
+ * ============================================================================ */
+
+@media screen and (max-width: 900px) {
+  .handout-page {
+    width: 100%;
+    min-height: auto;
+    padding: 20px;
+  }
+
+  .handout-container {
+    padding: 10px;
+  }
+
+  .handout-toolbar {
+    max-width: 100%;
+    padding: 12px 16px;
+  }
+}

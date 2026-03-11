@@ -400,8 +400,11 @@ def _format_source_reading(passage: ReadingPassage) -> str:
     parts = []
     if passage.paper.year:
         parts.append(str(passage.paper.year))
+    # 同时显示区县和学校（如果都有）
     if passage.paper.region:
         parts.append(passage.paper.region)
+    if passage.paper.school:
+        parts.append(passage.paper.school)
     if passage.paper.grade:
         parts.append(passage.paper.grade)
     return " ".join(parts)
@@ -414,6 +417,7 @@ def _get_source_info_reading(passage: ReadingPassage) -> dict:
     return {
         "year": passage.paper.year,
         "region": passage.paper.region,
+        "school": passage.paper.school,
         "grade": passage.paper.grade,
         "exam_type": passage.paper.exam_type,
         "semester": passage.paper.semester,
@@ -427,8 +431,11 @@ def _format_source_cloze(cloze: ClozePassage) -> str:
     parts = []
     if cloze.paper.year:
         parts.append(str(cloze.paper.year))
+    # 同时显示区县和学校（如果都有）
     if cloze.paper.region:
         parts.append(cloze.paper.region)
+    if cloze.paper.school:
+        parts.append(cloze.paper.school)
     if cloze.paper.grade:
         parts.append(cloze.paper.grade)
     return " ".join(parts)
@@ -441,6 +448,7 @@ def _get_source_info_cloze(cloze: ClozePassage) -> dict:
     return {
         "year": cloze.paper.year,
         "region": cloze.paper.region,
+        "school": cloze.paper.school,
         "grade": cloze.paper.grade,
         "exam_type": cloze.paper.exam_type,
         "semester": cloze.paper.semester,

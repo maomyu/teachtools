@@ -8,7 +8,6 @@
  */
 import { useState, useEffect } from 'react'
 import {
-  Card,
   Tag,
   Typography,
   Spin,
@@ -16,7 +15,6 @@ import {
   Space,
   Button,
 } from 'antd'
-import { BookOutlined } from '@ant-design/icons'
 
 import { searchVocabulary } from '@/services/vocabularyService'
 import type { Vocabulary, VocabularyOccurrence } from '@/types'
@@ -112,67 +110,62 @@ export function VocabularyDetailPanel({
   }
 
   return (
-    <div style={{ padding: '0 16px' }}>
-      {/* 词汇基本信息卡片 */}
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Space>
-            <BookOutlined style={{ color: '#1890ff' }} />
-            <Text strong style={{ fontSize: 20 }}>{word.word}</Text>
-            <Tag color="blue" style={{ marginLeft: 8 }}>
-              词频: {total} 次
-            </Tag>
-          </Space>
-          <div>
-            <Text type="secondary">释义</Text>
-            <Paragraph style={{ margin: '8px 0', fontSize: 15 }}>
-              {word.definition || '暂无释义'}
-            </Paragraph>
-          </div>
-        </Space>
-      </Card>
+    <div style={{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '12px 8px',
+    }}>
+      {/* 词汇基本信息 - 紧凑布局 */}
+      <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          <Text strong style={{ fontSize: 16 }}>{word.word}</Text>
+          <Tag color="blue" style={{ fontSize: 11 }}>词频: {total}</Tag>
+        </div>
+        <Text type="secondary" style={{ fontSize: 12 }}>{word.definition || '暂无释义'}</Text>
+      </div>
 
       {/* 例句列表标题 */}
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Text strong>出现位置</Text>
-          <Tag color="green" style={{ marginLeft: 8 }}>{total} 处</Tag>
-        </div>
+      <div style={{ marginBottom: 6, marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <Text strong style={{ fontSize: 13 }}>出现位置 <Tag color="green" style={{ fontSize: 10, marginLeft: 4 }}>{total} 处</Tag></Text>
         {hasMore && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            已加载 {occurrences.length} / {total} 条
+          <Text type="secondary" style={{ fontSize: 10 }}>
+            {occurrences.length}/{total}
           </Text>
         )}
       </div>
 
-      {/* 例句列表 */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>
-          <Spin />
-        </div>
-      ) : occurrences.length === 0 ? (
-        <Empty description="暂无例句" />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {occurrences.map((occ) => (
-            <OccurrenceCard
-              key={`${occ.passage_id}-${occ.char_position}`}
-              occurrence={occ}
-              onClick={() => handleOccurrenceClick(occ)}
-            />
-          ))}
-        </div>
-      )}
+      {/* 例句列表 - 填充剩余空间 */}
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}>
+            <Spin size="small" />
+          </div>
+        ) : occurrences.length === 0 ? (
+          <Empty description="暂无例句" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {occurrences.map((occ) => (
+              <OccurrenceCard
+                key={`${occ.passage_id}-${occ.char_position}`}
+                occurrence={occ}
+                onClick={() => handleOccurrenceClick(occ)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* 加载更多按钮 */}
+      {/* 加载更多按钮 - 固定在底部 */}
       {hasMore && (
-        <div style={{ textAlign: 'center', padding: 16 }}>
+        <div style={{ textAlign: 'center', marginTop: 12, flexShrink: 0 }}>
           <Button
-            type="primary"
+            type="link"
+            size="small"
             loading={loadingMore}
             onClick={handleLoadMore}
           >
-            {loadingMore ? '加载中...' : '加载更多'}
+            {loadingMore ? '加载中...' : '加载更多...'}
           </Button>
         </div>
       )}

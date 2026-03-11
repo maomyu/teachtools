@@ -177,6 +177,26 @@ export function ClozeDetailContent({
     setCurrentHighlightIndex(0)
   }, [])
 
+  // 切换到上一个高亮位置
+  const handlePrevOccurrence = useCallback(() => {
+    if (highlightPositions.length === 0) return
+
+    const prevIndex = currentHighlightIndex === 0
+      ? highlightPositions.length - 1
+      : currentHighlightIndex - 1
+    setCurrentHighlightIndex(prevIndex)
+    scrollToPosition(highlightPositions[prevIndex].char_position)
+  }, [currentHighlightIndex, highlightPositions, scrollToPosition])
+
+  // 切换到下一个高亮位置
+  const handleNextOccurrence = useCallback(() => {
+    if (highlightPositions.length === 0) return
+
+    const nextIndex = (currentHighlightIndex + 1) % highlightPositions.length
+    setCurrentHighlightIndex(nextIndex)
+    scrollToPosition(highlightPositions[nextIndex].char_position)
+  }, [currentHighlightIndex, highlightPositions, scrollToPosition])
+
   // 初始高亮：数据加载完成后触发（确保 renderedTextInfo 已计算）
   useEffect(() => {
     if (!loading && cloze && initialHighlightWord && renderedTextInfo.text) {
@@ -436,21 +456,26 @@ export function ClozeDetailContent({
   const currentPoint = cloze.points?.find(p => p.blank_number === selectedBlank)
 
   return (
-    <div>
+    <div style={{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
       {/* 返回按钮 */}
       {showBackButton && onBack && (
         <Button
           type="text"
           icon={<ArrowLeftOutlined />}
           onClick={onBack}
-          style={{ marginBottom: 16 }}
+          size="small"
+          style={{ marginBottom: 8, flexShrink: 0 }}
         >
           返回列表
         </Button>
       )}
 
       {/* 文章信息 */}
-      <Card size="small" style={{ marginBottom: 16 }}>
+      <Card size="small" style={{ marginBottom: 8, flexShrink: 0 }}>
         <Descriptions column={3} size="small">
           <Descriptions.Item label="出处">
             {cloze.source?.year}年 {cloze.source?.region} {cloze.source?.grade}
@@ -459,23 +484,23 @@ export function ClozeDetailContent({
           <Descriptions.Item label="空格数">{cloze.points?.length || 0}</Descriptions.Item>
           <Descriptions.Item label="主话题">
             {cloze.primary_topic ? (
-              <Tag color="blue">{cloze.primary_topic}</Tag>
+              <Tag color="blue" style={{ fontSize: 11 }}>{cloze.primary_topic}</Tag>
             ) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="次话题">
             {cloze.secondary_topics?.map(t => (
-              <Tag key={t}>{t}</Tag>
+              <Tag key={t} style={{ fontSize: 11 }}>{t}</Tag>
             )) || '-'}
           </Descriptions.Item>
         </Descriptions>
 
         {/* 考点分布 */}
         {Object.keys(cloze.point_distribution || {}).length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <Text type="secondary">考点分布：</Text>
+          <div style={{ marginTop: 6 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>考点分布：</Text>
             <Space size={4} style={{ marginLeft: 8 }}>
               {Object.entries(cloze.point_distribution).map(([type, count]) => (
-                <Tag key={type} color={POINT_TYPE_COLORS[type] || 'default'}>
+                <Tag key={type} color={POINT_TYPE_COLORS[type] || 'default'} style={{ fontSize: 11 }}>
                   {type} ({count})
                 </Tag>
               ))}
@@ -484,14 +509,15 @@ export function ClozeDetailContent({
         )}
       </Card>
 
-      {/* 完形原文（支持高亮） */}
+      {/* 完形原文（支持高亮）- 填充剩余空间 */}
       <Card
+        style={{ marginBottom: 8, flex: 1, overflow: 'auto', minHeight: 0 }}
         title={
           <Space>
-            <Text strong>完形原文</Text>
+            <Text strong style={{ fontSize: 13 }}>完形原文</Text>
             {highlightedWord && (
               <>
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>
                   "{highlightedWord}"
                 </Text>
                 <Button size="small" onClick={handleClearHighlight}>
@@ -502,18 +528,18 @@ export function ClozeDetailContent({
           </Space>
         }
         size="small"
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 8 }}
       >
-        <div ref={contentRef}>
+        <div ref={contentRef} style={{ fontSize: 13, lineHeight: 1.7 }}>
           {renderContent()}
         </div>
       </Card>
 
       {/* 空格选择器（不显示答案） */}
       <Card
-        title={<Text strong>空格选择</Text>}
+        title={<Text strong style={{ fontSize: 13 }}>空格选择</Text>}
         size="small"
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 8, flexShrink: 0 }}
       >
         <Radio.Group
           value={selectedBlank}
@@ -539,20 +565,21 @@ export function ClozeDetailContent({
         <Card
           title={
             <Space>
-              <Text strong>第 {currentPoint.blank_number} 空考点分析</Text>
+              <Text strong style={{ fontSize: 13 }}>第 {currentPoint.blank_number} 空考点分析</Text>
               {currentPoint.point_type && (
-                <Tag color={POINT_TYPE_COLORS[currentPoint.point_type] || 'default'}>
+                <Tag color={POINT_TYPE_COLORS[currentPoint.point_type] || 'default'} style={{ fontSize: 10 }}>
                   {currentPoint.point_type}
                 </Tag>
               )}
             </Space>
           }
           size="small"
+          style={{ marginBottom: 8, flexShrink: 0 }}
         >
           {/* 选项（默认不标记正确答案） */}
-          <div style={{ marginBottom: 16 }}>
-            <Text type="secondary">选项：</Text>
-            <Space wrap style={{ marginTop: 8 }}>
+          <div style={{ marginBottom: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>选项：</Text>
+            <Space wrap size="small" style={{ marginTop: 4 }}>
               {['A', 'B', 'C', 'D'].map(opt => {
                 const optionValue = currentPoint.options?.[opt as keyof typeof currentPoint.options]
                 const isCorrect = currentPoint.correct_answer === opt
@@ -561,8 +588,8 @@ export function ClozeDetailContent({
                     key={opt}
                     color={showAnswer && isCorrect ? 'success' : 'default'}
                     style={{
-                      fontSize: 14,
-                      padding: '4px 12px',
+                      fontSize: 12,
+                      padding: '2px 8px',
                       border: showAnswer && isCorrect ? '2px solid #52c41a' : undefined,
                     }}
                   >
@@ -579,7 +606,7 @@ export function ClozeDetailContent({
             type="link"
             icon={showAnswer ? <EyeInvisibleOutlined /> : <EyeOutlined />}
             onClick={() => setShowAnswer(!showAnswer)}
-            style={{ padding: 0, marginBottom: 12 }}
+            style={{ padding: 0, marginBottom: 8, fontSize: 12 }}
           >
             {showAnswer ? '隐藏答案' : '显示答案'}
           </Button>
@@ -587,17 +614,17 @@ export function ClozeDetailContent({
           {/* 答案解析区域（点击后显示） */}
           {showAnswer && (
             <div style={{
-              padding: 12,
+              padding: 8,
               background: '#f6ffed',
               borderLeft: '3px solid #52c41a',
               borderRadius: 4,
-              marginBottom: 12
+              marginBottom: 8
             }}>
               {/* 正确答案 */}
               {currentPoint.correct_word && (
-                <div style={{ marginBottom: 8 }}>
-                  <Text strong type="success">正确答案：</Text>
-                  <Tag color="success" style={{ fontSize: 13, marginLeft: 8 }}>
+                <div style={{ marginBottom: 4 }}>
+                  <Text strong type="success" style={{ fontSize: 12 }}>正确答案：</Text>
+                  <Tag color="success" style={{ fontSize: 11, marginLeft: 4 }}>
                     {currentPoint.correct_answer}. {currentPoint.correct_word}
                   </Tag>
                 </div>
@@ -605,17 +632,17 @@ export function ClozeDetailContent({
 
               {/* 词义 */}
               {currentPoint.translation && (
-                <div style={{ marginBottom: 8 }}>
-                  <Text strong>词义：</Text>
-                  <Text>{currentPoint.translation}</Text>
+                <div style={{ marginBottom: 4 }}>
+                  <Text strong style={{ fontSize: 12 }}>词义：</Text>
+                  <Text style={{ fontSize: 12 }}>{currentPoint.translation}</Text>
                 </div>
               )}
 
               {/* 解析 */}
               {currentPoint.explanation && (
                 <div>
-                  <Text strong>解析：</Text>
-                  <Text type="secondary">{currentPoint.explanation}</Text>
+                  <Text strong style={{ fontSize: 12 }}>解析：</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{currentPoint.explanation}</Text>
                 </div>
               )}
             </div>
@@ -623,16 +650,16 @@ export function ClozeDetailContent({
 
           {/* 易混淆词 */}
           {currentPoint.confusion_words && currentPoint.confusion_words.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <Text type="secondary">易混淆词：</Text>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>易混淆词：</Text>
               <List
                 size="small"
                 dataSource={currentPoint.confusion_words}
                 renderItem={(item) => (
-                  <List.Item style={{ padding: '8px 0' }}>
+                  <List.Item style={{ padding: '4px 0' }}>
                     <Space direction="vertical" size={0}>
-                      <Text strong>{item.word}</Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Text strong style={{ fontSize: 12 }}>{item.word}</Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
                         {item.meaning} — {item.reason}
                       </Text>
                     </Space>
@@ -649,22 +676,22 @@ export function ClozeDetailContent({
         <Card
           title={
             <Space>
-              <Text strong>核心词汇 ({cloze.vocabulary.length})</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text strong style={{ fontSize: 13 }}>核心词汇 ({cloze.vocabulary.length})</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>
                 点击词汇可在原文中高亮显示
               </Text>
             </Space>
           }
           size="small"
-          style={{ marginTop: 16 }}
+          style={{ marginTop: 8, flexShrink: 0 }}
         >
           <List
             size="small"
-            dataSource={cloze.vocabulary}
+            dataSource={[...cloze.vocabulary].sort((a, b) => b.frequency - a.frequency)}
             renderItem={(vocab) => (
               <List.Item
                 style={{
-                  padding: '8px 0',
+                  padding: '4px 0',
                   cursor: 'pointer',
                   background: highlightedWord === vocab.word ? '#e6f7ff' : undefined,
                   borderRadius: 4,
@@ -673,17 +700,52 @@ export function ClozeDetailContent({
               >
                 <div style={{ width: '100%' }}>
                   <Space>
-                    <Text strong style={{ fontSize: 14 }}>{vocab.word}</Text>
+                    <Text strong style={{ fontSize: 13 }}>{vocab.word}</Text>
                     {vocab.definition && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>{vocab.definition}</Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>{vocab.definition}</Text>
                     )}
-                    <Tag style={{ fontSize: 11 }}>{vocab.frequency}次</Tag>
+                    <Tag style={{ fontSize: 10 }}>{vocab.frequency}次</Tag>
                   </Space>
                 </div>
               </List.Item>
             )}
           />
         </Card>
+      )}
+
+      {/* 粘性定位的导航栏 */}
+      {highlightedWord && highlightPositions.length > 0 && (
+        <div
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            background: '#fff',
+            padding: '8px 12px',
+            borderTop: '1px solid #f0f0f0',
+            boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.15)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            zIndex: 100,
+            flexShrink: 0,
+            marginTop: 8,
+          }}
+        >
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            "<Text strong>{highlightedWord}</Text>" - 第 {currentHighlightIndex + 1}/{highlightPositions.length} 处
+          </Text>
+          <Space size="small">
+            <Button size="small" onClick={handlePrevOccurrence}>
+              上一处
+            </Button>
+            <Button size="small" type="primary" onClick={handleNextOccurrence}>
+              下一处
+            </Button>
+            <Button size="small" onClick={handleClearHighlight}>
+              清除
+            </Button>
+          </Space>
+        </div>
       )}
     </div>
   )

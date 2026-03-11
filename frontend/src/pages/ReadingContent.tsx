@@ -19,17 +19,22 @@ import {
   Popconfirm,
   Tabs,
   Badge,
+  Radio,
 } from 'antd'
-import { SearchOutlined, DeleteOutlined } from '@ant-design/icons'
+import { SearchOutlined, DeleteOutlined, UnorderedListOutlined, BookOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import { getPassages, deletePassage, getPassageFilters } from '@/services/readingService'
 import type { Passage, PassageFilter, PassageFiltersResponse } from '@/types'
 import { PassageDetailContent } from '@/components/vocabulary/PassageDetailContent'
+import { HandoutView } from '@/components/handout/HandoutView'
 
 const { Search } = Input
 
 export function ReadingContent() {
+  // 视图模式：列表视图 / 讲义视图
+  const [viewMode, setViewMode] = useState<'list' | 'handout'>('list')
+
   const [loading, setLoading] = useState(false)
   const [passages, setPassages] = useState<Passage[]>([])
   const [total, setTotal] = useState(0)
@@ -171,6 +176,19 @@ export function ReadingContent() {
       ),
     },
     {
+      title: '年级',
+      key: 'grade',
+      width: 80,
+      render: (_, record) => record.source?.grade || '-',
+    },
+    {
+      title: '主题',
+      dataIndex: 'primary_topic',
+      key: 'primary_topic',
+      width: 100,
+      render: (topic: string) => topic || '-',
+    },
+    {
       title: '年份',
       key: 'year',
       width: 80,
@@ -184,18 +202,33 @@ export function ReadingContent() {
       render: (_, record) => record.source?.region || '-',
     },
     {
-      title: '话题',
-      dataIndex: 'primary_topic',
-      key: 'primary_topic',
+      title: '学校',
+      key: 'school',
       width: 100,
-      render: (topic: string) => topic || '-',
+      render: (_, record) => record.source?.school || '-',
+    },
+    {
+      title: '考试类型',
+      key: 'exam_type',
+      width: 90,
+      render: (_, record) => record.source?.exam_type || '-',
+    },
+    {
+      title: '学期',
+      key: 'semester',
+      width: 70,
+      render: (_, record) => {
+        const s = record.source?.semester
+        if (!s) return '-'
+        return s === '上' ? '上学期' : s === '下' ? '下学期' : s
+      },
     },
     {
       title: '内容预览',
       dataIndex: 'content',
       key: 'content',
       ellipsis: true,
-      render: (content: string) => content.slice(0, 100) + '...',
+      render: (content: string) => content.slice(0, 80) + '...',
     },
     {
       title: '操作',
@@ -228,73 +261,105 @@ export function ReadingContent() {
     },
   ]
 
+  // 视图切换处理
+  const handleViewModeChange = (mode: 'list' | 'handout') => {
+    setViewMode(mode)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* C/D 篇 Tab 切换 */}
-      <Tabs
-        activeKey={passageType || 'all'}
-        onChange={handleTabChange}
-        items={tabItems}
-        style={{ marginBottom: 8 }}
-      />
+      {/* 顶部工具栏：视图切换 + C/D 篇 Tab */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        {/* C/D 篇 Tab 切换 */}
+        <Tabs
+          activeKey={passageType || 'all'}
+          onChange={handleTabChange}
+          items={tabItems}
+          style={{ marginBottom: 0 }}
+        />
 
-      <Card size="small" style={{ marginBottom: 12 }}>
-        <Space wrap>
-          <Select
-            placeholder="选择年级"
-            allowClear
-            style={{ width: 100 }}
-            value={filter.grade}
-            onChange={(value) => setFilter({ ...filter, grade: value, page: 1 })}
-            options={filterOptions.grades.map(g => ({ value: g, label: g }))}
-          />
-          <Select
-            placeholder="选择区县"
-            allowClear
-            style={{ width: 100 }}
-            value={filter.region}
-            onChange={(value) => setFilter({ ...filter, region: value, page: 1 })}
-            options={filterOptions.regions.map(r => ({ value: r, label: r }))}
-          />
-          <Select
-            placeholder="选择年份"
-            allowClear
-            style={{ width: 100 }}
-            value={filter.year}
-            onChange={(value) => setFilter({ ...filter, year: value, page: 1 })}
-            options={filterOptions.years.map(y => ({ value: y, label: `${y}` }))}
-          />
-          <Select
-            placeholder="考试类型"
-            allowClear
-            style={{ width: 100 }}
-            value={filter.exam_type}
-            onChange={(value) => setFilter({ ...filter, exam_type: value, page: 1 })}
-            options={filterOptions.exam_types.map(e => ({ value: e, label: e }))}
-          />
-          <Select
-            placeholder="选择话题"
-            allowClear
-            showSearch
-            style={{ width: 140 }}
-            value={filter.topic}
-            onChange={(value) => setFilter({ ...filter, topic: value, page: 1 })}
-            options={filterOptions.topics.map(t => ({ value: t, label: t }))}
-            filterOption={(input, option) =>
-              (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-            }
-          />
-          <Search
-            placeholder="搜索文章内容..."
-            allowClear
-            style={{ width: 250 }}
-            onSearch={handleSearch}
-            enterButton={<SearchOutlined />}
-          />
-        </Space>
-      </Card>
+        {/* 视图切换器 */}
+        <Radio.Group
+          value={viewMode}
+          onChange={(e) => handleViewModeChange(e.target.value)}
+          buttonStyle="solid"
+          size="small"
+        >
+          <Radio.Button value="list">
+            <Space size={4}>
+              <UnorderedListOutlined />
+              列表视图
+            </Space>
+          </Radio.Button>
+          <Radio.Button value="handout">
+            <Space size={4}>
+              <BookOutlined />
+              讲义视图
+            </Space>
+          </Radio.Button>
+        </Radio.Group>
+      </div>
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      {/* 根据视图模式显示不同内容 */}
+      {viewMode === 'list' ? (
+        <>
+          <Card size="small" style={{ marginBottom: 12 }}>
+            <Space wrap>
+              <Select
+                placeholder="选择年级"
+                allowClear
+                style={{ width: 100 }}
+                value={filter.grade}
+                onChange={(value) => setFilter({ ...filter, grade: value, page: 1 })}
+                options={filterOptions.grades.map(g => ({ value: g, label: g }))}
+              />
+              <Select
+                placeholder="选择区县"
+                allowClear
+                style={{ width: 100 }}
+                value={filter.region}
+                onChange={(value) => setFilter({ ...filter, region: value, page: 1 })}
+                options={filterOptions.regions.map(r => ({ value: r, label: r }))}
+              />
+              <Select
+                placeholder="选择年份"
+                allowClear
+                style={{ width: 100 }}
+                value={filter.year}
+                onChange={(value) => setFilter({ ...filter, year: value, page: 1 })}
+                options={filterOptions.years.map(y => ({ value: y, label: `${y}` }))}
+              />
+              <Select
+                placeholder="考试类型"
+                allowClear
+                style={{ width: 100 }}
+                value={filter.exam_type}
+                onChange={(value) => setFilter({ ...filter, exam_type: value, page: 1 })}
+                options={filterOptions.exam_types.map(e => ({ value: e, label: e }))}
+              />
+              <Select
+                placeholder="选择话题"
+                allowClear
+                showSearch
+                style={{ width: 140 }}
+                value={filter.topic}
+                onChange={(value) => setFilter({ ...filter, topic: value, page: 1 })}
+                options={filterOptions.topics.map(t => ({ value: t, label: t }))}
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+              />
+              <Search
+                placeholder="搜索文章内容..."
+                allowClear
+                style={{ width: 250 }}
+                onSearch={handleSearch}
+                enterButton={<SearchOutlined />}
+              />
+            </Space>
+          </Card>
+
+          <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {/* 左侧: 文章表格 */}
         <div style={{ flex: 1, minWidth: 0, paddingRight: drawerOpen ? 16 : 0, transition: 'padding-right 0.3s ease-in-out' }}>
           <Table
@@ -340,8 +405,13 @@ export function ReadingContent() {
               />
             </div>
           </div>
-        )}
-      </div>
+          )}
+        </div>
+        </>
+      ) : (
+        // 讲义视图（真实组件）
+        <HandoutView />
+      )}
 
       {/* CSS 动画 */}
       <style>{`

@@ -95,10 +95,11 @@ export interface VocabularyOccurrence {
   passage_id: number
   char_position: number
   end_position?: number
-  source?: string  // 出处信息（年份 区县 年级）用于显示
+  source?: string  // 出处信息（年份 区县/学校 年级）用于显示
   source_type?: 'reading' | 'cloze'  // 来源类型
   year?: number
   region?: string
+  school?: string  // 学校名（如果有）
   grade?: string
   exam_type?: string
   semester?: string
@@ -326,4 +327,90 @@ export interface ClozeFiltersResponse {
   exam_types: string[]
   point_types: string[]
   semesters: string[]
+}
+
+// ============================================================================
+//  讲义类型
+// ============================================================================
+
+// 讲义主题统计
+export interface TopicStats {
+  topic: string
+  passage_count: number
+  recent_years: number[]
+}
+
+// 讲义主题列表响应
+export interface TopicStatsResponse {
+  topics: TopicStats[]
+}
+
+// 文章来源（按试卷分组）
+export interface ArticleSource {
+  year: number
+  region: string
+  exam_type: string
+  semester?: string
+  passages: Array<{
+    type: string
+    id: number
+    title?: string
+  }>
+}
+
+// 讲义词汇（简化版，无 occurrences）
+export interface HandoutVocabulary {
+  id: number
+  word: string
+  definition?: string
+  phonetic?: string
+  frequency: number
+  source_type: 'both' | 'reading' | 'cloze'  // 词汇来源
+}
+
+// 讲义文章题目
+export interface HandoutQuestion {
+  number?: number
+  text?: string
+  options: QuestionOptions
+  correct_answer?: string
+  explanation?: string
+}
+
+// 讲义文章
+export interface HandoutPassage {
+  id: number
+  type: string
+  title?: string
+  content: string
+  word_count?: number
+  source?: SourceInfo
+  vocabulary: VocabularyInPassage[]
+  questions: HandoutQuestion[]
+}
+
+// 讲义详情响应
+export interface HandoutDetailResponse {
+  topic: string
+  grade: string
+  edition: 'teacher' | 'student'
+  part1_article_sources: ArticleSource[]
+  part2_vocabulary: HandoutVocabulary[]
+  part3_passages: HandoutPassage[]
+}
+
+// 主题内容（年级讲义中的单个主题）
+export interface TopicContent {
+  topic: string
+  part1_article_sources: ArticleSource[]
+  part2_vocabulary: HandoutVocabulary[]
+  part3_passages: HandoutPassage[]
+}
+
+// 年级讲义响应（包含所有主题）
+export interface GradeHandoutResponse {
+  grade: string
+  edition: 'teacher' | 'student'
+  topics: TopicStats[]
+  content: TopicContent[]
 }

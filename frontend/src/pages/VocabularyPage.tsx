@@ -6,7 +6,7 @@
  * [POS]: frontend/src/pages 的高频词库页面，支持多维筛选
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Card,
   Table,
@@ -20,7 +20,6 @@ import {
   InputNumber,
   Row,
   Col,
-  Statistic,
   Empty,
 } from 'antd'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -72,6 +71,10 @@ export function VocabularyPage() {
 
   // 抽屉状态
   const [passageDrawerOpen, setPassageDrawerOpen] = useState(false)
+
+  // 响应式面板宽度状态
+  const [panelWidth, setPanelWidth] = useState(480)
+  const [drawerWidth, setDrawerWidth] = useState(520)
   const [viewingPassageId, setViewingPassageId] = useState<number | null>(null)
   const [viewingCharPosition, setViewingCharPosition] = useState<number | undefined>(undefined)
   const [viewingSourceType, setViewingSourceType] = useState<'reading' | 'cloze' | null>(null)
@@ -87,6 +90,28 @@ export function VocabularyPage() {
   useEffect(() => {
     loadVocabulary()
   }, [grade, topic, year, region, examType, semester, minFrequency, searchWord, source, page, size])
+
+  // 响应式面板宽度计算 - 优化：减小面板宽度，让表格获得更多空间
+  useEffect(() => {
+    const calculatePanelWidths = () => {
+      const containerWidth = window.innerWidth
+      // 小屏幕下更紧凑
+      if (containerWidth < 1200) {
+        setPanelWidth(340)
+        setDrawerWidth(380)
+      } else if (containerWidth < 1400) {
+        setPanelWidth(360)
+        setDrawerWidth(400)
+      } else {
+        setPanelWidth(400)
+        setDrawerWidth(450)
+      }
+    }
+
+    calculatePanelWidths()
+    window.addEventListener('resize', calculatePanelWidths)
+    return () => window.removeEventListener('resize', calculatePanelWidths)
+  }, [])
 
   const loadFilters = async () => {
     try {
@@ -142,7 +167,7 @@ export function VocabularyPage() {
     setPage(1)
   }
 
-  // 查看完整文章（打开抽屉）
+  // 查看完整文章(打开抽屉) - 词汇详情面板会自动向左偏移
   const handleViewFullPassage = useCallback((passageId: number, charPosition?: number, sourceType?: 'reading' | 'cloze') => {
     setViewingPassageId(passageId)
     setViewingCharPosition(charPosition)
@@ -150,9 +175,10 @@ export function VocabularyPage() {
     setPassageDrawerOpen(true)
   }, [])
 
-  // 关闭抽屉
+  // 关闭抽屉 - 同时关闭词汇详情面板
   const handleClosePassageDrawer = useCallback(() => {
     setPassageDrawerOpen(false)
+    setPanelOpen(false)
   }, [])
 
   // ============================================================================
@@ -304,6 +330,19 @@ export function VocabularyPage() {
     },
   ]
 
+  // 次要列 - 当面板/抽屉打开时自动隐藏
+  // 保留: word(单词), frequency(词频), sources(来源)
+  // 隐藏: definition(释义), example(例句), year(年份), region(区县), grade(年级), exam_type(考试类型), semester(学期)
+  const secondaryColumnKeys = ['definition', 'example', 'year', 'region', 'grade', 'exam_type', 'semester']
+
+  // 响应式列 - 根据面板状态过滤次要列
+  const visibleColumns = useMemo(() => {
+    if (panelOpen || passageDrawerOpen) {
+      return columns.filter(col => !secondaryColumnKeys.includes(col.key as string))
+    }
+    return columns
+  }, [panelOpen, passageDrawerOpen, columns])
+
   const hasActiveFilters = grade || topic || year || region || examType || semester || minFrequency > 1 || source
 
   // ============================================================================
@@ -314,23 +353,14 @@ export function VocabularyPage() {
     <div
       style={{
         display: 'flex',
-        height: '100%',
+        flexDirection: 'column',
+        height: 'calc(100vh - 64px - 40px)', // 减去 Header(64px) + Content padding(40px)
         background: '#fff',
+        overflow: 'hidden',
       }}
     >
-      {/* 左侧:词汇表格区域 */}
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          paddingRight: panelOpen ? 16 : 0,
-          transition: 'padding-right 0.3s ease-in-out',
-        }}
-      >
-        {/* 筛选区域 */}
-        <Card style={{ marginBottom: 16 }}>
+      {/* 筛选区域 - 顶层，不受推开效果影响 */}
+      <Card style={{ marginBottom: 16, flexShrink: 0 }}>
           <Row gutter={[16, 16]} align="middle">
             <Col>
               <Space>
@@ -433,25 +463,20 @@ export function VocabularyPage() {
             </Col>
 
             <Col>
-              <Button icon={<ReloadOutlined />} onClick={handleReset}>
-                重置筛选
-              </Button>
+              <Space>
+                <Button icon={<ReloadOutlined />} onClick={handleReset}>
+                  重置筛选
+                </Button>
+                <Tag color="blue" style={{ fontSize: 13, padding: '2px 8px' }}>
+                  共 {total} 个词汇
+                </Tag>
+              </Space>
             </Col>
-          </Row>
 
-          {/* 统计信息 */}
-          <Row gutter={32} style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
-            <Col>
-              <Statistic
-                title={hasActiveFilters ? '筛选结果' : '词库总量'}
-                value={total}
-                suffix="个词汇"
-                valueStyle={{ fontSize: 20 }}
-              />
-            </Col>
+            {/* 已选筛选条件标签 */}
             {hasActiveFilters && (
               <Col>
-                <Space>
+                <Space size={4}>
                   {grade && <Tag color="blue" closable onClose={() => setGrade(undefined)}>{grade}</Tag>}
                   {topic && <Tag color="green" closable onClose={() => setTopic(undefined)}>{topic}</Tag>}
                   {year && <Tag color="orange" closable onClose={() => setYear(undefined)}>{year}年</Tag>}
@@ -468,21 +493,35 @@ export function VocabularyPage() {
               </Col>
             )}
           </Row>
-        </Card>
+      </Card>
 
-        {/* 词汇表格 */}
-        <div style={{ flex: 1, minHeight: 0 }}>
+      {/* 主内容区 - row flex，推开效果只影响这里 */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* 左侧:词汇表格区域 */}
+        <div style={{
+          flex: 1,
+          minWidth: 0,
+          paddingRight: panelOpen ? 16 : 0,
+          transition: 'padding-right 0.3s ease-in-out',
+          overflow: 'auto',
+        }}>
           <Card style={{ height: '100%' }}>
             <Table
-              columns={columns}
+              columns={visibleColumns}
               dataSource={vocabulary}
               rowKey="id"
               loading={loading}
               onRow={(record) => ({
                 onClick: () => {
-                  setSelectedWord(record)
-                  setPanelOpen(true)
-                  setPassageDrawerOpen(false)  // 切换词汇时关闭抽屉
+                  // Toggle 行为：点击已选中行则关闭面板，否则切换到新词汇
+                  if (selectedWord?.id === record.id && panelOpen) {
+                    setPanelOpen(false)
+                    setPassageDrawerOpen(false)
+                  } else {
+                    setSelectedWord(record)
+                    setPanelOpen(true)
+                    setPassageDrawerOpen(false)
+                  }
                 },
                 style: { cursor: 'pointer' },
               })}
@@ -510,28 +549,18 @@ export function VocabularyPage() {
             />
           </Card>
         </div>
-      </div>
 
-      {/* 中间:词汇详情面板（例句列表） */}
-      {panelOpen && selectedWord && (
-        <div
-          style={{
-            width: 480,
-            flexShrink: 0,
-            height: '100%',
-            overflow: 'hidden',
-            borderLeft: '3px solid #1890ff',
-            background: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'all 0.3s ease',
-          }}
-        >
+        {/* 词汇详情面板 - 在主内容区 row flex 内部，与表格并列 */}
+        {panelOpen && selectedWord && (
           <div
             style={{
-              flex: 1,
-              overflow: 'auto',
-              padding: 16,
+              width: panelWidth,
+              flexShrink: 0,
+              height: '100%',
+              overflow: 'hidden',
+              borderLeft: '3px solid #1890ff',
+              boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.12)',
+              background: '#fff',
             }}
           >
             <VocabularyDetailPanel
@@ -540,43 +569,20 @@ export function VocabularyPage() {
               onViewFullPassage={handleViewFullPassage}
             />
           </div>
-          <div
-            style={{
-              padding: '12px 16px',
-              borderTop: '1px solid #f0f0f0',
-              textAlign: 'right',
-            }}
-          >
-            <Button onClick={() => {
-              setPanelOpen(false)
-              setPassageDrawerOpen(false)
-            }}>
-              关闭
-            </Button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* 右侧:完整文章抽屉 */}
-      {passageDrawerOpen && viewingPassageId && viewingSourceType && (
-        <div
-          style={{
-            width: 520,
-            flexShrink: 0,
-            height: '100%',
-            overflow: 'hidden',
-            borderLeft: viewingSourceType === 'reading' ? '3px solid #52c41a' : '3px solid #722ed1',
-            background: '#fafcff',
-            display: 'flex',
-            flexDirection: 'column',
-            animation: 'slideIn 0.3s ease-out',
-          }}
-        >
+        {/* 文章抽屉 - 在主内容区 row flex 内部，与表格和词汇详情面板并列 */}
+        {passageDrawerOpen && viewingPassageId && viewingSourceType && (
           <div
             style={{
-              flex: 1,
+              width: drawerWidth,
+              flexShrink: 0,
+              height: '100%',
               overflow: 'auto',
-              padding: 16,
+              borderLeft: viewingSourceType === 'reading' ? '3px solid #52c41a' : '3px solid #722ed1',
+              background: '#fafcff',
+              padding: 12,
+              animation: 'slideIn 0.3s ease-out',
             }}
           >
             {viewingSourceType === 'reading' ? (
@@ -597,8 +603,8 @@ export function VocabularyPage() {
               />
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* CSS 动画 */}
       <style>{`

@@ -32,6 +32,7 @@ class VocabularyOccurrence(BaseModel):
     source_type: Optional[str] = None  # 来源类型：reading/cloze
     year: Optional[int] = None
     region: Optional[str] = None
+    school: Optional[str] = None  # 学校名（如果有）
     grade: Optional[str] = None
     exam_type: Optional[str] = None
     semester: Optional[str] = None

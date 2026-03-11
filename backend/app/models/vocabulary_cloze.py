@@ -31,7 +31,7 @@ class VocabularyCloze(Base):
 
     # 关系
     vocabulary = relationship("Vocabulary", backref="cloze_occurrences")
-    cloze = relationship("ClozePassage", backref="vocabulary_occurrences")
+    cloze = relationship("ClozePassage", back_populates="vocabulary_occurrences")
 
     # 唯一约束：同一词汇在同一位置只记录一次
     __table_args__ = (

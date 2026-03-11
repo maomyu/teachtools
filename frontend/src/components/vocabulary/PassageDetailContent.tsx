@@ -6,7 +6,7 @@
  * [POS]: frontend/src/components/vocabulary 的文章详情内容
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Card,
   List,
@@ -106,6 +106,24 @@ export function PassageDetailContent({
     }
   }, [initialHighlightWord, passage])
 
+  // 根据实际 content 重新计算高亮位置（不信任后端数据）
+  const getActualPositions = useCallback((content: string, word: string) => {
+    const contentLower = content.toLowerCase()
+    const wordLower = word.toLowerCase()
+    const positions: { start: number; end: number }[] = []
+    let searchStart = 0
+    while (true) {
+      const pos = contentLower.indexOf(wordLower, searchStart)
+      if (pos === -1) break
+      positions.push({
+        start: pos,
+        end: pos + word.length,
+      })
+      searchStart = pos + word.length
+    }
+    return positions.sort((a, b) => a.start - b.start)
+  }, [])
+
   // 点击词汇，定位到原文
   const handleWordClick = useCallback(
     (word: VocabularyInPassage) => {
@@ -113,22 +131,40 @@ export function PassageDetailContent({
       setHighlightPositions(word.occurrences)
       setCurrentIndex(0)
 
-      // 滚动到第一个位置
-      if (word.occurrences.length > 0) {
-        scrollToPosition(word.occurrences[0].char_position)
+      // 滚动到第一个位置（使用重新计算的位置）
+      if (passage?.content) {
+        const actualPositions = getActualPositions(passage.content, word.word)
+        if (actualPositions.length > 0) {
+          scrollToPosition(actualPositions[0].start)
+        }
       }
     },
-    []
+    [passage?.content, getActualPositions]
   )
+
+  // 切换到上一个位置
+  const handlePrevOccurrence = useCallback(() => {
+    if (!passage?.content || !highlightedWord) return
+
+    const actualPositions = getActualPositions(passage.content, highlightedWord)
+    if (actualPositions.length === 0) return
+
+    const prevIndex = currentIndex === 0 ? actualPositions.length - 1 : currentIndex - 1
+    setCurrentIndex(prevIndex)
+    scrollToPosition(actualPositions[prevIndex].start)
+  }, [currentIndex, passage?.content, highlightedWord, getActualPositions])
 
   // 切换到下一个位置
   const handleNextOccurrence = useCallback(() => {
-    if (highlightPositions.length === 0) return
+    if (!passage?.content || !highlightedWord) return
 
-    const nextIndex = (currentIndex + 1) % highlightPositions.length
+    const actualPositions = getActualPositions(passage.content, highlightedWord)
+    if (actualPositions.length === 0) return
+
+    const nextIndex = (currentIndex + 1) % actualPositions.length
     setCurrentIndex(nextIndex)
-    scrollToPosition(highlightPositions[nextIndex].char_position)
-  }, [currentIndex, highlightPositions])
+    scrollToPosition(actualPositions[nextIndex].start)
+  }, [currentIndex, passage?.content, highlightedWord, getActualPositions])
 
   // 滚动到指定位置
   const scrollToPosition = useCallback((charPosition: number) => {
@@ -165,33 +201,46 @@ export function PassageDetailContent({
       return <span style={{ whiteSpace: 'pre-wrap' }}>{passage.content}</span>
     }
 
-    // 按位置排序（从后往前处理，避免位置偏移）
-    const sortedPositions = [...highlightPositions].sort(
-      (a, b) => (a.char_position || 0) - (b.char_position || 0)
-    )
+    // 不信任后端的位置数据，根据实际 content 重新计算
+    const content = passage.content
+    const actualPositions = getActualPositions(content, highlightedWord)
+
+    if (actualPositions.length === 0) {
+      return <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
+    }
+
+    // 合并重叠的位置区间
+    const mergedRanges: { start: number; end: number }[] = []
+    for (const pos of actualPositions) {
+      const lastRange = mergedRanges[mergedRanges.length - 1]
+      if (lastRange && pos.start < lastRange.end) {
+        // 重叠：扩展当前区间
+        lastRange.end = Math.max(lastRange.end, pos.end)
+      } else {
+        // 不重叠：新建区间
+        mergedRanges.push({ start: pos.start, end: pos.end })
+      }
+    }
 
     // 构建高亮内容
     const parts: React.ReactNode[] = []
     let lastEnd = 0
 
-    sortedPositions.forEach((pos, idx) => {
-      const start = pos.char_position || 0
-      const end = pos.end_position || start + highlightedWord.length
-
+    mergedRanges.forEach((range, rangeIdx) => {
       // 添加前面的普通文本
-      if (start > lastEnd) {
+      if (range.start > lastEnd) {
         parts.push(
-          <span key={`text-${idx}`}>
-            {passage.content.slice(lastEnd, start)}
+          <span key={`text-${rangeIdx}`}>
+            {content.slice(lastEnd, range.start)}
           </span>
         )
       }
 
-      // 添加高亮文本（当前聚焦的用不同样式）
-      const isCurrentFocus = idx === currentIndex
+      // 判断当前区间是否包含聚焦位置（使用合并后区间的索引）
+      const isCurrentFocus = rangeIdx === currentIndex
       parts.push(
         <mark
-          key={`highlight-${idx}`}
+          key={`highlight-${rangeIdx}`}
           style={{
             backgroundColor: isCurrentFocus ? '#ffeb3b' : '#fff3cd',
             padding: '0 2px',
@@ -200,24 +249,24 @@ export function PassageDetailContent({
             transition: 'background-color 0.3s',
           }}
         >
-          {passage.content.slice(start, end)}
+          {content.slice(range.start, range.end)}
         </mark>
       )
 
-      lastEnd = end
+      lastEnd = range.end
     })
 
     // 添加最后的普通文本
-    if (lastEnd < passage.content.length) {
+    if (lastEnd < content.length) {
       parts.push(
         <span key="text-end">
-          {passage.content.slice(lastEnd)}
+          {content.slice(lastEnd)}
         </span>
       )
     }
 
     return <span style={{ whiteSpace: 'pre-wrap' }}>{parts}</span>
-  }, [passage?.content, highlightedWord, highlightPositions, currentIndex])
+  }, [passage?.content, highlightedWord, highlightPositions, currentIndex, getActualPositions])
 
   // 清除高亮
   const handleClearHighlight = useCallback(() => {
@@ -225,6 +274,12 @@ export function PassageDetailContent({
     setHighlightPositions([])
     setCurrentIndex(0)
   }, [])
+
+  // 计算实际高亮位置总数（用于显示）
+  const actualPositionCount = useMemo(() => {
+    if (!passage?.content || !highlightedWord) return 0
+    return getActualPositions(passage.content, highlightedWord).length
+  }, [passage?.content, highlightedWord, getActualPositions])
 
   if (loading) {
     return (
@@ -245,14 +300,19 @@ export function PassageDetailContent({
   const source = passage.source
 
   return (
-    <div>
+    <div style={{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
       {/* 顶部导航和信息 */}
       {showBackButton && onBack && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 8, flexShrink: 0 }}>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
             onClick={onBack}
+            size="small"
           >
             返回例句列表
           </Button>
@@ -260,19 +320,19 @@ export function PassageDetailContent({
       )}
 
       {/* 文章标题 */}
-      <Space style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 16 }}>
+      <Space style={{ marginBottom: 8, flexShrink: 0 }}>
+        <Text strong style={{ fontSize: 14 }}>
           {passage.passage_type}篇 - {passage.primary_topic || '未分类'}
         </Text>
         {passage.topic_verified && (
-          <Tag icon={<CheckCircleOutlined />} color="success">
+          <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 10 }}>
             已校对
           </Tag>
         )}
       </Space>
 
       {/* 出处信息 */}
-      <Card size="small" style={{ marginBottom: 12 }}>
+      <Card size="small" style={{ marginBottom: 8, flexShrink: 0 }}>
         <Descriptions size="small" column={4}>
           <Descriptions.Item label="年份">{source?.year || '-'}</Descriptions.Item>
           <Descriptions.Item label="区县">{source?.region || '-'}</Descriptions.Item>
@@ -281,39 +341,55 @@ export function PassageDetailContent({
         </Descriptions>
       </Card>
 
-      {/* 主内容区：上下布局（在面板内更适合） */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* 主内容区：上下布局，填充剩余空间 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, overflow: 'auto', minHeight: 0 }}>
         {/* 原文区 */}
-        <Card
-          size="small"
-          title="原文内容"
-          extra={
-            highlightedWord && (
-              <Space>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  "{highlightedWord}" - 第 {currentIndex + 1}/{highlightPositions.length} 处
-                </Text>
-                <Button size="small" onClick={handleNextOccurrence}>
-                  下一处
-                </Button>
-                <Button size="small" onClick={handleClearHighlight}>
-                  清除
-                </Button>
-              </Space>
-            )
-          }
-        >
+        <Card size="small" title="原文内容">
           <div
             ref={contentRef}
             style={{
-              padding: '8px 0',
-              lineHeight: 1.8,
-              fontSize: 14,
+              padding: '4px 0',
+              lineHeight: 1.7,
+              fontSize: 13,
             }}
           >
             {renderHighlightedContent()}
           </div>
         </Card>
+
+        {/* 固定在底部的导航栏 - 使用 sticky 相对于父容器定位 */}
+        {highlightedWord && (
+          <div
+            style={{
+              position: 'sticky',
+              bottom: 0,
+              background: '#fff',
+              padding: '8px 12px',
+              borderTop: '1px solid #f0f0f0',
+              boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.15)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              zIndex: 100,
+              marginTop: 8,
+            }}
+          >
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              "<Text strong>{highlightedWord}</Text>" - 第 {currentIndex + 1}/{actualPositionCount} 处
+            </Text>
+            <Space size="small">
+              <Button size="small" onClick={handlePrevOccurrence}>
+                上一处
+              </Button>
+              <Button size="small" type="primary" onClick={handleNextOccurrence}>
+                下一处
+              </Button>
+              <Button size="small" onClick={handleClearHighlight}>
+                清除
+              </Button>
+            </Space>
+          </div>
+        )}
 
         {/* 词汇和题目区 */}
         <Card size="small" styles={{ body: { padding: 0 } }}>
@@ -327,7 +403,7 @@ export function PassageDetailContent({
                   <div style={{ padding: '0 12px' }}>
                     {passage.vocabulary && passage.vocabulary.length > 0 ? (
                       <List
-                        dataSource={passage.vocabulary}
+                        dataSource={[...passage.vocabulary].sort((a, b) => (b.occurrences?.length || 0) - (a.occurrences?.length || 0))}
                         renderItem={(item) => (
                           <List.Item
                             onClick={() => handleWordClick(item)}

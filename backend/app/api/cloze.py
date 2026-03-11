@@ -138,7 +138,7 @@ async def list_cloze(
 #  完形文章详情
 # ============================================================================
 
-@router.get("/{cloze_id}", response_model=ClozeDetailResponse)
+@router.get("/{cloze_id}/", response_model=ClozeDetailResponse)
 async def get_cloze(
     cloze_id: int,
     db: AsyncSession = Depends(get_db)

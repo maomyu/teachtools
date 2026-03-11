@@ -237,13 +237,39 @@ async def upload_paper_with_progress(
                             reporter.skip_step(step_id, "试卷已存在")
                         yield emit()
                         return
-                    # 强制模式：删除旧记录
+                    # 强制模式：先删除关联记录，再删除主记录
+                    # 1. 删除阅读文章的词汇关联
+                    reading_ids = await db.execute(
+                        select(ReadingPassage.id).where(ReadingPassage.paper_id == existing_paper.id)
+                    )
+                    reading_id_list = [r[0] for r in reading_ids.all()]
+                    if reading_id_list:
+                        await db.execute(
+                            delete(VocabularyPassage).where(VocabularyPassage.passage_id.in_(reading_id_list))
+                        )
+                        await db.execute(
+                            delete(Question).where(Question.passage_id.in_(reading_id_list))
+                        )
+                    # 2. 删除完形文章的词汇关联
+                    cloze_ids = await db.execute(
+                        select(ClozePassage.id).where(ClozePassage.paper_id == existing_paper.id)
+                    )
+                    cloze_id_list = [c[0] for c in cloze_ids.all()]
+                    if cloze_id_list:
+                        await db.execute(
+                            delete(VocabularyCloze).where(VocabularyCloze.cloze_id.in_(cloze_id_list))
+                        )
+                        await db.execute(
+                            delete(ClozePoint).where(ClozePoint.cloze_id.in_(cloze_id_list))
+                        )
+                    # 3. 删除文章和完形
                     await db.execute(
                         delete(ReadingPassage).where(ReadingPassage.paper_id == existing_paper.id)
                     )
                     await db.execute(
                         delete(ClozePassage).where(ClozePassage.paper_id == existing_paper.id)
                     )
+                    # 4. 删除试卷
                     await db.delete(existing_paper)
                     await db.flush()
 
@@ -253,6 +279,7 @@ async def upload_paper_with_progress(
                     original_path=tmp_path,
                     year=metadata.get("year", 0),
                     region=metadata.get("region"),
+                    school=metadata.get("school"),  # 学校名（如果有）
                     grade=metadata.get("grade", ""),
                     semester=metadata.get("semester"),
                     exam_type=metadata.get("exam_type"),
@@ -308,17 +335,10 @@ async def upload_paper_with_progress(
                     yield emit()
                     return
 
-                # 更新试卷状态和元数据
+                # 更新试卷状态（元数据只用文件名解析的，不用LLM推断）
                 paper.import_status = "completed"
                 paper.parse_strategy = "llm"
                 paper.confidence = 0.95
-                if llm_result.metadata:
-                    paper.year = llm_result.metadata.get("year", paper.year)
-                    paper.region = llm_result.metadata.get("region", paper.region)
-                    paper.grade = llm_result.metadata.get("grade", paper.grade)
-                    paper.semester = llm_result.metadata.get("semester", paper.semester)
-                    paper.exam_type = llm_result.metadata.get("exam_type", paper.exam_type)
-                    metadata.update(llm_result.metadata)
 
                 # ===== Step 5: 保存文章 =====
                 reporter.start_step("save_passages", "正在保存文章...")
@@ -750,7 +770,7 @@ async def get_paper(paper_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.delete("/{paper_id}")
 async def delete_paper(paper_id: int, db: AsyncSession = Depends(get_db)):
-    """删除试卷"""
+    """删除试卷及其所有关联数据"""
     result = await db.execute(
         select(ExamPaper).where(ExamPaper.id == paper_id)
     )
@@ -759,12 +779,41 @@ async def delete_paper(paper_id: int, db: AsyncSession = Depends(get_db)):
     if not paper:
         raise HTTPException(status_code=404, detail="试卷不存在")
 
+    # 1. 删除阅读文章的词汇关联和题目
+    reading_ids = await db.execute(
+        select(ReadingPassage.id).where(ReadingPassage.paper_id == paper_id)
+    )
+    reading_id_list = [r[0] for r in reading_ids.all()]
+    if reading_id_list:
+        await db.execute(
+            delete(VocabularyPassage).where(VocabularyPassage.passage_id.in_(reading_id_list))
+        )
+        await db.execute(
+            delete(Question).where(Question.passage_id.in_(reading_id_list))
+        )
+
+    # 2. 删除完形文章的词汇关联和考点
+    cloze_ids = await db.execute(
+        select(ClozePassage.id).where(ClozePassage.paper_id == paper_id)
+    )
+    cloze_id_list = [c[0] for c in cloze_ids.all()]
+    if cloze_id_list:
+        await db.execute(
+            delete(VocabularyCloze).where(VocabularyCloze.cloze_id.in_(cloze_id_list))
+        )
+        await db.execute(
+            delete(ClozePoint).where(ClozePoint.cloze_id.in_(cloze_id_list))
+        )
+
+    # 3. 删除文章和完形
     await db.execute(
         delete(ReadingPassage).where(ReadingPassage.paper_id == paper_id)
     )
     await db.execute(
         delete(ClozePassage).where(ClozePassage.paper_id == paper_id)
     )
+
+    # 4. 删除试卷
     await db.delete(paper)
     await db.commit()
 

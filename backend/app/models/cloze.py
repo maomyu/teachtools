@@ -30,6 +30,7 @@ class ClozePassage(Base):
     # 关系
     paper = relationship("ExamPaper", back_populates="cloze_passages")
     points = relationship("ClozePoint", back_populates="cloze", cascade="all, delete-orphan")
+    vocabulary_occurrences = relationship("VocabularyCloze", back_populates="cloze", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<ClozePassage(id={self.id}, topic={self.primary_topic})>"

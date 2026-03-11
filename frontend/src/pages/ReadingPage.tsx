@@ -133,7 +133,7 @@ export function ReadingPage() {
         if (!source) return '-'
         return (
           <span>
-            {source.year} {source.region} {source.grade} {source.exam_type}
+            {source.year} {source.region} {source.school} {source.grade} {source.exam_type}
           </span>
         )
       },

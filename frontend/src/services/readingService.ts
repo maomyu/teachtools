@@ -1,5 +1,10 @@
 /**
  * 阅读模块API服务
+ *
+ * [INPUT]: 依赖 api 服务、类型定义
+ * [OUTPUT]: 对外提供阅读相关的 API 调用函数
+ * [POS]: frontend/src/services 的阅读服务
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import api from './api'
 import type {
@@ -9,6 +14,10 @@ import type {
   TopicListResponse,
   PassageFilter,
   PassageFiltersResponse,
+  // 讲义相关类型
+  TopicStatsResponse,
+  HandoutDetailResponse,
+  GradeHandoutResponse,
 } from '@/types'
 
 /**
@@ -61,5 +70,46 @@ export async function getTopics(grade?: string): Promise<TopicListResponse> {
  */
 export async function deletePassage(id: number): Promise<{ message: string; passage_id: number }> {
   const response = await api.delete(`/passages/${id}`)
+  return response.data
+}
+
+// ============================================================================
+//  讲义相关 API
+// ============================================================================
+
+/**
+ * 获取某年级的主题统计（按考频降序）
+ */
+export async function getTopicStatsForGrade(grade: string): Promise<TopicStatsResponse> {
+  const response = await api.get<TopicStatsResponse>(`/passages/handouts/${grade}/topics`)
+  return response.data
+}
+
+/**
+ * 获取讲义详情（三段式结构）
+ */
+export async function getHandoutDetail(
+  grade: string,
+  topic: string,
+  edition: 'teacher' | 'student' = 'teacher'
+): Promise<HandoutDetailResponse> {
+  const response = await api.get<HandoutDetailResponse>(
+    `/passages/handouts/${grade}/topics/${topic}`,
+    { params: { edition } }
+  )
+  return response.data
+}
+
+/**
+ * 获取年级完整讲义（包含所有主题）
+ */
+export async function getGradeHandout(
+  grade: string,
+  edition: 'teacher' | 'student' = 'teacher'
+): Promise<GradeHandoutResponse> {
+  const response = await api.get<GradeHandoutResponse>(
+    `/passages/handouts/${grade}`,
+    { params: { edition } }
+  )
   return response.data
 }

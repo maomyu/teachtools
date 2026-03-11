@@ -1,7 +1,12 @@
 """
 阅读模块API
+
+[INPUT]: 依赖 FastAPI、SQLAlchemy、reading/cloze/vocabulary 模型
+[OUTPUT]: 对外提供阅读文章查询、讲义生成等 API 接口
+[POS]: backend/app/api 的阅读路由
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -11,6 +16,7 @@ from app.database import get_db
 from app.models.reading import ReadingPassage, Question
 from app.models.paper import ExamPaper
 from app.models.vocabulary import Vocabulary, VocabularyPassage
+from app.models.cloze import ClozePassage
 from app.schemas.reading import (
     PassageResponse,
     PassageListResponse,
@@ -181,20 +187,28 @@ async def get_passage(
     seen_words = set()
     for occ in passage.vocabulary_occurrences:
         if occ.vocabulary.word not in seen_words:
+            # 收集该词汇的所有出现位置，并去重（按 char_position）
+            all_occurrences = [
+                o for o in passage.vocabulary_occurrences
+                if o.vocabulary_id == occ.vocabulary_id
+            ]
+            # 按 char_position 去重
+            unique_occurrences = {}
+            for o in all_occurrences:
+                key = o.char_position
+                if key not in unique_occurrences:
+                    unique_occurrences[key] = {
+                        "sentence": o.sentence,
+                        "char_position": o.char_position,
+                        "end_position": o.end_position
+                    }
+
             vocab_list.append({
                 "id": occ.vocabulary.id,
                 "word": occ.vocabulary.word,
                 "definition": occ.vocabulary.definition,
                 "frequency": occ.vocabulary.frequency,
-                "occurrences": [
-                    {
-                        "sentence": o.sentence,
-                        "char_position": o.char_position,
-                        "end_position": o.end_position
-                    }
-                    for o in passage.vocabulary_occurrences
-                    if o.vocabulary_id == occ.vocabulary_id
-                ]
+                "occurrences": list(unique_occurrences.values())
             })
             seen_words.add(occ.vocabulary.word)
 
@@ -262,8 +276,8 @@ async def update_topic(
     return {"message": "话题更新成功", "passage_id": passage_id}
 
 
-# 导入text用于原生SQL
-from sqlalchemy import text
+# 导入delete用于级联删除
+from sqlalchemy import delete as sql_delete
 
 
 @router.delete("/{passage_id}")
@@ -271,7 +285,9 @@ async def delete_passage(
     passage_id: int,
     db: AsyncSession = Depends(get_db)
 ):
-    """删除文章"""
+    """删除文章及其关联数据"""
+    from sqlalchemy import delete
+
     query = select(ReadingPassage).where(ReadingPassage.id == passage_id)
     result = await db.execute(query)
     passage = result.scalar_one_or_none()
@@ -289,18 +305,36 @@ async def delete_passage(
     if paper:
         filename = paper.filename
 
-    # 删除文章
+    # 1. 删除关联的词汇出现记录
+    result = await db.execute(
+        delete(VocabularyPassage).where(VocabularyPassage.passage_id == passage_id)
+    )
+    deleted_occurrences = result.rowcount if hasattr(result, 'rowcount') else 0
+
+    # 2. 删除关联的题目记录
+    result = await db.execute(
+        delete(Question).where(Question.passage_id == passage_id)
+    )
+    deleted_questions = result.rowcount if hasattr(result, 'rowcount') else 0
+
+    # 3. 删除文章本身
     await db.delete(passage)
     await db.commit()
 
-    # 检查该试卷下是否还有其他文章
-    remaining_query = select(func.count()).select_from(ReadingPassage).where(
-        ReadingPassage.paper_id == paper_id
+    # 检查该试卷下是否还有其他阅读文章或完形文章
+    remaining_reading = await db.scalar(
+        select(func.count()).select_from(ReadingPassage).where(
+            ReadingPassage.paper_id == paper_id
+        )
     )
-    remaining_count = await db.scalar(remaining_query)
+    remaining_cloze = await db.scalar(
+        select(func.count()).select_from(ClozePassage).where(
+            ClozePassage.paper_id == paper_id
+        )
+    )
 
-    # 如果没有文章了，删除试卷记录
-    if remaining_count == 0 and paper:
+    # 如果没有文章了，删除试卷记录（同时清理完形关联数据）
+    if remaining_reading == 0 and remaining_cloze == 0 and paper:
         await db.delete(paper)
         await db.commit()
         return {
@@ -315,3 +349,417 @@ async def delete_passage(
         "passage_id": passage_id,
         "paper_deleted": False
     }
+
+
+# ============================================================================
+#  讲义API端点
+# ============================================================================
+
+# 导入完形词汇模型用于联合查询
+from app.models.vocabulary_cloze import VocabularyCloze
+
+
+@router.get("/handouts/{grade}")
+async def get_grade_handout(
+    grade: str,
+    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取某年级的完整讲义（包含所有主题）
+
+    [INPUT]: 年级参数、版本（teacher/student）
+    [OUTPUT]: 年级讲义结构（目录 + 各主题内容）
+    [POS]: reading.py 的年级讲义端点
+    [PROTOCOL]: 变更时更新此头部
+    """
+    # 获取主题统计（按考频排序）
+    topics = await _get_topic_stats_for_grade(db, grade)
+
+    # 获取每个主题的内容
+    content = []
+    for topic_info in topics:
+        topic = topic_info["topic"]
+        topic_content = {
+            "topic": topic,
+            "part1_article_sources": await _get_article_sources(db, grade, topic),
+            "part2_vocabulary": await _get_topic_vocabulary_with_source(db, grade, topic),
+            "part3_passages": await _get_topic_passages(db, grade, topic, edition)
+        }
+        content.append(topic_content)
+
+    return {
+        "grade": grade,
+        "edition": edition,
+        "topics": topics,
+        "content": content
+    }
+
+
+async def _get_topic_stats_for_grade(db: AsyncSession, grade: str):
+    """
+    获取某年级的主题统计（按考频降序）
+
+    [INPUT]: 数据库会话、年级
+    [OUTPUT]: 主题统计列表（按考频降序）
+    [POS]: reading.py 的私有辅助函数
+    [PROTOCOL]: 变更时更新此头部
+    """
+    query = (
+        select(
+            ReadingPassage.primary_topic.label('topic'),
+            func.count(ReadingPassage.id).label('passage_count'),
+            func.group_concat(ExamPaper.year.distinct()).label('years')
+        )
+        .join(ExamPaper, ReadingPassage.paper_id == ExamPaper.id)
+        .where(ExamPaper.grade == grade)
+        .where(ReadingPassage.primary_topic.isnot(None))
+        .group_by(ReadingPassage.primary_topic)
+        .order_by(func.count(ReadingPassage.id).desc())
+    )
+
+    result = await db.execute(query)
+    topics = []
+    for row in result.all():
+        years = sorted(set(int(y) for y in row.years.split(',')), reverse=True) if row.years else []
+        topics.append({
+            "topic": row.topic,
+            "passage_count": row.passage_count,
+            "recent_years": years[:3]
+        })
+
+    return topics
+
+
+@router.get("/handouts/{grade}/topics")
+async def get_topic_stats_for_grade(
+    grade: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取某年级的主题统计（按考频降序）
+
+    [INPUT]: 年级参数
+    [OUTPUT]: 主题统计列表（按考频降序）
+    [POS]: reading.py 的讲义主题统计端点
+    [PROTOCOL]: 变更时更新此头部
+    """
+    topics = await _get_topic_stats_for_grade(db, grade)
+    return {"topics": topics}
+
+
+@router.get("/handouts/{grade}/topics/{topic:path}")
+async def get_handout_detail(
+    grade: str,
+    topic: str,
+    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取某年级某主题的讲义详情
+
+    [INPUT]: 年级、主题、版本（teacher/student）
+    [OUTPUT]: 三段式讲义结构
+    [POS]: reading.py 的讲义详情端点
+    [PROTOCOL]: 变更时更新此头部
+    """
+    # 第一部分：文章来源
+    article_sources = await _get_article_sources(db, grade, topic)
+
+    # 第二部分：高频词汇（仅阅读）
+    vocabulary = await _get_topic_vocabulary(db, grade, topic)
+
+    # 第三部分：阅读文章（含题目）
+    passages = await _get_topic_passages(db, grade, topic, edition)
+
+    return {
+        "topic": topic,
+        "grade": grade,
+        "edition": edition,
+        "part1_article_sources": article_sources,
+        "part2_vocabulary": vocabulary,
+        "part3_passages": passages
+    }
+
+
+# ============================================================================
+#  讲义辅助函数
+# ============================================================================
+
+async def _get_article_sources(db: AsyncSession, grade: str, topic: str):
+    """
+    获取主题下所有文章来源（按年份+区县分组）
+
+    [INPUT]: 数据库会话、年级、主题
+    [OUTPUT]: 文章来源列表（按试卷分组）
+    [POS]: reading.py 的私有辅助函数
+    [PROTOCOL]: 变更时更新此头部
+    """
+    query = (
+        select(ReadingPassage, ExamPaper)
+        .join(ExamPaper, ReadingPassage.paper_id == ExamPaper.id)
+        .where(ExamPaper.grade == grade)
+        .where(ReadingPassage.primary_topic == topic)
+        .order_by(ExamPaper.year.desc(), ExamPaper.region)
+    )
+    result = await db.execute(query)
+
+    # 按试卷分组
+    sources = {}
+    for passage, paper in result.all():
+        key = f"{paper.year}_{paper.region}_{paper.exam_type}"
+        if key not in sources:
+            sources[key] = {
+                "year": paper.year,
+                "region": paper.region,
+                "exam_type": paper.exam_type,
+                "semester": paper.semester,
+                "passages": []
+            }
+        sources[key]["passages"].append({
+            "type": passage.passage_type,
+            "id": passage.id,
+            "title": passage.title
+        })
+
+    return list(sources.values())
+
+
+async def _get_topic_vocabulary(db: AsyncSession, grade: str, topic: str):
+    """
+    获取主题高频词汇（仅来自阅读文章，按词频排序）
+
+    [INPUT]: 数据库会话、年级、主题
+    [OUTPUT]: 高频词汇列表（按词频降序）
+    [POS]: reading.py 的私有辅助函数
+    [PROTOCOL]: 变更时更新此头部
+    """
+    query = (
+        select(
+            Vocabulary.id,
+            Vocabulary.word,
+            Vocabulary.definition,
+            Vocabulary.phonetic,
+            func.count(VocabularyPassage.id).label('frequency')
+        )
+        .join(VocabularyPassage, Vocabulary.id == VocabularyPassage.vocabulary_id)
+        .join(ReadingPassage, VocabularyPassage.passage_id == ReadingPassage.id)
+        .join(ExamPaper, ReadingPassage.paper_id == ExamPaper.id)
+        .where(ExamPaper.grade == grade)
+        .where(ReadingPassage.primary_topic == topic)
+        .group_by(Vocabulary.id)
+        .order_by(func.count(VocabularyPassage.id).desc())
+    )
+
+    result = await db.execute(query)
+    vocabulary = []
+    for row in result.all():
+        vocabulary.append({
+            "id": row.id,
+            "word": row.word,
+            "definition": row.definition,
+            "phonetic": row.phonetic,
+            "frequency": row.frequency
+        })
+
+    return vocabulary
+
+
+async def _get_topic_vocabulary_with_source(db: AsyncSession, grade: str, topic: str):
+    """
+    获取主题高频词汇（含来源标注，按优先级排序）
+
+    排序优先级：
+    1. 阅读+完形共同出现 (both)
+    2. 仅阅读 (reading)
+    3. 仅完形 (cloze)
+    同优先级内按词频降序
+
+    [INPUT]: 数据库会话、年级、主题
+    [OUTPUT]: 高频词汇列表（带 source_type 字段）
+    [POS]: reading.py 的私有辅助函数
+    [PROTOCOL]: 变更时更新此头部
+    """
+    # 1. 查询阅读文章中的词汇
+    reading_query = (
+        select(
+            Vocabulary.id,
+            Vocabulary.word,
+            Vocabulary.definition,
+            Vocabulary.phonetic,
+            func.count(VocabularyPassage.id).label('frequency')
+        )
+        .join(VocabularyPassage, Vocabulary.id == VocabularyPassage.vocabulary_id)
+        .join(ReadingPassage, VocabularyPassage.passage_id == ReadingPassage.id)
+        .join(ExamPaper, ReadingPassage.paper_id == ExamPaper.id)
+        .where(ExamPaper.grade == grade)
+        .where(ReadingPassage.primary_topic == topic)
+        .group_by(Vocabulary.id)
+    )
+    reading_result = await db.execute(reading_query)
+    reading_vocabs = {row.id: {"id": row.id, "word": row.word, "definition": row.definition,
+                                "phonetic": row.phonetic, "frequency": row.frequency}
+                      for row in reading_result.all()}
+
+    # 2. 查询完形文章中的词汇
+    cloze_query = (
+        select(
+            Vocabulary.id,
+            Vocabulary.word,
+            Vocabulary.definition,
+            Vocabulary.phonetic,
+            func.count(VocabularyCloze.id).label('frequency')
+        )
+        .join(VocabularyCloze, Vocabulary.id == VocabularyCloze.vocabulary_id)
+        .join(ClozePassage, VocabularyCloze.cloze_id == ClozePassage.id)
+        .join(ExamPaper, ClozePassage.paper_id == ExamPaper.id)
+        .where(ExamPaper.grade == grade)
+        .where(ClozePassage.primary_topic == topic)
+        .group_by(Vocabulary.id)
+    )
+    cloze_result = await db.execute(cloze_query)
+    cloze_vocabs = {row.id: {"id": row.id, "word": row.word, "definition": row.definition,
+                              "phonetic": row.phonetic, "frequency": row.frequency}
+                    for row in cloze_result.all()}
+
+    # 3. 合并词汇，标注来源类型
+    all_vocab_ids = set(reading_vocabs.keys()) | set(cloze_vocabs.keys())
+    vocabulary = []
+
+    for vid in all_vocab_ids:
+        in_reading = vid in reading_vocabs
+        in_cloze = vid in cloze_vocabs
+
+        if in_reading and in_cloze:
+            # 两者都有：词频相加
+            source_type = "both"
+            freq = reading_vocabs[vid]["frequency"] + cloze_vocabs[vid]["frequency"]
+            vocab_data = reading_vocabs[vid]  # 使用阅读的数据（definition 等）
+        elif in_reading:
+            source_type = "reading"
+            freq = reading_vocabs[vid]["frequency"]
+            vocab_data = reading_vocabs[vid]
+        else:
+            source_type = "cloze"
+            freq = cloze_vocabs[vid]["frequency"]
+            vocab_data = cloze_vocabs[vid]
+
+        vocabulary.append({
+            "id": vocab_data["id"],
+            "word": vocab_data["word"],
+            "definition": vocab_data["definition"],
+            "phonetic": vocab_data["phonetic"],
+            "frequency": freq,
+            "source_type": source_type
+        })
+
+    # 4. 排序：优先级 both > reading > cloze，同优先级按词频降序
+    source_priority = {"both": 0, "reading": 1, "cloze": 2}
+    vocabulary.sort(key=lambda x: (source_priority[x["source_type"]], -x["frequency"]))
+
+    return vocabulary
+
+
+async def _get_topic_passages(db: AsyncSession, grade: str, topic: str, edition: str):
+    """
+    获取主题下的阅读文章（含题目）
+
+    [INPUT]: 数据库会话、年级、主题、版本（teacher/student）
+    [OUTPUT]: 文章列表（含题目，根据版本决定是否包含答案）
+    [POS]: reading.py 的私有辅助函数
+    [PROTOCOL]: 变更时更新此头部
+    """
+    query = (
+        select(ReadingPassage)
+        .options(
+            selectinload(ReadingPassage.paper),
+            selectinload(ReadingPassage.questions),
+            selectinload(ReadingPassage.vocabulary_occurrences).selectinload(VocabularyPassage.vocabulary)
+        )
+        .join(ExamPaper, ReadingPassage.paper_id == ExamPaper.id)
+        .where(ExamPaper.grade == grade)
+        .where(ReadingPassage.primary_topic == topic)
+        .order_by(ExamPaper.year.desc(), ReadingPassage.passage_type)
+    )
+
+    result = await db.execute(query)
+    passages = result.scalars().all()
+
+    # 构建文章列表
+    items = []
+    for p in passages:
+        # 词汇列表
+        vocab_list = []
+        seen_words = set()
+        for occ in p.vocabulary_occurrences:
+            if occ.vocabulary.word not in seen_words:
+                # 收集该词汇的所有出现位置，并按 char_position 去重
+                all_occurrences = [
+                    o for o in p.vocabulary_occurrences
+                    if o.vocabulary_id == occ.vocabulary_id
+                ]
+                unique_occurrences = {}
+                for o in all_occurrences:
+                    key = o.char_position
+                    if key not in unique_occurrences:
+                        unique_occurrences[key] = {
+                            "sentence": o.sentence,
+                            "char_position": o.char_position,
+                            "end_position": o.end_position
+                        }
+
+                vocab_list.append({
+                    "id": occ.vocabulary.id,
+                    "word": occ.vocabulary.word,
+                    "definition": occ.vocabulary.definition,
+                    "frequency": occ.vocabulary.frequency,
+                    "occurrences": list(unique_occurrences.values())
+                })
+                seen_words.add(occ.vocabulary.word)
+
+        passage_data = {
+            "id": p.id,
+            "type": p.passage_type,
+            "title": p.title,
+            "content": p.content,
+            "word_count": p.word_count,
+            "source": p.source_info,
+            "vocabulary": vocab_list
+        }
+
+        # 教师版包含答案和解析
+        if edition == 'teacher':
+            passage_data["questions"] = [
+                {
+                    "number": q.question_number,
+                    "text": q.question_text,
+                    "options": {
+                        "A": q.option_a,
+                        "B": q.option_b,
+                        "C": q.option_c,
+                        "D": q.option_d
+                    },
+                    "correct_answer": q.correct_answer,
+                    "explanation": q.answer_explanation
+                }
+                for q in p.questions
+            ]
+        else:
+            # 学生版只有题目
+            passage_data["questions"] = [
+                {
+                    "number": q.question_number,
+                    "text": q.question_text,
+                    "options": {
+                        "A": q.option_a,
+                        "B": q.option_b,
+                        "C": q.option_c,
+                        "D": q.option_d
+                    }
+                }
+                for q in p.questions
+            ]
+
+        items.append(passage_data)
+
+    return items

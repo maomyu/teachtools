@@ -19,7 +19,6 @@ import {
   Statistic,
   Row,
   Col,
-  Checkbox,
   Tooltip,
 } from 'antd'
 import {
@@ -157,7 +156,6 @@ export function ImportPage() {
   const [overallProgress, setOverallProgress] = useState(0)
   const [currentFileIndex, setCurrentFileIndex] = useState(0)
 
-  const [forceReimport, setForceReimport] = useState(false)
 
   // 解析SSE事件
   const parseSSEEvent = useCallback((line: string): StepUpdateEvent | null => {
@@ -176,7 +174,7 @@ export function ImportPage() {
       formData.append('file', file as any)
 
       const params = new URLSearchParams()
-      if (forceReimport) params.append('force', 'true')
+      params.append('force', 'true')  // 总是强制导入
 
       fetch(`/api/papers/upload-with-progress?${params.toString()}`, {
         method: 'POST',
@@ -229,7 +227,7 @@ export function ImportPage() {
           reject(error)
         })
     })
-  }, [forceReimport, parseSSEEvent])
+  }, [parseSSEEvent])
 
   // 处理文件上传
   const handleUpload = async () => {
@@ -251,7 +249,7 @@ export function ImportPage() {
       setCurrentFileIndex(i + 1)
 
       try {
-        const result = await uploadWithProgress(file)
+        const result = await uploadWithProgress(file, true)  // 强制导入
         uploadResults.push(result)
         setResults([...uploadResults])
       } catch (error: any) {
@@ -422,14 +420,6 @@ export function ImportPage() {
 
         <div style={{ marginTop: 16, textAlign: 'center' }}>
           <Space direction="vertical" size="middle">
-            <Space>
-              <Checkbox
-                checked={forceReimport}
-                onChange={(e) => setForceReimport(e.target.checked)}
-              >
-                强制重新导入
-              </Checkbox>
-            </Space>
             <Space>
               <Button
                 type="primary"

@@ -82,23 +82,49 @@ class DocxParser:
         except Exception as e:
             return False
 
+    # 北京区县列表（用于区分学校名和区县名）
+    BEIJING_REGIONS = [
+        "东城", "西城", "海淀", "朝阳", "丰台", "石景山",
+        "通州", "顺义", "昌平", "大兴", "房山", "门头沟",
+        "怀柔", "平谷", "密云", "延庆"
+    ]
+
     def parse_filename(self) -> Dict:
         """从文件名提取元数据"""
         filename = self.file_path.name
 
         match = self.FILENAME_PATTERN.search(filename)
         if match:
+            # 提取中间部分（可能是区县名或学校名）
+            region_or_school = match.group(2).strip()
+
+            # 判断是区县还是学校
+            region = None
+            school = None
+
+            # 检查是否包含已知区县
+            for r in self.BEIJING_REGIONS:
+                if r in region_or_school:
+                    region = r
+                    # 如果字符串比区县名长，剩余部分可能是学校名
+                    remaining = region_or_school.replace(r, "").strip()
+                    if remaining:
+                        school = remaining
+                    break
+
+            # 如果不包含任何已知区县，则认为是学校名
+            if region is None:
+                school = region_or_school
+
             result = {
                 "year": int(match.group(1)),
-                "region": match.group(2).strip(),
+                "region": region,
+                "school": school,
                 "grade": match.group(3),
-                "semester": match.group(4),  # 可能为 None
+                "semester": match.group(4),  # 文件名没有就为 None，不推断
                 "exam_type": match.group(5),
                 "version": match.group(6) or "学生版"
             }
-            # 如果学期为空，根据考试类型推断
-            if result["semester"] is None:
-                result["semester"] = self._infer_semester(result["exam_type"])
             return result
 
         # 尝试从目录结构推断
