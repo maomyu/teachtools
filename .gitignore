@@ -24,11 +24,6 @@ frontend/dist/
 backend/dist/
 *.egg
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
-database/*.db
 
 # Environment files
 .env
