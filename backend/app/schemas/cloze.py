@@ -121,6 +121,7 @@ class PointOccurrence(BaseModel):
     blank_number: int
     point_type: str
     explanation: Optional[str] = None
+    passage_id: Optional[int] = None  # 完形文章ID，用于跳转
 
 
 class PointSummary(BaseModel):

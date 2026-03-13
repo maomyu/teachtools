@@ -2,10 +2,10 @@
 AI主题分类服务
 
 使用通义千问qwen-plus模型对阅读文章进行主题分类
-主题与年级强关联 - 不同年级使用不同的话题池
+使用统一话题池，只输出一个 primary_topic
 """
 import json
-from typing import Dict, List, Optional
+from typing import List, Optional
 from dataclasses import dataclass
 import httpx
 
@@ -13,24 +13,22 @@ from app.config import settings
 
 
 # ============================================================================
-#  话题配置 - 按年级分组
+#  统一话题池 - 不按年级区分
 # ============================================================================
 
-TOPICS_BY_GRADE = {
-    "初一": [
-        "校园生活", "家庭亲情", "兴趣爱好", "节日习俗",
-        "动物自然", "梦想成长", "友谊互助", "健康饮食"
-    ],
-    "初二": [
-        "个人成长", "科技生活", "文化交流", "环境保护",
-        "运动健康", "艺术创造", "旅行探索", "社会服务"
-    ],
-    "初三": [
-        "人生哲理", "科技伦理", "跨文化理解", "全球问题",
-        "职业规划", "心理健康", "社会现象", "历史文化",
-        "创新思维", "人际关系", "压力应对", "责任担当"
-    ]
-}
+UNIFIED_TOPICS = [
+    # 生活类
+    "校园生活", "家庭亲情", "兴趣爱好", "节日习俗", "动物自然", "梦想成长", "助人为乐", "健康饮食",
+    # 成长类
+    "个人成长", "科技生活", "文化交流", "环境保护", "运动健康", "艺术创造", "社会现象", "友谊合作",
+    # 深度类
+    "人生哲理", "科技伦理", "跨文化理解", "全球问题", "职业规划", "心理健康", "社会责任", "传统文化",
+    # 拓展类
+    "创新思维", "教育发展", "志愿服务", "邻里关系", "诚实守信", "勇气挑战", "感恩回馈", "时间管理",
+    # 细分类
+    "安全意识", "阅读习惯", "师生关系", "环境保护", "社区参与", "文化传承", "体育精神", "科学探索",
+    "生活技能", "情绪管理"
+]
 
 
 # ============================================================================
@@ -42,7 +40,6 @@ class ClassifyResult:
     """主题分类结果"""
     success: bool
     primary_topic: Optional[str] = None
-    secondary_topics: List[str] = None
     confidence: float = 0.0
     reasoning: str = ""
     keywords: List[str] = None
@@ -58,34 +55,30 @@ class TopicClassifier:
 
     API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
-    CLASSIFY_PROMPT = """你是一个北京中考英语阅读理解教学专家。请分析以下{grade}阅读文章，从给定的话题列表中选择最匹配的主题。
-
-## 年级
-{grade}
-
-## 可选话题列表
-{topics}
+    CLASSIFY_PROMPT = """你是北京中考英语教学专家。
+请分析以下完形填空文章的话题。
 
 ## 文章内容
 {content}
 
-## 分析要求
-1. primary_topic 必须从可选话题中选择一个最匹配的
-2. secondary_topics 最多选择2个相关话题，也必须从可选话题中选择
-3. confidence 表示分类置信度，范围0-1
-4. keywords 提取3-5个文章关键词
-5. reasoning 简要说明选择该话题的理由（1-2句话）
+## 分析步骤
+1. 先从话题词库中匹配关键词
+2. 如果话题词有匹配到，深入分析文章主题
+3. 选择最贴切的一个话题（只需一个，不需要次要话题）
 
-## 输出格式
-请严格按照以下JSON格式输出，不要添加任何其他文字：
+## 统一话题池
+{topics}
+
+注意：如果以上话题都不匹配，可以根据文章内容补充新的细粒度话题。
+
+## 输出格式（严格JSON）
 
 ```json
 {{
-    "primary_topic": "主要话题",
-    "secondary_topics": ["次要话题1", "次要话题2"],
+    "primary_topic": "唯一话题",
     "confidence": 0.95,
-    "keywords": ["关键词1", "关键词2", "关键词3"],
-    "reasoning": "选择该话题的理由..."
+    "keywords": ["关键词1", "关键词2"],
+    "reasoning": "选择理由"
 }}
 ```"""
 
@@ -95,17 +88,8 @@ class TopicClassifier:
             raise ValueError("请配置DASHSCOPE_API_KEY")
 
     def _get_topics_for_grade(self, grade: str) -> List[str]:
-        """获取指定年级的话题列表"""
-        # 标准化年级格式
-        normalized_grade = grade
-        if "一" in grade:
-            normalized_grade = "初一"
-        elif "二" in grade:
-            normalized_grade = "初二"
-        elif "三" in grade:
-            normalized_grade = "初三"
-
-        return TOPICS_BY_GRADE.get(normalized_grade, TOPICS_BY_GRADE["初二"])
+        """获取话题列表（使用统一话题池，不区分年级）"""
+        return UNIFIED_TOPICS
 
     async def classify(
         self,
@@ -203,21 +187,9 @@ class TopicClassifier:
                         primary_topic = topic
                         break
 
-            # 验证secondary_topics
-            secondary_topics = data.get("secondary_topics", [])
-            if isinstance(secondary_topics, list):
-                valid_secondary = []
-                for t in secondary_topics[:2]:  # 最多2个
-                    if t in valid_topics:
-                        valid_secondary.append(t)
-                secondary_topics = valid_secondary
-            else:
-                secondary_topics = []
-
             return ClassifyResult(
                 success=True,
                 primary_topic=primary_topic,
-                secondary_topics=secondary_topics,
                 confidence=float(data.get("confidence", 0.8)),
                 keywords=data.get("keywords", []),
                 reasoning=data.get("reasoning", "")
@@ -271,7 +243,6 @@ async def test_classifier():
 
     if result.success:
         print(f"主话题: {result.primary_topic}")
-        print(f"次话题: {result.secondary_topics}")
         print(f"置信度: {result.confidence}")
         print(f"关键词: {result.keywords}")
         print(f"理由: {result.reasoning}")

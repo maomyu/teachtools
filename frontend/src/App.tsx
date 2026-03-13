@@ -6,6 +6,7 @@ import { PassageDetailPage } from '@/pages/PassageDetailPage'
 import { ImportPage } from '@/pages/ImportPage'
 import { VocabularyPage } from '@/pages/VocabularyPage'
 import { ClozePage } from '@/pages/ClozePage'
+import { ClozePointsPage } from '@/pages/ClozePointsPage'
 import { HandoutView } from '@/components/handout/HandoutView'
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
           <Route path="reading/:id" element={<PassageDetailPage />} />
           <Route path="vocabulary" element={<VocabularyPage />} />
           <Route path="cloze" element={<ClozePage />} />
+          <Route path="cloze/points" element={<ClozePointsPage />} />
           <Route path="handout" element={<HandoutView />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

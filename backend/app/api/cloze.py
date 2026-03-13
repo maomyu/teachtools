@@ -37,6 +37,66 @@ router = APIRouter()
 
 
 # ============================================================================
+#  筛选器（必须放在 /{cloze_id} 之前）
+# ============================================================================
+
+@router.get("/filters/", response_model=ClozeFilters)
+async def get_cloze_filters(db: AsyncSession = Depends(get_db)):
+    """获取完形筛选器选项"""
+    # 获取所有年级
+    grades_result = await db.execute(
+        select(distinct(ExamPaper.grade)).join(ClozePassage).where(ExamPaper.grade != None)
+    )
+    grades = [g[0] for g in grades_result.fetchall() if g[0]]
+
+    # 获取所有话题
+    topics_result = await db.execute(
+        select(distinct(ClozePassage.primary_topic)).where(ClozePassage.primary_topic != None)
+    )
+    topics = [t[0] for t in topics_result.fetchall() if t[0]]
+
+    # 获取所有年份
+    years_result = await db.execute(
+        select(distinct(ExamPaper.year)).join(ClozePassage).where(ExamPaper.year != None)
+    )
+    years = [y[0] for y in years_result.fetchall() if y[0]]
+
+    # 获取所有区县
+    regions_result = await db.execute(
+        select(distinct(ExamPaper.region)).join(ClozePassage).where(ExamPaper.region != None)
+    )
+    regions = [r[0] for r in regions_result.fetchall() if r[0]]
+
+    # 获取所有考试类型
+    exam_types_result = await db.execute(
+        select(distinct(ExamPaper.exam_type)).join(ClozePassage).where(ExamPaper.exam_type != None)
+    )
+    exam_types = [e[0] for e in exam_types_result.fetchall() if e[0]]
+
+    # 获取所有考点类型
+    point_types_result = await db.execute(
+        select(distinct(ClozePoint.point_type)).where(ClozePoint.point_type != None)
+    )
+    point_types = [p[0] for p in point_types_result.fetchall() if p[0]]
+
+    # 获取所有学期
+    semesters_result = await db.execute(
+        select(distinct(ExamPaper.semester)).join(ClozePassage).where(ExamPaper.semester != None)
+    )
+    semesters = [s[0] for s in semesters_result.fetchall() if s[0]]
+
+    return ClozeFilters(
+        grades=sorted(grades),
+        topics=sorted(topics),
+        years=sorted(years, reverse=True),
+        regions=sorted(regions),
+        exam_types=sorted(exam_types),
+        point_types=sorted(point_types),
+        semesters=sorted(semesters)
+    )
+
+
+# ============================================================================
 #  完形文章列表
 # ============================================================================
 
@@ -135,6 +195,68 @@ async def list_cloze(
 
 
 # ============================================================================
+#  考点汇总（必须放在 /{cloze_id} 之前）
+# ============================================================================
+
+@router.get("/points/summary", response_model=PointListResponse)
+async def list_points(
+    point_type: Optional[str] = None,
+    grade: Optional[str] = None,
+    keyword: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取考点汇总"""
+    query = select(ClozePoint).options(
+        selectinload(ClozePoint.cloze).selectinload(ClozePassage.paper)
+    )
+
+    # 筛选
+    if point_type:
+        query = query.where(ClozePoint.point_type == point_type)
+    if grade:
+        query = query.join(ClozePassage).join(ExamPaper).where(ExamPaper.grade == grade)
+    if keyword:
+        query = query.where(ClozePoint.correct_word.contains(keyword))
+
+    # 分页
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+
+    query = query.offset((page - 1) * size).limit(size)
+
+    result = await db.execute(query)
+    points = result.scalars().all()
+
+    # 构建响应
+    items = []
+    for pt in points:
+        source = ""
+        if pt.cloze and pt.cloze.paper:
+            paper = pt.cloze.paper
+            source = f"{paper.year}{paper.region}{paper.grade}{paper.exam_type or ''}·完形"
+
+        items.append(PointSummary(
+            word=pt.correct_word or "",
+            definition=pt.translation,
+            frequency=1,
+            point_type=pt.point_type or "词汇",
+            occurrences=[PointOccurrence(
+                sentence=pt.sentence or "",
+                source=source,
+                blank_number=pt.blank_number,
+                point_type=pt.point_type or "词汇",
+                explanation=pt.explanation,
+                passage_id=pt.cloze_id
+            )]
+        ))
+
+    return {"total": total, "items": items}
+
+
+# ============================================================================
 #  完形文章详情
 # ============================================================================
 
@@ -226,67 +348,6 @@ async def get_cloze(
 
 
 # ============================================================================
-#  考点汇总
-# ============================================================================
-
-@router.get("/points/summary", response_model=PointListResponse)
-async def list_points(
-    point_type: Optional[str] = None,
-    grade: Optional[str] = None,
-    keyword: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db)
-):
-    """获取考点汇总"""
-    query = select(ClozePoint).options(
-        selectinload(ClozePoint.cloze).selectinload(ClozePassage.paper)
-    )
-
-    # 筛选
-    if point_type:
-        query = query.where(ClozePoint.point_type == point_type)
-    if grade:
-        query = query.join(ClozePassage).join(ExamPaper).where(ExamPaper.grade == grade)
-    if keyword:
-        query = query.where(ClozePoint.correct_word.contains(keyword))
-
-    # 分页
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar()
-
-    query = query.offset((page - 1) * size).limit(size)
-
-    result = await db.execute(query)
-    points = result.scalars().all()
-
-    # 构建响应
-    items = []
-    for pt in points:
-        source = ""
-        if pt.cloze and pt.cloze.paper:
-            paper = pt.cloze.paper
-            source = f"{paper.year}{paper.region}{paper.grade}{paper.exam_type or ''}·完形"
-
-        items.append(PointSummary(
-            word=pt.correct_word or "",
-            definition=pt.translation,
-            frequency=1,  # 单个考点
-            point_type=pt.point_type or "词汇",
-            occurrences=[PointOccurrence(
-                sentence=pt.sentence or "",
-                source=source,
-                blank_number=pt.blank_number,
-                point_type=pt.point_type or "词汇",
-                explanation=pt.explanation
-            )]
-        ))
-
-    return {"total": total, "items": items}
-
-
-# ============================================================================
 #  更新接口
 # ============================================================================
 
@@ -337,63 +398,3 @@ async def update_blank_point(
 
     await db.commit()
     return {"message": "考点更新成功"}
-
-
-# ============================================================================
-#  筛选器
-# ============================================================================
-
-@router.get("/filters/", response_model=ClozeFilters)
-async def get_cloze_filters(db: AsyncSession = Depends(get_db)):
-    """获取完形筛选器选项"""
-    # 获取所有年级
-    grades_result = await db.execute(
-        select(distinct(ExamPaper.grade)).join(ClozePassage).where(ExamPaper.grade != None)
-    )
-    grades = [g[0] for g in grades_result.fetchall() if g[0]]
-
-    # 获取所有话题
-    topics_result = await db.execute(
-        select(distinct(ClozePassage.primary_topic)).where(ClozePassage.primary_topic != None)
-    )
-    topics = [t[0] for t in topics_result.fetchall() if t[0]]
-
-    # 获取所有年份
-    years_result = await db.execute(
-        select(distinct(ExamPaper.year)).join(ClozePassage).where(ExamPaper.year != None)
-    )
-    years = [y[0] for y in years_result.fetchall() if y[0]]
-
-    # 获取所有区县
-    regions_result = await db.execute(
-        select(distinct(ExamPaper.region)).join(ClozePassage).where(ExamPaper.region != None)
-    )
-    regions = [r[0] for r in regions_result.fetchall() if r[0]]
-
-    # 获取所有考试类型
-    exam_types_result = await db.execute(
-        select(distinct(ExamPaper.exam_type)).join(ClozePassage).where(ExamPaper.exam_type != None)
-    )
-    exam_types = [e[0] for e in exam_types_result.fetchall() if e[0]]
-
-    # 获取所有考点类型
-    point_types_result = await db.execute(
-        select(distinct(ClozePoint.point_type)).where(ClozePoint.point_type != None)
-    )
-    point_types = [p[0] for p in point_types_result.fetchall() if p[0]]
-
-    # 获取所有学期
-    semesters_result = await db.execute(
-        select(distinct(ExamPaper.semester)).join(ClozePassage).where(ExamPaper.semester != None)
-    )
-    semesters = [s[0] for s in semesters_result.fetchall() if s[0]]
-
-    return ClozeFilters(
-        grades=sorted(grades),
-        topics=sorted(topics),
-        years=sorted(years, reverse=True),
-        regions=sorted(regions),
-        exam_types=sorted(exam_types),
-        point_types=sorted(point_types),
-        semesters=sorted(semesters)
-    )

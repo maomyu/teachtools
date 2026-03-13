@@ -519,9 +519,7 @@ async def upload_paper_with_progress(
                             topic_result = await classifier.classify(passage.content, paper.grade)
                             if topic_result.success:
                                 passage.primary_topic = topic_result.primary_topic
-                                passage.secondary_topics = json.dumps(
-                                    topic_result.secondary_topics or [], ensure_ascii=False
-                                )
+                                passage.secondary_topics = json.dumps([], ensure_ascii=False)  # 不再使用次要话题
                                 passage.topic_confidence = topic_result.confidence
                                 if topic_result.keywords:
                                     passage.keywords = json.dumps(topic_result.keywords, ensure_ascii=False)
@@ -535,9 +533,7 @@ async def upload_paper_with_progress(
                         topic_result = await classifier.classify(cloze_passage.original_content, paper.grade)
                         if topic_result.success:
                             cloze_passage.primary_topic = topic_result.primary_topic
-                            cloze_passage.secondary_topics = json.dumps(
-                                topic_result.secondary_topics or [], ensure_ascii=False
-                            )
+                            cloze_passage.secondary_topics = json.dumps([], ensure_ascii=False)  # 不再使用次要话题
                             cloze_passage.topic_confidence = topic_result.confidence
                             topics_found.append(topic_result.primary_topic)
 

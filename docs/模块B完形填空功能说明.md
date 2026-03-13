@@ -11,7 +11,7 @@
 | 完形提取 | 自动识别并提取试卷中的完形填空文章 |
 | 空格解析 | 识别每个空格的位置、选项、正确答案 |
 | 话题分类 | AI自动分类文章话题 |
-| 考点分析 | AI分析四类考点，输出详细解析 |
+| 考点分析 | AI分析三类考点（固定搭配/词义辨析/熟词僻义）
 | 考点汇总 | 按考点类型聚合查看所有实例 |
 | 定位功能 | 点击考点跳转到原文位置 |
 
@@ -129,13 +129,14 @@ It was a children's story about a rabbit. I was so ② that I read it three time
 
 ---
 
-## 三、四类考点分析
+## 三、三类考点分析
 
 ### 3.1 考点类型定义
 
+> **说明**：词汇考查已整合到**统一高频词库**（与阅读共享），> 本模块专注于**三类结构性考点**分析。
+
 | 类型 | 说明 | 识别特征 |
 |------|------|----------|
-| **词汇** | 基础词汇考查，语境选择 | 四个词词性相同，语义不同 |
 | **固定搭配** | 动词短语、介词搭配 | 短语动词，依赖语境搭配 |
 | **词义辨析** | 同义/近义词细微区别 | 四个词含义相近，语境决定 |
 | **熟词僻义** | 常见词的非常规含义 | 常见词，非常规用法 |
@@ -192,11 +193,17 @@ It was a children's story about a rabbit. I was so ② that I read it three time
 }
 ```
 
-### 3.4 熟词僻义考点
+### 3.3 熟词僻义考点
 
-**识别特征**：
-- 正确答案是常见词的非常规用法
-- 如 book（书→预订）、bank（银行→河岸）
+**识别逻辑**：
+1. **词库检索**：在已有词库中检索该词的常见含义
+2. **语境对比**：发现该词在当前语境下的含义与词库中的常见含义不同
+3. **判定为熟词僻义**：该词使用了非常规含义
+
+**典型示例**：
+- book（常见义：书 → 僻义：预订）
+- bank（常见义：银行 → 僻义：河岸）
+- fine（常见义：好的 → 僻义：罚款）
 
 **AI分析输出**：
 ```json
@@ -214,30 +221,6 @@ It was a children's story about a rabbit. I was so ② that I read it three time
     {"word": "plant", "common": "植物", "rare": "工厂"}
   ],
   "tips": "注意词性变化：名词→动词"
-}
-```
-
-### 3.5 词汇考点
-
-**识别特征**：
-- 四个选项是不同的词汇
-- 主要考查语境理解和词汇积累
-
-**AI分析输出**：
-```json
-{
-  "point_type": "词汇",
-  "correct_word": "opportunity",
-  "translation": "n. 机会",
-  "context_sentence": "This is a good ___ to learn English.",
-  "explanation": "opportunity表示有利的时机或机会，常搭配to do sth",
-  "word_family": {
-    "opportunity": "有利的机会，+ to do sth",
-    "chance": "偶然的机会，+ to do sth / of doing sth",
-    "possibility": "可能性，+ of doing sth",
-    "probability": "概率，+ of doing sth"
-  },
-  "collocations": ["take an opportunity", "miss an opportunity", "golden opportunity"]
 }
 ```
 
@@ -296,15 +279,6 @@ D. {option_d}
   "tips": "提示"
 }
 
-对于词汇：
-{
-  "point_type": "词汇",
-  "correct_word": "正确词",
-  "translation": "翻译",
-  "explanation": "解释",
-  "word_family": {...},
-  "collocations": [...]
-}
 ```
 
 ### 4.2 话题分类 Prompt
@@ -316,16 +290,22 @@ D. {option_d}
 文章内容：
 {content_full}
 
-请从以下话题中选择最匹配的（可多选）：
+**分析步骤**：
+1. 先从话题词库中匹配关键词
+2. 如果话题词没有匹配到，深入分析文章主题
+3. 选择最贴切的一个话题（只需一个，不需要次要话题）
 
-初一话题池：校园生活、家庭亲情、兴趣爱好、节日习俗、动物自然、梦想成长、助人为乐、健康饮食
-初二话题池：个人成长、科技生活、文化交流、环境保护、运动健康、艺术创造、社会现象、友谊合作
-初三话题池：人生哲理、科技伦理、跨文化理解、全球问题、职业规划、心理健康、社会责任、传统文化、创新思维、教育发展
+**统一话题池**（不按年级区分）：
+- 校园生活、家庭亲情、兴趣爱好、节日习俗、动物自然、梦想成长、助人为乐、健康饮食
+- 个人成长、科技生活、文化交流、环境保护、运动健康、艺术创造、社会现象、友谊合作
+- 人生哲理、科技伦理、跨文化理解、全球问题、职业规划、心理健康、社会责任、传统文化、创新思维、教育发展
+- 志愿服务、邻里关系、诚实守信、勇气挑战、感恩回馈、时间管理、安全意识、阅读习惯
+- 师生关系、环境保护、社区参与、文化传承、体育精神、科学探索、生活技能、情绪管理
+- 注意：如果以上话题都不匹配，可以根据文章内容补充新的细粒度话题
 
 请返回JSON：
 {
-  "primary_topic": "主要话题",
-  "secondary_topics": ["次要话题1", "次要话题2"],
+  "primary_topic": "唯一话题",
   "confidence": 0.95,
   "keywords": ["关键词1", "关键词2"],
   "reasoning": "选择理由"
@@ -397,7 +377,6 @@ GET /api/cloze/{passage_id}
   "content_full": "I have always enjoyed reading...",
   "word_count": 280,
   "primary_topic": "个人成长",
-  "secondary_topics": ["梦想成长"],
   "topic_verified": false,
   "paper": {
     "year": 2022,
@@ -438,7 +417,7 @@ GET /api/cloze-points/
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| point_type | string | 考点类型（固定搭配/词义辨析/熟词僻义/词汇） |
+| point_type | string | 考点类型（固定搭配/词义辨析/熟词僻义） |
 | grade | string | 年级筛选 |
 | keyword | string | 关键词搜索 |
 
@@ -476,7 +455,6 @@ PUT /api/cloze/{id}/topic
 ```json
 {
   "primary_topic": "个人成长",
-  "secondary_topics": ["梦想成长"],
   "verified": true
 }
 ```
@@ -564,7 +542,7 @@ PUT /api/cloze/blanks/{blank_id}/point
 ### 6.2 考点汇总页交互
 
 **筛选功能**：
-- 考点类型下拉（固定搭配/词义辨析/熟词僻义/词汇）
+- 考点类型下拉（固定搭配/词义辨析/熟词僻义）
 - 年级筛选
 - 关键词搜索
 
@@ -634,8 +612,7 @@ CREATE TABLE cloze_passages (
     content_with_blanks TEXT,      -- 带空格原文
     content_full TEXT,             -- 完整文章
     word_count INTEGER,            -- 词数
-    primary_topic VARCHAR(100),    -- 主话题
-    secondary_topics TEXT,         -- 次要话题(JSON)
+    primary_topic VARCHAR(100),    -- 话题
     topic_confidence FLOAT,        -- 分类置信度
     topic_verified BOOLEAN         -- 是否人工校对
 );

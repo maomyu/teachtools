@@ -68,7 +68,7 @@ class ClozePoint(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "point_type IN ('词汇', '固定搭配', '词义辨析', '熟词僻义', '其他')",
+            "point_type IN ('固定搭配', '词义辨析', '熟词僻义', '其他')",
             name="ck_point_type"
         ),
     )

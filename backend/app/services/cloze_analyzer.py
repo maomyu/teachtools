@@ -2,7 +2,7 @@
 完形填空考点分析服务
 
 [INPUT]: 依赖 httpx、app.config 的 DASHSCOPE_API_KEY
-[OUTPUT]: 对外提供 ClozeAnalyzer 类，分析四类考点
+[OUTPUT]: 对外提供 ClozeAnalyzer 类，分析三类考点（固定搭配、词义辨析、熟词僻义）
 [POS]: backend/app/services 的考点分析服务
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -18,7 +18,7 @@ from app.config import settings
 class PointAnalysisResult:
     """考点分析结果"""
     success: bool
-    point_type: Optional[str] = None  # 词汇/固定搭配/词义辨析/熟词僻义
+    point_type: Optional[str] = None  # 固定搭配/词义辨析/熟词僻义
     correct_word: Optional[str] = None
     translation: Optional[str] = None
     explanation: Optional[str] = None
@@ -28,7 +28,7 @@ class PointAnalysisResult:
 
 
 class ClozeAnalyzer:
-    """完形填空考点分析器 - 四类考点识别"""
+    """完形填空考点分析器 - 三类考点识别"""
 
     API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
@@ -47,7 +47,7 @@ class ClozeAnalyzer:
 ## 原文语境（含空格）
 {context}
 
-## 考点类型判断标准
+## 三类考点判断标准
 
 1. **固定搭配**
    - 识别特征: 正确答案是短语动词或介词搭配
@@ -58,17 +58,13 @@ class ClozeAnalyzer:
    - 例如: say/tell/speak/talk, achieve/succeed/manage/accomplish
 
 3. **熟词僻义**
-   - 识别特征: 正确答案是常见词的非常规含义
-   - 例如: book(书→预订), bank(银行→河岸), fine(好的→罚款)
-
-4. **词汇**
-   - 识别特征: 基础词汇考查，主要依靠语境理解和词汇积累
-   - 四个选项词性相同但语义明显不同
+   - 识别特征: 该词有常见含义，但在当前语境下使用了非常规含义
+   - 例如: book(常见义:书 → 僻义:预订), bank(常见义:银行 → 僻义:河岸), fine(常见义:好的 → 僻义:罚款)
 
 ## 输出格式（严格JSON，不要添加任何其他文字）
 
 {{
-    "point_type": "固定搭配|词义辨析|熟词僻义|词汇",
+    "point_type": "固定搭配|词义辨析|熟词僻义",
     "correct_word": "{correct_word}",
     "translation": "该词在此语境下的中文翻译",
     "explanation": "解析说明（2-3句话，说明为什么选这个词）",
@@ -176,11 +172,11 @@ class ClozeAnalyzer:
 
             data = json.loads(json_str)
 
-            # 验证考点类型
-            valid_types = ["词汇", "固定搭配", "词义辨析", "熟词僻义"]
-            point_type = data.get("point_type", "词汇")
+            # 验证考点类型（三类：固定搭配、词义辨析、熟词僻义）
+            valid_types = ["固定搭配", "词义辨析", "熟词僻义"]
+            point_type = data.get("point_type", "词义辨析")
             if point_type not in valid_types:
-                point_type = "词汇"  # 默认
+                point_type = "词义辨析"  # 默认
 
             return PointAnalysisResult(
                 success=True,

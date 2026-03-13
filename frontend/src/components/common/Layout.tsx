@@ -43,6 +43,11 @@ const menuItems = [
     label: '完形文章',
   },
   {
+    key: '/cloze/points',
+    icon: <EditOutlined />,
+    label: '考点汇总',
+  },
+  {
     key: '/vocabulary',
     icon: <BookOutlined />,
     label: '高频词库',

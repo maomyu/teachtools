@@ -238,7 +238,7 @@ export interface ClozePoint {
   correct_answer?: string
   correct_word?: string
   options?: QuestionOptions
-  point_type?: string  // 词汇 | 固定搭配 | 词义辨析 | 熟词僻义
+  point_type?: string  // 固定搭配 | 词义辨析 | 熟词僻义
   translation?: string
   explanation?: string
   confusion_words?: Array<{word: string; meaning: string; reason: string}>
@@ -288,6 +288,7 @@ export interface PointOccurrence {
   blank_number: number
   point_type: string
   explanation?: string
+  passage_id?: number  // 完形文章ID，用于跳转
 }
 
 // 完形考点汇总

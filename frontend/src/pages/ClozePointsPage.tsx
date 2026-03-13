@@ -1,0 +1,391 @@
+/**
+ * 考点汇总页面
+ *
+ * [INPUT]: 依赖 antd 组件、@/services/clozeService、@/types
+ * [OUTPUT]: 对外提供 ClozePointsPage 组件
+ * [POS]: frontend/src/pages 的考点汇总页面
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ *
+ * 功能：
+ * - 按考点类型筛选（固定搭配/词义辨析/熟词僻义）
+ * - 按年级、关键词搜索
+ * - 展示考点词/短语、释义、出现次数
+ * - 例句列表（含出处链接，可跳转到原文）
+ */
+import { useState, useEffect } from 'react'
+import {
+  Table,
+  Select,
+  Space,
+  Tag,
+  message,
+  Card,
+  Input,
+  Button,
+  Typography,
+  Modal,
+  Spin,
+} from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+
+import { getPointList, getClozeFilters } from '@/services/clozeService'
+import type { PointSummary, PointOccurrence, ClozeFiltersResponse } from '@/types'
+import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
+
+const { Text } = Typography
+
+// ============================================================================
+//  常量定义
+// ============================================================================
+
+const POINT_TYPE_COLORS: Record<string, string> = {
+  '固定搭配': 'green',
+  '词义辨析': 'orange',
+  '熟词僻义': 'purple',
+  '其他': 'default',
+}
+
+const POINT_TYPE_OPTIONS = [
+  { value: '固定搭配', label: '固定搭配' },
+  { value: '词义辨析', label: '词义辨析' },
+  { value: '熟词僻义', label: '熟词僻义' },
+]
+
+// ============================================================================
+//  主组件
+// ============================================================================
+
+export function ClozePointsPage() {
+  // 状态管理
+  const [loading, setLoading] = useState(false)
+  const [pointsList, setPointsList] = useState<PointSummary[]>([])
+  const [total, setTotal] = useState(0)
+  const [filters, setFilters] = useState<ClozeFiltersResponse>({
+    grades: [],
+    topics: [],
+    years: [],
+    regions: [],
+    exam_types: [],
+    point_types: [],
+    semesters: [],
+  })
+
+  // 筛选条件
+  const [pointType, setPointType] = useState<string | undefined>()
+  const [grade, setGrade] = useState<string | undefined>()
+  const [keyword, setKeyword] = useState<string>('')
+  const [searchKeyword, setSearchKeyword] = useState<string>('')
+
+  // 分页
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(20)
+
+  // 详情抽屉/模态框
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [selectedClozeId, setSelectedClozeId] = useState<number | null>(null)
+
+  // 加载筛选项
+  useEffect(() => {
+    loadFilters()
+  }, [])
+
+  // 加载考点列表
+  useEffect(() => {
+    loadPointsList()
+  }, [pointType, grade, searchKeyword, page, size])
+
+  const loadFilters = async () => {
+    try {
+      const data = await getClozeFilters()
+      setFilters(data)
+    } catch (error) {
+      console.error('加载筛选项失败:', error)
+    }
+  }
+
+  const loadPointsList = async () => {
+    setLoading(true)
+    try {
+      const response = await getPointList({
+        point_type: pointType,
+        grade,
+        keyword: searchKeyword || undefined,
+        page,
+        size,
+      })
+      setPointsList(response.items)
+      setTotal(response.total)
+    } catch (error) {
+      message.error('加载考点列表失败')
+      console.error(error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 搜索
+  const handleSearch = () => {
+    setSearchKeyword(keyword)
+    setPage(1)
+  }
+
+  // 查看详情
+  const handleViewDetail = (occurrence: PointOccurrence) => {
+    // 从 source 字符串中解析出 clozeId
+    // source 格式: "2024海淀区初一期中·完形"
+    // 需要从后端返回中获取 cloze_id
+    if (occurrence.passage_id) {
+      setSelectedClozeId(occurrence.passage_id)
+      setDetailModalOpen(true)
+    }
+  }
+
+  // 关闭详情模态框
+  const handleCloseDetail = () => {
+    setDetailModalOpen(false)
+    setSelectedClozeId(null)
+  }
+
+  // 表格列定义
+  const columns: ColumnsType<PointSummary> = [
+    {
+      title: '考点词',
+      dataIndex: 'word',
+      key: 'word',
+      width: 120,
+      render: (word: string) => <Text strong style={{ fontSize: 14 }}>{word}</Text>,
+    },
+    {
+      title: '释义',
+      dataIndex: 'definition',
+      key: 'definition',
+      width: 200,
+      ellipsis: true,
+      render: (def: string) => def || '-',
+    },
+    {
+      title: '类型',
+      dataIndex: 'point_type',
+      key: 'point_type',
+      width: 100,
+      render: (type: string) => (
+        <Tag color={POINT_TYPE_COLORS[type] || 'default'}>
+          {type}
+        </Tag>
+      ),
+    },
+    {
+      title: '出现次数',
+      dataIndex: 'frequency',
+      key: 'frequency',
+      width: 80,
+      align: 'center',
+      render: (freq: number) => <Tag color="blue">{freq}</Tag>,
+    },
+    {
+      title: '例句',
+      key: 'occurrences',
+      render: (_, record) => {
+        if (!record.occurrences?.length) return '-'
+        return (
+          <div style={{ maxHeight: 80, overflow: 'auto' }}>
+            {record.occurrences.slice(0, 2).map((occ, idx) => (
+              <div
+                key={idx}
+                style={{
+                  marginBottom: 4,
+                  padding: '4px 8px',
+                  background: '#fafafa',
+                  borderRadius: 4,
+                  fontSize: 12,
+                }}
+              >
+                <Text type="secondary" ellipsis style={{ maxWidth: 300 }}>
+                  {occ.sentence}
+                </Text>
+              </div>
+            ))}
+            {record.occurrences.length > 2 && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                +{record.occurrences.length - 2} 更多...
+              </Text>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      title: '出处',
+      key: 'source',
+      width: 180,
+      render: (_, record) => {
+        if (!record.occurrences?.length) return '-'
+        const firstOcc = record.occurrences[0]
+        return (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {firstOcc.source}
+          </Text>
+        )
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      render: (_, record) => (
+        <Button
+          type="link"
+          size="small"
+          onClick={() => {
+            if (record.occurrences?.[0]?.passage_id) {
+              setSelectedClozeId(record.occurrences[0].passage_id)
+              setDetailModalOpen(true)
+            }
+          }}
+        >
+          查看原文
+        </Button>
+      ),
+    },
+  ]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff' }}>
+      {/* 页面标题 */}
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0' }}>
+        <Text strong style={{ fontSize: 18 }}>考点汇总</Text>
+        <Text type="secondary" style={{ marginLeft: 12, fontSize: 13 }}>
+          共 {total} 个考点
+        </Text>
+      </div>
+
+      {/* 筛选器 */}
+      <Card style={{ marginBottom: 16, flexShrink: 0 }}>
+        <Space wrap>
+          <Select
+            placeholder="考点类型"
+            allowClear
+            style={{ width: 120 }}
+            value={pointType}
+            onChange={setPointType}
+            options={POINT_TYPE_OPTIONS}
+          />
+          <Select
+            placeholder="选择年级"
+            allowClear
+            style={{ width: 120 }}
+            value={grade}
+            onChange={setGrade}
+            options={filters.grades.map(g => ({ value: g, label: g }))}
+          />
+          <Input.Search
+            placeholder="搜索考点词..."
+            allowClear
+            style={{ width: 200 }}
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onSearch={handleSearch}
+          />
+          <Button type="primary" onClick={handleSearch}>
+            搜索
+          </Button>
+        </Space>
+      </Card>
+
+      {/* 考点列表 */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <Table
+          columns={columns}
+          dataSource={pointsList}
+          rowKey={(record) => `${record.word}-${record.point_type}`}
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize: size,
+            total,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 个考点`,
+            onChange: (p, s) => {
+              setPage(p)
+              setSize(s)
+            },
+          }}
+          expandable={{
+            expandedRowRender: (record) => (
+              <div style={{ padding: '8px 16px' }}>
+                <Text strong style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
+                  出现位置 ({record.occurrences?.length || 0}次):
+                </Text>
+                {record.occurrences?.map((occ, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: '8px 12px',
+                      marginBottom: 8,
+                      background: '#fafafa',
+                      borderRadius: 4,
+                      borderLeft: '3px solid #1890ff',
+                    }}
+                  >
+                    <div style={{ marginBottom: 4 }}>
+                      <Text style={{ fontSize: 13 }}>{occ.sentence}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space>
+                        <Tag color="blue" style={{ fontSize: 11 }}>第 {occ.blank_number} 空</Tag>
+                        <Tag color={POINT_TYPE_COLORS[occ.point_type] || 'default'} style={{ fontSize: 11 }}>
+                          {occ.point_type}
+                        </Tag>
+                        <Text type="secondary" style={{ fontSize: 11 }}>{occ.source}</Text>
+                      </Space>
+                      {occ.passage_id && (
+                        <Button
+                          type="link"
+                          size="small"
+                          onClick={() => handleViewDetail(occ)}
+                        >
+                          查看原文
+                        </Button>
+                      )}
+                    </div>
+                    {occ.explanation && (
+                      <div style={{ marginTop: 4 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          解析: {occ.explanation}
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ),
+            rowExpandable: (record) => (record.occurrences?.length || 0) > 0,
+          }}
+        />
+      </div>
+
+      {/* 详情模态框 */}
+      <Modal
+        title="完形详情"
+        open={detailModalOpen}
+        onCancel={handleCloseDetail}
+        footer={null}
+        width={900}
+        style={{ top: 20 }}
+        bodyStyle={{ height: '70vh', overflow: 'auto' }}
+      >
+        {selectedClozeId ? (
+          <ClozeDetailContent
+            clozeId={selectedClozeId}
+            onBack={handleCloseDetail}
+            showBackButton={false}
+          />
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
+            <Spin />
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
