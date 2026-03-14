@@ -320,17 +320,18 @@ export function ClozePointsPage() {
                   <div
                     key={idx}
                     style={{
-                      padding: '8px 12px',
-                      marginBottom: 8,
+                      padding: '12px 16px',
+                      marginBottom: 12,
                       background: '#fafafa',
                       borderRadius: 4,
                       borderLeft: '3px solid #1890ff',
                     }}
                   >
-                    <div style={{ marginBottom: 4 }}>
+                    {/* 句子和出处 */}
+                    <div style={{ marginBottom: 8 }}>
                       <Text style={{ fontSize: 13 }}>{occ.sentence}</Text>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <Space>
                         <Tag color="blue" style={{ fontSize: 11 }}>第 {occ.blank_number} 空</Tag>
                         <Tag color={POINT_TYPE_COLORS[occ.point_type] || 'default'} style={{ fontSize: 11 }}>
@@ -348,7 +349,159 @@ export function ClozePointsPage() {
                         </Button>
                       )}
                     </div>
-                    {occ.explanation && (
+
+                    {/* 根据考点类型展示不同的分析内容 */}
+                    {occ.analysis && (
+                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#fff', borderRadius: 4 }}>
+                        {/* 固定搭配 */}
+                        {occ.point_type === '固定搭配' && occ.analysis.phrase && (
+                          <>
+                            <div style={{ marginBottom: 8 }}>
+                              <Text strong style={{ color: '#52c41a' }}>短语：</Text>
+                              <Text code>{occ.analysis.phrase}</Text>
+                              {occ.analysis.confusion_words?.[0] && (
+                                <Text type="secondary"> - {occ.analysis.confusion_words[0].meaning}</Text>
+                              )}
+                            </div>
+                            {occ.analysis.similar_phrases && occ.analysis.similar_phrases.length > 0 && (
+                              <div style={{ marginBottom: 8 }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>相似短语：</Text>
+                                <Space size={4} wrap>
+                                  {occ.analysis.similar_phrases.map((phrase, i) => (
+                                    <Tag key={i} style={{ fontSize: 11 }}>{phrase}</Tag>
+                                  ))}
+                                </Space>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* 词义辨析 - 三维度分析 */}
+                        {occ.point_type === '词义辨析' && occ.analysis.word_analysis && (
+                          <>
+                            {occ.analysis.dictionary_source && (
+                              <div style={{ marginBottom: 8 }}>
+                                <Text type="secondary" style={{ fontSize: 11 }}>
+                                  词典来源：{occ.analysis.dictionary_source}
+                                </Text>
+                              </div>
+                            )}
+                            <div style={{ marginBottom: 8 }}>
+                              <Text strong style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>三维度分析：</Text>
+                              <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                                  <thead>
+                                    <tr style={{ background: '#f5f5f5' }}>
+                                      <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>单词</th>
+                                      <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>释义</th>
+                                      <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用对象</th>
+                                      <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用场景</th>
+                                      <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>正负态度</th>
+                                      <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>排除理由</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {Object.entries(occ.analysis.word_analysis).map(([word, data]) => (
+                                      <tr key={word} style={{ background: word === record.word ? '#e6f7ff' : 'white' }}>
+                                        <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                                          <Text strong={word === record.word}>{word}</Text>
+                                        </td>
+                                        <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8', maxWidth: 200 }}>
+                                          <Text type="secondary" style={{ fontSize: 10 }}>{data.definition}</Text>
+                                        </td>
+                                        <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                                          {data.dimensions?.使用对象 || '-'}
+                                        </td>
+                                        <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                                          {data.dimensions?.使用场景 || '-'}
+                                        </td>
+                                        <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                                          {data.dimensions?.正负态度 || '-'}
+                                        </td>
+                                        <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8', color: '#ff4d4f' }}>
+                                          {data.rejection_reason || '-'}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {/* 熟词僻义 */}
+                        {occ.point_type === '熟词僻义' && occ.analysis.textbook_meaning && (
+                          <>
+                            <div style={{ marginBottom: 8 }}>
+                              <Text type="secondary" style={{ fontSize: 11 }}>课本出处：</Text>
+                              <Text style={{ fontSize: 11 }}>{occ.analysis.textbook_source}</Text>
+                            </div>
+                            <div style={{ marginBottom: 8, display: 'flex', gap: 16 }}>
+                              <div>
+                                <Text type="secondary" style={{ fontSize: 11 }}>课本释义：</Text>
+                                <Text style={{ fontSize: 11 }}>{occ.analysis.textbook_meaning}</Text>
+                              </div>
+                              <div>
+                                <Text type="secondary" style={{ fontSize: 11 }}>语境释义：</Text>
+                                <Text style={{ fontSize: 11, color: '#722ed1' }}>{occ.analysis.context_meaning}</Text>
+                              </div>
+                            </div>
+                            {occ.analysis.similar_words && occ.analysis.similar_words.length > 0 && (
+                              <div>
+                                <Text type="secondary" style={{ fontSize: 11 }}>其他熟词僻义示例：</Text>
+                                <div style={{ marginTop: 4 }}>
+                                  {occ.analysis.similar_words.map((item, i) => (
+                                    <Tag key={i} color="purple" style={{ fontSize: 10, marginBottom: 4 }}>
+                                      {item.word}: {item.textbook} → {item.rare}
+                                    </Tag>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* 易混淆词（通用展示） */}
+                        {occ.analysis.confusion_words && occ.analysis.confusion_words.length > 0 && occ.point_type !== '固定搭配' && (
+                          <div style={{ marginTop: 8 }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>易混淆词：</Text>
+                            <div style={{ marginTop: 4 }}>
+                              {occ.analysis.confusion_words.map((item, i) => (
+                                <div key={i} style={{ marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid #faad14' }}>
+                                  <Text strong style={{ fontSize: 11 }}>{item.word}</Text>
+                                  <Text type="secondary" style={{ fontSize: 11 }}> - {item.meaning}</Text>
+                                  {item.reason && (
+                                    <Text type="danger" style={{ fontSize: 10, marginLeft: 8 }}>
+                                      ({item.reason})
+                                    </Text>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 记忆技巧 */}
+                        {occ.analysis.tips && (
+                          <div style={{ marginTop: 8, padding: '4px 8px', background: '#fffbe6', borderRadius: 4 }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>💡 {occ.analysis.tips}</Text>
+                          </div>
+                        )}
+
+                        {/* 解析（兼容旧数据） */}
+                        {!occ.analysis && occ.explanation && (
+                          <div style={{ marginTop: 8 }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              解析: {occ.explanation}
+                            </Text>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 兼容旧数据：没有 analysis 对象但有 explanation */}
+                    {!occ.analysis && occ.explanation && (
                       <div style={{ marginTop: 4 }}>
                         <Text type="secondary" style={{ fontSize: 11 }}>
                           解析: {occ.explanation}
@@ -357,6 +510,13 @@ export function ClozePointsPage() {
                     )}
                   </div>
                 ))}
+
+                {/* 聚合后的提示 */}
+                {record.tips && (
+                  <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbe6', borderRadius: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>💡 记忆技巧：{record.tips}</Text>
+                  </div>
+                )}
               </div>
             ),
             rowExpandable: (record) => (record.occurrences?.length || 0) > 0,

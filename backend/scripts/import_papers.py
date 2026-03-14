@@ -50,7 +50,7 @@ async def get_or_create_paper(
         year=metadata.get("year", 0),
         region=metadata.get("region"),
         school=metadata.get("school"),
-        grade=metadata.get("grade", ""),
+        grade=metadata.get("grade", "初二"),  # 默认初二
         semester=metadata.get("semester"),
         season=metadata.get("season"),
         exam_type=metadata.get("exam_type"),
@@ -225,11 +225,24 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                             correct_answer=correct_answer,
                             correct_word=correct_word,
                             options=json.dumps(options, ensure_ascii=False),
-                            point_type=analysis.point_type if analysis.success else "词汇",
+                            point_type=analysis.point_type if analysis.success else None,
                             translation=analysis.translation if analysis.success else None,
                             explanation=analysis.explanation if analysis.success else None,
                             confusion_words=json.dumps(analysis.confusion_words, ensure_ascii=False) if analysis.success and analysis.confusion_words else None,
-                            sentence=sentence
+                            sentence=sentence,
+                            # 固定搭配专用字段
+                            phrase=analysis.phrase if analysis.success else None,
+                            similar_phrases=json.dumps(analysis.similar_phrases, ensure_ascii=False) if analysis.success and analysis.similar_phrases else None,
+                            # 词义辨析专用字段
+                            word_analysis=json.dumps(analysis.word_analysis, ensure_ascii=False) if analysis.success and analysis.word_analysis else None,
+                            dictionary_source=analysis.dictionary_source if analysis.success else None,
+                            # 熟词僻义专用字段
+                            textbook_meaning=analysis.textbook_meaning if analysis.success else None,
+                            textbook_source=analysis.textbook_source if analysis.success else None,
+                            context_meaning=analysis.context_meaning if analysis.success else None,
+                            similar_words=json.dumps(analysis.similar_words, ensure_ascii=False) if analysis.success and analysis.similar_words else None,
+                            # 通用
+                            tips=analysis.tips if analysis.success else None
                         )
                         session.add(cloze_point)
                         result["cloze_points"] += 1

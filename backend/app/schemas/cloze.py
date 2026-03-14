@@ -11,6 +11,32 @@ from pydantic import BaseModel
 
 
 # ============================================================================
+#  考点分析详情（嵌套对象）
+# ============================================================================
+
+class PointAnalysis(BaseModel):
+    """考点分析详情 - 包含各类考点的扩展字段"""
+    # 通用字段
+    explanation: Optional[str] = None
+    confusion_words: Optional[List[Dict]] = None
+    tips: Optional[str] = None
+
+    # 固定搭配专用
+    phrase: Optional[str] = None
+    similar_phrases: Optional[List[str]] = None
+
+    # 词义辨析专用
+    word_analysis: Optional[Dict] = None
+    dictionary_source: Optional[str] = None
+
+    # 熟词僻义专用
+    textbook_meaning: Optional[str] = None
+    textbook_source: Optional[str] = None
+    context_meaning: Optional[str] = None
+    similar_words: Optional[List[Dict]] = None
+
+
+# ============================================================================
 #  考点相关
 # ============================================================================
 
@@ -25,11 +51,29 @@ class ClozePointBase(BaseModel):
     explanation: Optional[str] = None
     confusion_words: Optional[List[Dict]] = None
 
+    # 固定搭配专用字段
+    phrase: Optional[str] = None
+    similar_phrases: Optional[List[str]] = None
+
+    # 词义辨析专用字段
+    word_analysis: Optional[Dict] = None
+    dictionary_source: Optional[str] = None
+
+    # 熟词僻义专用字段
+    textbook_meaning: Optional[str] = None
+    textbook_source: Optional[str] = None
+    context_meaning: Optional[str] = None
+    similar_words: Optional[List[Dict]] = None
+
+    # 通用
+    tips: Optional[str] = None
+
 
 class ClozePointResponse(ClozePointBase):
     """考点响应"""
     id: int
     sentence: Optional[str] = None
+    point_verified: bool = False
 
     class Config:
         from_attributes = True
@@ -41,6 +85,14 @@ class PointUpdateRequest(BaseModel):
     explanation: Optional[str] = None
     translation: Optional[str] = None
     confusion_words: Optional[List[Dict]] = None
+    # 新增字段
+    phrase: Optional[str] = None
+    similar_phrases: Optional[List[str]] = None
+    word_analysis: Optional[Dict] = None
+    textbook_meaning: Optional[str] = None
+    textbook_source: Optional[str] = None
+    context_meaning: Optional[str] = None
+    tips: Optional[str] = None
     verified: bool = False
 
 
@@ -120,8 +172,10 @@ class PointOccurrence(BaseModel):
     source: str
     blank_number: int
     point_type: str
-    explanation: Optional[str] = None
     passage_id: Optional[int] = None  # 完形文章ID，用于跳转
+    point_id: Optional[int] = None    # 考点ID，用于编辑
+    # 嵌套分析详情
+    analysis: Optional[PointAnalysis] = None
 
 
 class PointSummary(BaseModel):
@@ -131,6 +185,8 @@ class PointSummary(BaseModel):
     frequency: int
     point_type: str
     occurrences: List[PointOccurrence]
+    # 聚合后的分析概要（取第一次出现的信息）
+    tips: Optional[str] = None
 
 
 class PointListResponse(BaseModel):

@@ -281,14 +281,46 @@ export interface ClozeDetailResponse extends ClozePassage {
   vocabulary: VocabularyInCloze[]  // 完形相关词汇
 }
 
+// 考点分析详情（嵌套对象）
+export interface PointAnalysis {
+  // 通用字段
+  explanation?: string
+  confusion_words?: Array<{word: string; meaning: string; reason: string}>
+  tips?: string
+
+  // 固定搭配专用
+  phrase?: string
+  similar_phrases?: string[]
+
+  // 词义辨析专用
+  word_analysis?: Record<string, {
+    definition: string
+    dimensions?: {
+      使用对象: string
+      使用场景: string
+      正负态度: string
+    }
+    rejection_reason?: string
+  }>
+  dictionary_source?: string
+
+  // 熟词僻义专用
+  textbook_meaning?: string
+  textbook_source?: string
+  context_meaning?: string
+  similar_words?: Array<{word: string; textbook: string; rare: string}>
+}
+
 // 完形考点出现位置
 export interface PointOccurrence {
   sentence: string
   source: string
   blank_number: number
   point_type: string
-  explanation?: string
   passage_id?: number  // 完形文章ID，用于跳转
+  point_id?: number    // 考点ID
+  // 嵌套分析详情
+  analysis?: PointAnalysis
 }
 
 // 完形考点汇总
@@ -298,6 +330,7 @@ export interface PointSummary {
   frequency: number
   point_type: string
   occurrences: PointOccurrence[]
+  tips?: string  // 聚合后的提示
 }
 
 // 完形考点汇总响应

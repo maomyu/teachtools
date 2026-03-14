@@ -26,6 +26,7 @@ from app.schemas.cloze import (
     PointListResponse,
     PointSummary,
     PointOccurrence,
+    PointAnalysis,
     TopicUpdateRequest,
     PointUpdateRequest,
     VocabularyInCloze,
@@ -187,7 +188,21 @@ async def list_cloze(
                 translation=pt.translation,
                 explanation=pt.explanation,
                 confusion_words=json.loads(pt.confusion_words) if pt.confusion_words else None,
-                sentence=pt.sentence
+                sentence=pt.sentence,
+                point_verified=pt.point_verified if hasattr(pt, 'point_verified') else False,
+                # 固定搭配
+                phrase=pt.phrase if hasattr(pt, 'phrase') else None,
+                similar_phrases=json.loads(pt.similar_phrases) if hasattr(pt, 'similar_phrases') and pt.similar_phrases else None,
+                # 词义辨析
+                word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
+                dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
+                # 熟词僻义
+                textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
+                textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
+                context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
+                similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words else None,
+                # 通用
+                tips=pt.tips if hasattr(pt, 'tips') else None
             ) for pt in p.points]
         ))
 
@@ -207,7 +222,8 @@ async def list_points(
     size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取考点汇总"""
+    """获取考点汇总（支持 frequency 聚合）"""
+    # 先查询所有匹配的考点，不做分页（需要聚合）
     query = select(ClozePoint).options(
         selectinload(ClozePoint.cloze).selectinload(ClozePassage.paper)
     )
@@ -220,40 +236,77 @@ async def list_points(
     if keyword:
         query = query.where(ClozePoint.correct_word.contains(keyword))
 
-    # 分页
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar()
-
-    query = query.offset((page - 1) * size).limit(size)
+    # 排序
+    query = query.order_by(ClozePoint.correct_word)
 
     result = await db.execute(query)
-    points = result.scalars().all()
+    all_points = result.scalars().all()
 
-    # 构建响应
-    items = []
-    for pt in points:
-        source = ""
-        if pt.cloze and pt.cloze.paper:
-            paper = pt.cloze.paper
-            source = f"{paper.year}{paper.region}{paper.grade}{paper.exam_type or ''}·完形"
+    # 按 (correct_word, point_type) 聚合
+    aggregated = {}
+    for pt in all_points:
+        key = (pt.correct_word or "", pt.point_type or "词汇")
+        if key not in aggregated:
+            aggregated[key] = []
+        aggregated[key].append(pt)
 
-        items.append(PointSummary(
-            word=pt.correct_word or "",
-            definition=pt.translation,
-            frequency=1,
-            point_type=pt.point_type or "词汇",
-            occurrences=[PointOccurrence(
+    # 构建聚合后的列表
+    summaries = []
+    for (word, ptype), points in aggregated.items():
+        occurrences = []
+        first_point = points[0]
+
+        for pt in points:
+            source = ""
+            if pt.cloze and pt.cloze.paper:
+                paper = pt.cloze.paper
+                source = f"{paper.year}{paper.region}{paper.grade}{paper.exam_type or ''}·完形"
+
+            # 构建嵌套的分析对象
+            analysis = PointAnalysis(
+                explanation=pt.explanation,
+                confusion_words=json.loads(pt.confusion_words) if pt.confusion_words else None,
+                tips=pt.tips if hasattr(pt, 'tips') else None,
+                # 固定搭配
+                phrase=pt.phrase if hasattr(pt, 'phrase') else None,
+                similar_phrases=json.loads(pt.similar_phrases) if hasattr(pt, 'similar_phrases') and pt.similar_phrases else None,
+                # 词义辨析
+                word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
+                dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
+                # 熟词僻义
+                textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
+                textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
+                context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
+                similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words else None,
+            )
+
+            occurrences.append(PointOccurrence(
                 sentence=pt.sentence or "",
                 source=source,
                 blank_number=pt.blank_number,
-                point_type=pt.point_type or "词汇",
-                explanation=pt.explanation,
-                passage_id=pt.cloze_id
-            )]
+                point_type=ptype,
+                passage_id=pt.cloze_id,
+                point_id=pt.id,
+                analysis=analysis
+            ))
+
+        summaries.append(PointSummary(
+            word=word,
+            definition=first_point.translation,
+            frequency=len(points),
+            point_type=ptype,
+            occurrences=occurrences,
+            tips=first_point.tips if hasattr(first_point, 'tips') else None
         ))
 
-    return {"total": total, "items": items}
+    # 按频率排序后分页
+    summaries.sort(key=lambda x: x.frequency, reverse=True)
+    total = len(summaries)
+    start = (page - 1) * size
+    end = start + size
+    paginated_summaries = summaries[start:end]
+
+    return {"total": total, "items": paginated_summaries}
 
 
 # ============================================================================
@@ -340,7 +393,21 @@ async def get_cloze(
             translation=pt.translation,
             explanation=pt.explanation,
             confusion_words=json.loads(pt.confusion_words) if pt.confusion_words else None,
-            sentence=pt.sentence
+            sentence=pt.sentence,
+            point_verified=pt.point_verified if hasattr(pt, 'point_verified') else False,
+            # 固定搭配
+            phrase=pt.phrase if hasattr(pt, 'phrase') else None,
+            similar_phrases=json.loads(pt.similar_phrases) if hasattr(pt, 'similar_phrases') and pt.similar_phrases else None,
+            # 词义辨析
+            word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
+            dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
+            # 熟词僻义
+            textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
+            textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
+            context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
+            similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words else None,
+            # 通用
+            tips=pt.tips if hasattr(pt, 'tips') else None
         ) for pt in passage.points],
         point_distribution=point_dist,
         vocabulary=vocabulary

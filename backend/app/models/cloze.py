@@ -48,14 +48,34 @@ class ClozePoint(Base):
     correct_word = Column(String(255))  # 正确答案对应的词
     options = Column(Text)  # JSON: {"A": "...", "B": "...", ...}
 
-    # 四类考点
-    point_type = Column(String(50))  # 词汇, 固定搭配, 词义辨析, 熟词僻义, 其他
+    # 三类考点
+    point_type = Column(String(50))  # 固定搭配, 词义辨析, 熟词僻义
     point_detail = Column(Text)  # 考点详解
     translation = Column(Text)  # 翻译
     explanation = Column(Text)  # 解析
 
     # 易混淆信息（词义辨析类）
     confusion_words = Column(Text)  # JSON格式
+
+    # 通用字段
+    tips = Column(Text)  # 记忆技巧或相关拓展
+
+    # 固定搭配专用字段
+    phrase = Column(String(255))  # 完整短语 (take a break)
+    similar_phrases = Column(Text)  # JSON: ["take a chance", ...]
+
+    # 词义辨析专用字段
+    word_analysis = Column(Text)  # JSON: 三维度分析
+    dictionary_source = Column(String(100))  # 词典来源 (柯林斯词典)
+
+    # 熟词僻义专用字段
+    textbook_meaning = Column(Text)  # 课本释义
+    textbook_source = Column(String(100))  # 课本出处 (人教版八上 Unit 5)
+    context_meaning = Column(Text)  # 语境释义
+    similar_words = Column(Text)  # JSON: 相似熟词僻义列表
+
+    # 人工校对
+    point_verified = Column(Boolean, default=False)
 
     # 例句和出处
     sentence = Column(Text)  # 包含该空的句子
@@ -68,7 +88,7 @@ class ClozePoint(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "point_type IN ('固定搭配', '词义辨析', '熟词僻义', '其他')",
+            "point_type IN ('固定搭配', '词义辨析', '熟词僻义')",
             name="ck_point_type"
         ),
     )

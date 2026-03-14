@@ -60,8 +60,9 @@ temp*/
 # Project specific - Ignore these directories
 # 试卷资料
 2022-2025北京市各区各学校试题汇总/
-02-北京2020-2025中考/
+北京2020-2025中考/
 北京中考英语07-24/
+试卷库/
 
 # PRD and docs (已整理到plan中)
 PRD-*.md
