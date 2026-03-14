@@ -205,12 +205,13 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                         if not blank_number or not options:
                             continue
 
-                        # 调用 AI 分析考点
+                        # 调用 AI 分析考点（传入 db_session 支持课本释义查询）
                         analysis = await cloze_analyzer.analyze_point(
                             blank_number=blank_number,
                             correct_word=correct_word or "",
                             options=options,
-                            context=content_with_blanks
+                            context=content_with_blanks,
+                            db_session=session  # 支持课本单词表查询
                         )
 
                         # 提取上下文句子

@@ -435,6 +435,9 @@ async def upload_paper_with_progress(
                         db.add(point)
                         blanks_created += 1
 
+                    # 刷新以确保空格记录在数据库中可用
+                    await db.flush()
+
                     cloze_created = True
                     reporter.complete_step("save_cloze", f"已提取{blanks_created}个空格")
                 else:
@@ -472,23 +475,63 @@ async def upload_paper_with_progress(
                                     point.blank_number
                                 )
 
-                                # AI分析考点
+                                # AI分析考点（传入 db_session 支持课本释义查询）
                                 analysis_result = await analyzer.analyze_point(
                                     blank_number=point.blank_number,
                                     correct_word=point.correct_word,
                                     options=options,
-                                    context=context
+                                    context=context,
+                                    db_session=db  # 支持课本单词表查询
                                 )
 
                                 if analysis_result.success:
+                                    # 基础字段
                                     point.point_type = analysis_result.point_type
                                     point.translation = analysis_result.translation
                                     point.explanation = analysis_result.explanation
+                                    point.sentence = context  # 保存上下文句子
+
+                                    # 易混淆词
                                     if analysis_result.confusion_words:
                                         point.confusion_words = json.dumps(
                                             analysis_result.confusion_words, ensure_ascii=False
                                         )
+
+                                    # 通用字段
+                                    if analysis_result.tips:
+                                        point.tips = analysis_result.tips
+
+                                    # 固定搭配专用
+                                    if analysis_result.phrase:
+                                        point.phrase = analysis_result.phrase
+                                    if analysis_result.similar_phrases:
+                                        point.similar_phrases = json.dumps(
+                                            analysis_result.similar_phrases, ensure_ascii=False
+                                        )
+
+                                    # 词义辨析专用
+                                    if analysis_result.word_analysis:
+                                        point.word_analysis = json.dumps(
+                                            analysis_result.word_analysis, ensure_ascii=False
+                                        )
+                                    if analysis_result.dictionary_source:
+                                        point.dictionary_source = analysis_result.dictionary_source
+
+                                    # 熟词僻义专用
+                                    if analysis_result.textbook_meaning:
+                                        point.textbook_meaning = analysis_result.textbook_meaning
+                                    if analysis_result.textbook_source:
+                                        point.textbook_source = analysis_result.textbook_source
+                                    if analysis_result.context_meaning:
+                                        point.context_meaning = analysis_result.context_meaning
+                                    if analysis_result.similar_words:
+                                        point.similar_words = json.dumps(
+                                            analysis_result.similar_words, ensure_ascii=False
+                                        )
+
                                     analyzed_count += 1
+                                else:
+                                    pass  # 分析失败，不更新
 
                         reporter.complete_step("cloze_analyze", f"已分析{analyzed_count}个考点")
                         yield emit()

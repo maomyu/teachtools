@@ -410,9 +410,10 @@ class ClozeAnalyzer:
 
         # 尝试匹配不同格式的空格标记
         patterns = [
-            rf'[{blank_number}]',  # ①②③格式
-            rf'\({blank_number}\)',  # (1)(2)(3)格式
-            rf'\[{blank_number}\]',  # [1][2][3]格式
+            rf'___{blank_number}___',  # ___11___格式 (最常见)
+            rf'[{blank_number}]',       # ①②③格式
+            rf'\({blank_number}\)',     # (1)(2)(3)格式
+            rf'\[{blank_number}\]',     # [1][2][3]格式
         ]
 
         for pattern in patterns:
