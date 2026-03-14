@@ -8,6 +8,7 @@ import { VocabularyPage } from '@/pages/VocabularyPage'
 import { ClozePage } from '@/pages/ClozePage'
 import { ClozePointsPage } from '@/pages/ClozePointsPage'
 import { HandoutView } from '@/components/handout/HandoutView'
+import { TextbookVocabPage } from '@/pages/TextbookVocabPage'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="cloze" element={<ClozePage />} />
           <Route path="cloze/points" element={<ClozePointsPage />} />
           <Route path="handout" element={<HandoutView />} />
+          <Route path="textbook-vocab" element={<TextbookVocabPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

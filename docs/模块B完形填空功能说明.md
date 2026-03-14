@@ -137,98 +137,244 @@ It was a children's story about a rabbit. I was so ② that I read it three time
 
 | 类型 | 说明 | 识别特征 |
 |------|------|----------|
-| **固定搭配** | 动词短语、介词搭配 | 短语动词，依赖语境搭配 |
-| **词义辨析** | 同义/近义词细微区别 | 四个词含义相近，语境决定 |
-| **熟词僻义** | 常见词的非常规含义 | 常见词，非常规用法 |
+| **固定搭配** | 短语动词、动词+名词、形容词+介词、介词短语、惯用表达 | 正确答案与某个词形成固定搭配 |
+| **词义辨析** | 同义/近义词、词形辨析、词性辨析、语义强度、语域辨析 | 四个选项在某种维度上有相似性 |
+| **熟词僻义** | 常见词的非常规含义（词性转换、专业术语、比喻引申） | 常见词，当前语境下使用非常规含义 |
 
 ### 3.2 固定搭配考点
 
 **识别特征**：
-- 正确答案是短语动词（如 look up, take off）
-- 或介词搭配（如 depend on, interested in）
+- 正确答案与某个词形成固定搭配
+- 选项中其他词无法与该词形成合理的搭配
+- 搭配具有固定性，不能随意替换
+
+**包含类型**：
+
+1. **短语动词**：look up, depend on, take off, give up, work out
+2. **动词+名词**：make a decision, take a break, have a look, take a chance
+3. **形容词+介词**：be good at, be interested in, be proud of, be keen on
+4. **名词+介词**：access to, key to, answer to, attention to
+5. **介词短语**：at night, in the morning, on Sunday, by bus, in English
+6. **惯用表达**：as soon as, as well as, neither...nor, as a matter of fact
+
+**典型示例**：
+- He decided to ___ a break. (take - take a break固定搭配)
+- She is good ___ playing piano. (at - be good at固定搭配)
+- I have access ___ the library. (to - access to固定搭配)
+- ___ night, I usually read books. (At - at night固定搭配)
 
 **AI分析输出**：
 ```json
 {
   "point_type": "固定搭配",
-  "phrase": "look up",
-  "translation": "查阅，查找",
-  "context_sentence": "You can ___ new words in the dictionary.",
-  "explanation": "look up 表示"查阅词典"，look up + 名词 + in + 参考书",
-  "distractors": [
-    {"option": "B", "word": "look for", "reason": "寻找，不搭配dictionary"},
-    {"option": "C", "word": "look at", "reason": "看，不符合语境"},
-    {"option": "D", "word": "look after", "reason": "照顾，语义不符"}
+  "phrase": "take a break",
+  "translation": "休息一下",
+  "context_sentence": "He decided to ___ a break.",
+  "explanation": "take a break是固定搭配，表示"休息一下"。break在此语境下只能与take搭配。",
+  "confusion_words": [
+    {"word": "make", "meaning": "制作", "reason": "make a break不是固定搭配"},
+    {"word": "have", "meaning": "有", "reason": "have a break不常用，不是标准搭配"},
+    {"word": "do", "meaning": "做", "reason": "do a break不符合英语习惯"}
   ],
-  "similar_phrases": ["look up to", "look through", "look into"],
-  "tips": "记忆技巧：look up 向上看→向上找→查阅"
+  "similar_phrases": ["take a chance", "take a look", "take a rest"],
+  "tips": "记忆技巧：固定搭配需要整体记忆，不要逐词翻译"
 }
 ```
 
 ### 3.3 词义辨析考点
 
 **识别特征**：
-- 四个选项含义相近（如 say/tell/speak/talk）
-- 需要根据语境和搭配区分
+- 四个选项在某种维度上有相似性
+- 需要根据语境、搭配或语法规则区分
+- 选项之间形成干扰项关系
+
+**核心分析维度（三维度法）**：
+
+| 维度 | 说明 | 示例 |
+|------|------|------|
+| **使用对象** | 该词用于描述什么/谁 | say强调内容，tell强调告知某人 |
+| **使用场景** | 在什么情况下使用 | start可非正式使用，begin较正式 |
+| **正负态度** | 词义隐含的褒贬色彩 | stubborn（贬）vs persistent（褒） |
+
+> **词典来源**：使用柯林斯词典（Collins COBUILD）的英英解释作为词义辨析的标准参照。
+
+**典型示例**：
+
+**同义词辨析**：
+- Please ___ me the truth. (tell - say后不能直接接人，speak不强调内容，tell强调告知)
+
+**词形辨析**：
+- The weather will ___ our plans. (affect - 动词"影响"；effect是名词"效果")
+
+**词性辨析**：
+- He works ___ to pass the exam. (hard - hard作副词"努力地"；hardly是否定副词"几乎不")
 
 **AI分析输出**：
 ```json
 {
   "point_type": "词义辨析",
-  "correct_word": "achieve",
-  "translation": "v. 实现，达成",
-  "context_sentence": "He worked hard to ___ his dream.",
-  "explanation": "achieve强调通过努力达成目标，常搭配dream/goal/success",
-  "word_comparison": {
-    "achieve": "强调努力后达成目标，+ 抽象名词(dream/goal/success)",
-    "succeed": "强调成功的结果，+ in doing sth",
-    "manage": "强调设法做成某事，+ to do sth",
-    "accomplish": "正式用语，表示完成某项任务"
+  "correct_word": "tell",
+  "translation": "告诉",
+  "context_sentence": "Please ___ me the truth.",
+  "dictionary_source": "柯林斯词典",
+  "word_analysis": {
+    "tell": {
+      "definition": "If you tell someone something, you give them information.",
+      "dimensions": {
+        "使用对象": "直接接人（tell sb sth）",
+        "使用场景": "日常对话、叙事表达",
+        "正负态度": "中性词"
+      }
+    },
+    "say": {
+      "definition": "When you say something, you speak words.",
+      "dimensions": {
+        "使用对象": "强调内容，不能直接接人",
+        "使用场景": "引用话语、转述",
+        "正负态度": "中性词"
+      },
+      "rejection_reason": "say后不能直接接人"
+    },
+    "speak": {
+      "definition": "When you speak, you use your voice to talk.",
+      "dimensions": {
+        "使用对象": "强调说话行为本身",
+        "使用场景": "正式场合、演讲",
+        "正负态度": "中性词"
+      },
+      "rejection_reason": "speak不强调告知具体内容"
+    }
   },
   "distractors": [
-    {"option": "B", "word": "succeeded", "reason": "需搭配in achieving"},
-    {"option": "C", "word": "managed", "reason": "语义不如achieve贴切"},
-    {"option": "D", "word": "completed", "reason": "不搭配dream"}
-  ]
+    {"option": "A", "word": "say", "reason": "say后不能直接接人，需用say to me"},
+    {"option": "C", "word": "speak", "reason": "speak不强调告知具体内容"},
+    {"option": "D", "word": "talk", "reason": "talk强调对话交流，不是单向告知"}
+  ],
+  "tips": "tell强调"告知某人某事"，结构为 tell sb sth"
 }
 ```
 
-### 3.3 熟词僻义考点
+### 3.4 熟词僻义考点
 
-**识别逻辑**：
-1. **词库检索**：在已有词库中检索该词的常见含义
-2. **语境对比**：发现该词在当前语境下的含义与词库中的常见含义不同
-3. **判定为熟词僻义**：该词使用了非常规含义
+**判断标准（基于课本单词表）**：
+
+| 概念 | 判断标准 | 说明 |
+|------|----------|------|
+| **熟词** | 课本单词表里有这个词 | 人教版/外研版初一至初三课本单词表 |
+| **僻义** | 文章中的意思与课本单词表的释义不同 | 当前语境使用了非常规含义 |
+
+> **核心逻辑**：只有同时满足"课本有"且"意思不同"两个条件，才判定为熟词僻义。
+
+**识别流程**：
+```
+1. 从选项中提取单词
+2. 在课本单词表中查找该词
+3. 如找到 → 对比课本释义与当前语境含义
+4. 如不同 → 判定为熟词僻义
+```
+
+**僻义类型**：
+
+1. **词性转换**：book (预订), water (浇水), hand (传递), warm (加热)
+2. **专业术语**：mouse (鼠标), web (网站), surf (上网), program (编程)
+3. **比喻引申**：cold (冷淡), hot (热门/辣), green (环保的/没经验的)
+4. **多义词引申**：tie (平局), head (朝…方向行驶), pad (发射台)
 
 **典型示例**：
-- book（常见义：书 → 僻义：预订）
-- bank（常见义：银行 → 僻义：河岸）
-- fine（常见义：好的 → 僻义：罚款）
+
+**多义词引申**：
+- The game ended in a ___. (tie - 平局；课本释义是"领带/系")
+
+**词性转换**：
+- Please ___ a hotel room. (book - 预订；课本释义是名词"书")
 
 **AI分析输出**：
 ```json
 {
   "point_type": "熟词僻义",
-  "correct_word": "book",
-  "common_meaning": "n. 书",
-  "rare_meaning": "v. 预订",
-  "context_sentence": "You'd better ___ a room in advance.",
-  "explanation": "book作为动词表示"预订"，是中考常见熟词僻义",
+  "correct_word": "tie",
+  "textbook_meaning": "n. 领带；v. 系，绑",
+  "textbook_source": "人教版八年级上册 Unit 5",
+  "context_meaning": "n. 平局，不分胜负",
+  "context_sentence": "The game ended in a ___ after overtime.",
+  "explanation": "tie在课本中的常见含义是"领带"或"系、绑"，但在此句中作为体育术语，表示"平局"。这是中考完形填空常见的熟词僻义考点。",
   "similar_words": [
-    {"word": "bank", "common": "银行", "rare": "河岸"},
-    {"word": "fine", "common": "好的", "rare": "罚款"},
-    {"word": "match", "common": "比赛", "rare": "匹配"},
-    {"word": "plant", "common": "植物", "rare": "工厂"}
+    {"word": "head", "textbook": "头", "rare": "朝…方向行驶"},
+    {"word": "pad", "textbook": "垫子", "rare": "发射台"},
+    {"word": "bank", "textbook": "银行", "rare": "河岸"},
+    {"word": "fine", "textbook": "好的", "rare": "罚款"}
   ],
-  "tips": "注意词性变化：名词→动词"
+  "tips": "tie作为"平局"常出现在体育类话题文章中，注意结合语境判断"
 }
+```
+
+### 3.5 考点判断流程
+
+**AI按以下顺序判断**：
+1. 首先检查是否为**固定搭配**（最明显的特征）
+2. 其次检查是否为**熟词僻义**（基于课本单词表判断）
+3. 最后判断为**词义辨析**（最常见的情况）
+
+---
+
+## 四、课本单词表管理
+
+### 4.1 功能说明
+
+课本单词表是**熟词僻义**识别的参照基准。系统已导入初一至初二的人教版、外研版课本单词表，用于判断某个词是否属于"熟词"。
+
+### 4.2 已导入数据统计
+
+| 出版社 | 年级 | 单词数 |
+|--------|------|--------|
+| 人教版 | 七年级上 | 352 |
+| 人教版 | 七年级下 | 464 |
+| 人教版 | 八年级上 | 592 |
+| 人教版 | 八年级下 | 545 |
+| 外研版 | 七年级上 | 274 |
+| 外研版 | 七年级下 | 380 |
+| 外研版 | 八年级上 | 264 |
+| 外研版 | 八年级下 | 220 |
+| **合计** | - | **3091** |
+
+> **注意**：目前缺少九年级（初三）单词表，需要后续补充。
+
+### 4.3 导入脚本
+
+使用 `backend/scripts/import_textbook_vocab.py` 脚本进行导入：
+
+```bash
+# 步骤1: 从 Word 文档提取为 JSON（便于检查）
+python3 scripts/import_textbook_vocab.py extract
+
+# 步骤2: 从 JSON 导入数据库
+python3 scripts/import_textbook_vocab.py import
+
+# 或一步完成
+python3 scripts/import_textbook_vocab.py all
+```
+
+生成的 JSON 文件位于：`backend/scripts/textbook_vocab.json`
+
+### 4.4 与熟词僻义的关联
+
+```
+完形填空选项 "tie"
+       ↓
+在 textbook_vocab 表中查询 "tie"
+       ↓
+找到记录：{word: "tie", definition: "n. 领带；v. 系，绑", source: "人教版八上 Unit 5"}
+       ↓
+对比课本释义与当前语境含义
+       ↓
+不同 → 判定为"熟词僻义"，记录课本释义和语境释义
 ```
 
 ---
 
-## 四、AI服务配置
+## 五、AI服务配置
 
-### 4.1 考点分析 Prompt
+### 5.1 考点分析 Prompt
 
 ```
 你是中考英语完形填空教学专家。
@@ -245,6 +391,14 @@ D. {option_d}
 原文语境：
 {context_with_blank}
 
+课本释义参照（仅用于熟词僻义判断）：
+{textbook_definition}  // 如果单词在课本中存在，提供课本释义
+
+**判断顺序**：
+1. 首先判断是否为**固定搭配**（正确答案与某个词形成固定短语）
+2. 其次判断是否为**熟词僻义**（课本有该词，但当前语境意思与课本不同）
+3. 最后判断为**词义辨析**（选项之间有相似性，需根据语境区分）
+
 请按以下格式返回JSON：
 
 对于固定搭配：
@@ -258,22 +412,38 @@ D. {option_d}
   "tips": "记忆技巧"
 }
 
-对于词义辨析：
+对于词义辨析（必须包含三维度分析）：
 {
   "point_type": "词义辨析",
   "correct_word": "正确词",
   "translation": "翻译",
-  "explanation": "解释",
-  "word_comparison": {...},
-  "distractors": [...]
+  "dictionary_source": "柯林斯词典",
+  "word_analysis": {
+    "正确词": {
+      "definition": "英英解释",
+      "dimensions": {
+        "使用对象": "...",
+        "使用场景": "...",
+        "正负态度": "..."
+      }
+    },
+    "干扰词1": {
+      "definition": "英英解释",
+      "dimensions": {...},
+      "rejection_reason": "排除理由"
+    }
+  },
+  "distractors": [...],
+  "tips": "记忆技巧"
 }
 
-对于熟词僻义：
+对于熟词僻义（必须包含课本参照）：
 {
   "point_type": "熟词僻义",
   "correct_word": "正确词",
-  "common_meaning": "常见义",
-  "rare_meaning": "僻义",
+  "textbook_meaning": "课本释义",
+  "textbook_source": "人教版八上 Unit 5",
+  "context_meaning": "当前语境释义",
   "explanation": "解释",
   "similar_words": [...],
   "tips": "提示"
@@ -281,7 +451,7 @@ D. {option_d}
 
 ```
 
-### 4.2 话题分类 Prompt
+### 5.2 话题分类 Prompt
 
 ```
 你是北京中考英语教学专家。
@@ -314,9 +484,9 @@ D. {option_d}
 
 ---
 
-## 五、API接口文档
+## 六、API接口文档
 
-### 5.1 完形文章列表
+### 6.1 完形文章列表
 
 ```http
 GET /api/cloze/
@@ -363,7 +533,7 @@ GET /api/cloze/
 }
 ```
 
-### 5.2 完形文章详情
+### 6.2 完形文章详情
 
 ```http
 GET /api/cloze/{passage_id}
@@ -407,7 +577,7 @@ GET /api/cloze/{passage_id}
 }
 ```
 
-### 5.3 考点汇总查询
+### 6.3 考点汇总查询
 
 ```http
 GET /api/cloze-points/
@@ -445,7 +615,7 @@ GET /api/cloze-points/
 }
 ```
 
-### 5.4 更新话题（人工校对）
+### 6.4 更新话题（人工校对）
 
 ```http
 PUT /api/cloze/{id}/topic
@@ -459,7 +629,7 @@ PUT /api/cloze/{id}/topic
 }
 ```
 
-### 5.5 完形高频词汇查询
+### 6.5 完形高频词汇查询
 
 ```http
 GET /api/cloze-vocabulary/
@@ -501,7 +671,7 @@ GET /api/cloze-vocabulary/
 }
 ```
 
-### 5.6 更新考点分析（人工校对）
+### 6.6 更新考点分析（人工校对）
 
 ```http
 PUT /api/cloze/blanks/{blank_id}/point
@@ -522,9 +692,9 @@ PUT /api/cloze/blanks/{blank_id}/point
 
 ---
 
-## 六、前端交互
+## 七、前端交互
 
-### 6.1 完形文章详情页交互
+### 7.1 完形文章详情页交互
 
 **左右分栏布局**：
 - 左侧：带空格标记的文章内容
@@ -539,7 +709,7 @@ PUT /api/cloze/blanks/{blank_id}/point
 | 悬停空格 | 显示正确答案和考点类型 |
 | 点击出处链接 | 跳转到原始试卷页面 |
 
-### 6.2 考点汇总页交互
+### 7.2 考点汇总页交互
 
 **筛选功能**：
 - 考点类型下拉（固定搭配/词义辨析/熟词僻义）
@@ -555,9 +725,9 @@ PUT /api/cloze/blanks/{blank_id}/point
 
 ---
 
-## 七、使用示例
+## 八、使用示例
 
-### 7.1 查看固定搭配考点
+### 8.1 查看固定搭配考点
 
 ```
 1. 进入「考点汇总」页面
@@ -575,7 +745,7 @@ PUT /api/cloze/blanks/{blank_id}/point
 6. 点击例句出处，跳转到原文
 ```
 
-### 7.2 备课特定话题完形
+### 8.2 备课特定话题完形
 
 ```
 1. 进入「完形文章」页面
@@ -587,7 +757,7 @@ PUT /api/cloze/blanks/{blank_id}/point
 7. 导出为Word文档
 ```
 
-### 7.3 查看完形高频词汇
+### 8.3 查看完形高频词汇
 
 ```
 1. 进入「完形词库」页面
@@ -600,9 +770,9 @@ PUT /api/cloze/blanks/{blank_id}/point
 
 ---
 
-## 八、数据模型
+## 九、数据模型
 
-### 8.1 核心表结构
+### 9.1 核心表结构
 
 **cloze_passages（完形文章表）**：
 ```sql
@@ -650,7 +820,7 @@ CREATE TABLE vocab_cloze (
 );
 ```
 
-### 8.2 与阅读模块的关系
+### 9.2 与阅读模块的关系
 
 ```
 words (基础词库，共享)
@@ -692,9 +862,50 @@ GROUP BY w.id
 ORDER BY frequency DESC;
 ```
 
+### 9.3 课本单词表
+
+**textbook_vocab（课本单词表）**：
+```sql
+CREATE TABLE textbook_vocab (
+    id INTEGER PRIMARY KEY,
+    word VARCHAR(255) NOT NULL,        -- 单词
+    pos VARCHAR(100),                  -- 词性（可为空）
+    definition TEXT NOT NULL,          -- 中文释义
+    publisher VARCHAR(50) NOT NULL,    -- 出版社（人教版/外研版）
+    grade VARCHAR(20) NOT NULL,        -- 年级（七年级/八年级/九年级）
+    semester VARCHAR(10) NOT NULL,     -- 学期（上/下）
+    unit VARCHAR(50),                  -- 单元（如 Unit 1, Module 4）
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建索引加速查询
+CREATE INDEX idx_textbook_vocab_word ON textbook_vocab(word);
+CREATE INDEX idx_textbook_vocab_publisher_grade ON textbook_vocab(publisher, grade);
+```
+
+**数据示例**：
+```sql
+INSERT INTO textbook_vocab (word, pos, definition, publisher, grade, semester, unit) VALUES
+('tie', 'n./v.', '领带；系，绑', '人教版', '八年级', '上', 'Unit 5'),
+('tie', 'n./v.', '领带；系', '外研版', '八年级', '下', 'Module 4'),
+('head', 'n.', '头', '人教版', '七年级', '上', 'Unit 3');
+```
+
+**与熟词僻义的关联查询**：
+```sql
+-- 查询单词是否在课本中，并获取课本释义
+SELECT word, definition, publisher, grade, semester, unit
+FROM textbook_vocab
+WHERE word = 'tie';
+
+-- 结果用于熟词僻义判断：
+-- 如果查询到记录，说明是"熟词"
+-- 如果当前语境含义与 definition 不同，则为"僻义"
+```
+
 ---
 
-## 九、注意事项
+## 十、注意事项
 
 1. **空格识别**： 支持多种编号格式，可能需要人工确认
 2. **考点分类**： AI分类结果建议人工校对
@@ -703,5 +914,14 @@ ORDER BY frequency DESC;
 
 ---
 
-**文档版本**: v1.0
-**最后更新**: 2025-03-07
+**文档版本**: v1.1
+**最后更新**: 2026-03-14
+
+## 更新日志
+
+### v1.1 (2026-03-14)
+- **词义辨析**：明确三维度分析法（使用对象、使用场景、正负态度），指定柯林斯词典为英英解释来源
+- **熟词僻义**：新增课本参照判断逻辑，基于课本单词表判定"熟词"和"僻义"
+- **新增章节**：第四章 课本单词表管理
+- **数据模型**：新增 textbook_vocab 表结构
+- **AI Prompt**：更新考点分析 Prompt，加入三维度分析和课本参照要求

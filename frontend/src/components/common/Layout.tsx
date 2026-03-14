@@ -16,6 +16,7 @@ import {
   UploadOutlined,
   EditOutlined,
   BookOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 
 const { Header, Sider, Content } = AntLayout
@@ -51,6 +52,11 @@ const menuItems = [
     key: '/vocabulary',
     icon: <BookOutlined />,
     label: '高频词库',
+  },
+  {
+    key: '/textbook-vocab',
+    icon: <DatabaseOutlined />,
+    label: '课本单词表',
   },
   {
     key: '/handout',
