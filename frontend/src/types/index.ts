@@ -231,6 +231,98 @@ export interface PassageFiltersResponse {
 //  完形填空类型
 // ============================================================================
 
+// ============================================================================
+//  考点分类系统 V2（新增）
+// ============================================================================
+
+/** 考点类型定义 */
+export interface PointType {
+  code: string              // A1, B2, C2, etc.
+  category: string          // A, B, C, D, E
+  category_name: string     // 语篇理解类, 逻辑关系类, etc.
+  name: string              // 上下文语义推断, 转折对比, etc.
+  priority: number          // 1, 2, 3 (P1/P2/P3)
+  description?: string
+}
+
+/** 辅助考点 */
+export interface SecondaryPoint {
+  point_code: string
+  explanation?: string
+}
+
+/** 排错点 */
+export interface RejectionPoint {
+  option_word: string
+  point_code: string
+  explanation?: string
+}
+
+/** 考点类型列表响应 */
+export interface PointTypeListResponse {
+  total: number
+  items: PointType[]
+}
+
+/** 按大类分组的考点类型响应 */
+export interface PointTypeByCategoryResponse {
+  A: PointType[]  // 语篇理解类
+  B: PointType[]  // 逻辑关系类
+  C: PointType[]  // 句法语法类
+  D: PointType[]  // 词汇选项类
+  E: PointType[]  // 常识主题类
+}
+
+/** 大类颜色映射 */
+export const CATEGORY_COLORS: Record<string, string> = {
+  'A': 'blue',      // 语篇理解
+  'B': 'cyan',      // 逻辑关系
+  'C': 'green',     // 句法语法
+  'D': 'orange',    // 词汇选项
+  'E': 'purple',    // 常识主题
+}
+
+/** 优先级颜色映射 */
+export const PRIORITY_COLORS: Record<number, string> = {
+  1: 'red',     // P1 - 核心
+  2: 'gold',    // P2 - 重要
+  3: 'default', // P3 - 一般
+}
+
+/** 大类名称映射 */
+export const CATEGORY_NAMES: Record<string, string> = {
+  'A': '语篇理解类',
+  'B': '逻辑关系类',
+  'C': '句法语法类',
+  'D': '词汇选项类',
+  'E': '常识主题类',
+}
+
+/** 优先级名称映射 */
+export const PRIORITY_NAMES: Record<number, string> = {
+  1: 'P1-核心',
+  2: 'P2-重要',
+  3: 'P3-一般',
+}
+
+/** 旧类型到新编码的映射 */
+export const LEGACY_TO_NEW_CODE: Record<string, string> = {
+  '固定搭配': 'C2',
+  '词义辨析': 'D1',
+  '熟词僻义': 'D2',
+}
+
+/** 新编码到旧类型的映射 */
+export const NEW_CODE_TO_LEGACY: Record<string, string> = {
+  'C2': '固定搭配',
+  'D1': '词义辨析',
+  'D2': '熟词僻义',
+}
+
+// ============================================================================
+//  完形考点（V1 兼容）
+// ============================================================================
+
 // 完形考点
 export interface ClozePoint {
   id: number
@@ -300,6 +392,146 @@ export interface ClozeListResponse {
 export interface ClozeDetailResponse extends ClozePassage {
   point_distribution: Record<string, number>  // {"固定搭配": 4, "词义辨析": 5}
   vocabulary: VocabularyInCloze[]  // 完形相关词汇
+}
+
+// ============================================================================
+//  完形考点 V2（多标签版本）
+// ============================================================================
+
+/** 完形考点 V2 - 支持多标签 */
+export interface ClozePointNew {
+  id: number
+  blank_number?: number
+  correct_answer?: string
+  correct_word?: string
+  options?: QuestionOptions
+  sentence?: string
+
+  // === 新考点系统 V2 ===
+  primary_point?: PointType           // 主考点
+  secondary_points: SecondaryPoint[]  // 辅助考点
+  rejection_points: RejectionPoint[]  // 排错点
+
+  // === 兼容旧系统 ===
+  legacy_point_type?: string          // 旧类型: 固定搭配/词义辨析/熟词僻义
+  point_type?: string                 // 保留兼容
+
+  // === 解析内容 ===
+  translation?: string
+  explanation?: string
+  confusion_words?: Array<{word: string; meaning: string; reason: string}>
+  tips?: string
+
+  // 固定搭配专用字段
+  phrase?: string
+  similar_phrases?: string[]
+
+  // 词义辨析专用字段
+  word_analysis?: Record<string, {
+    definition: string
+    dimensions?: {
+      使用对象: string
+      使用场景: string
+      正负态度: string
+    }
+    rejection_reason?: string
+  }>
+  dictionary_source?: string
+
+  // 熟词僻义专用字段
+  textbook_meaning?: string
+  textbook_source?: string
+  context_meaning?: string
+  similar_words?: Array<{word: string; textbook: string; rare: string}>
+
+  // 状态
+  point_verified: boolean
+}
+
+/** 完形文章 V2（包含新考点格式） */
+export interface ClozePassageNew {
+  id: number
+  paper_id: number
+  content: string
+  original_content?: string
+  word_count?: number
+  primary_topic?: string
+  secondary_topics?: string[]
+  topic_confidence?: number
+  source?: SourceInfo
+  points: ClozePointNew[]
+}
+
+/** 完形详情响应 V2（新考点分布） */
+export interface ClozeDetailNewResponse extends ClozePassageNew {
+  // === 新考点分布统计 ===
+  point_distribution_by_category: Record<string, number>  // {"A": 5, "B": 3, "C": 2}
+  point_distribution_by_priority: Record<string, number>   // {"P1": 8, "P2": 4, "P3": 3}
+  // 兼容旧分布
+  point_distribution: Record<string, number>  // {"固定搭配": 4, "词义辨析": 5}
+  vocabulary: VocabularyInCloze[]
+}
+
+/** 完形考点出现位置 V2 */
+export interface PointOccurrenceNew {
+  sentence: string
+  source: string
+  blank_number: number
+  primary_point?: PointType
+  secondary_points: SecondaryPoint[]
+  passage_id?: number
+  point_id?: number
+  analysis?: PointAnalysis
+}
+
+/** 完形考点汇总 V2 */
+export interface PointSummaryNew {
+  word: string
+  definition?: string
+  frequency: number
+  primary_point?: PointType
+  occurrences: PointOccurrenceNew[]
+  tips?: string
+}
+
+/** 完形考点汇总响应 V2 */
+export interface PointListNewResponse {
+  total: number
+  items: PointSummaryNew[]
+}
+
+/** 完形筛选参数 V2（新增大类和优先级筛选） */
+export interface ClozeFilterNew {
+  grade?: string
+  topic?: string
+  exam_type?: string
+  semester?: string
+  region?: string
+  year?: number
+  // === 新增筛选 ===
+  point_codes?: string[]   // 按考点编码筛选 [A1, B2, C2]
+  categories?: string[]    // 按大类筛选 [A, B, C, D, E]
+  priorities?: number[]    // 按优先级筛选 [1, 2, 3]
+  // === 兼容旧筛选 ===
+  point_type?: string
+  page?: number
+  size?: number
+}
+
+/** 完形筛选项响应 V2 */
+export interface ClozeFiltersNewResponse {
+  grades: string[]
+  topics: string[]
+  years: number[]
+  regions: string[]
+  exam_types: string[]
+  semesters: string[]
+  // === 新增 ===
+  point_codes: string[]   // 所有考点编码
+  categories: string[]    // 所有大类
+  priorities: number[]    // 所有优先级
+  // === 兼容旧 ===
+  point_types: string[]
 }
 
 // 考点分析详情（嵌套对象）

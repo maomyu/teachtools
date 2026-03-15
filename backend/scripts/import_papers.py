@@ -23,7 +23,7 @@ from app.models.topic import Topic
 from app.models.cloze import ClozePassage, ClozePoint
 from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser
-from app.services.cloze_analyzer import ClozeAnalyzer
+from app.services.cloze_analyzer import ClozeAnalyzerV2
 from app.services.topic_classifier import TopicClassifier
 from app.services.text_utils import normalize_cloze_blanks
 
@@ -200,8 +200,8 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                     except Exception as e:
                         print(f"  ⚠ 完形主题分类失败: {e}")
 
-                    # 初始化考点分析器
-                    cloze_analyzer = ClozeAnalyzer()
+                    # 初始化考点分析器 (V2 - 16种考点 + 多标签)
+                    cloze_analyzer = ClozeAnalyzerV2()
 
                     # 遍历每个空格，分析考点并保存
                     for blank in blanks:
@@ -227,14 +227,21 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                             normalized_content, blank_number
                         )
 
-                        # 创建考点记录
+                        # 确定 legacy_point_type（向后兼容）
+                        legacy_point_type = analysis.point_type if analysis.success and analysis.point_type else None
+
+                        # 创建考点记录（V2 格式）
                         cloze_point = ClozePoint(
                             cloze_id=cloze_passage.id,
                             blank_number=blank_number,
                             correct_answer=correct_answer,
                             correct_word=correct_word,
                             options=json.dumps(options, ensure_ascii=False),
-                            point_type=analysis.point_type if analysis.success else None,
+                            # V2 考点分类
+                            primary_point_code=analysis.primary_point.get("code") if analysis.success and analysis.primary_point else None,
+                            legacy_point_type=legacy_point_type,
+                            # 保留旧字段兼容
+                            point_type=legacy_point_type,
                             translation=analysis.translation if analysis.success else None,
                             explanation=analysis.explanation if analysis.success else None,
                             confusion_words=json.dumps(analysis.confusion_words, ensure_ascii=False) if analysis.success and analysis.confusion_words else None,
@@ -254,6 +261,31 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                             tips=analysis.tips if analysis.success else None
                         )
                         session.add(cloze_point)
+                        await session.flush()  # 获取 cloze_point.id
+
+                        # 保存辅助考点（V2 多标签）
+                        if analysis.success and analysis.secondary_points:
+                            from app.models.cloze import ClozeSecondaryPoint
+                            for idx, sp in enumerate(analysis.secondary_points):
+                                sec_point = ClozeSecondaryPoint(
+                                    cloze_point_id=cloze_point.id,
+                                    point_code=sp.get("point_code"),
+                                    explanation=sp.get("explanation"),
+                                    sort_order=idx
+                                )
+                                session.add(sec_point)
+
+                        # 保存排错点（V2 多标签）
+                        if analysis.success and analysis.rejection_points:
+                            from app.models.cloze import ClozeRejectionPoint
+                            for rp in analysis.rejection_points:
+                                rej_point = ClozeRejectionPoint(
+                                    cloze_point_id=cloze_point.id,
+                                    option_word=rp.get("option_word"),
+                                    point_code=rp.get("point_code"),
+                                    explanation=rp.get("explanation")
+                                )
+                                session.add(rej_point)
                         result["cloze_points"] += 1
 
                     print(f"  ✓ 完形填空: {len(blanks)} 个空格已分析")

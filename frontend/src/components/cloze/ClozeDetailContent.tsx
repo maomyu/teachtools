@@ -28,6 +28,7 @@ import { ArrowLeftOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-desig
 
 import { getCloze } from '@/services/clozeService'
 import type { ClozeDetailResponse, VocabularyInCloze, ClozePoint } from '@/types'
+import { CATEGORY_COLORS as CAT_COLORS, CATEGORY_NAMES, PRIORITY_NAMES } from '@/types'
 import styles from './ClozeDetailContent.module.css'
 
 const { Text } = Typography
@@ -36,11 +37,33 @@ const { Text } = Typography
 //  常量定义
 // ============================================================================
 
-const POINT_TYPE_COLORS: Record<string, string> = {
+// v1 旧系统颜色（向后兼容）
+const POINT_TYPE_COLORS_V1: Record<string, string> = {
   '固定搭配': 'green',
   '词义辨析': 'orange',
   '熟词僻义': 'purple',
   '其他': 'default',
+}
+
+// 获取考点标签颜色（兼容新旧两种格式）
+const getPointTagColor = (point: ClozePoint): string => {
+  // v2: 使用主考点的大类颜色
+  if ((point as any).primary_point?.category) {
+    return CAT_COLORS[(point as any).primary_point.category] || 'default'
+  }
+  // v1: 使用旧类型颜色
+  return POINT_TYPE_COLORS_V1[point.point_type || '其他'] || 'default'
+}
+
+// 获取考点显示名称（兼容新旧两种格式）
+const getPointDisplayName = (point: ClozePoint): string => {
+  // v2: 使用主考点编码和名称
+  if ((point as any).primary_point) {
+    const pp = (point as any).primary_point
+    return `${pp.code} ${pp.name}`
+  }
+  // v1: 使用旧类型名称
+  return point.point_type || '其他'
 }
 
 // ============================================================================
@@ -316,15 +339,34 @@ export function ClozeDetailContent({
     const showAnswer = showAnswerBlanks.has(blankNum)
     const pointType = point.point_type || '其他'
 
+    // v2 多标签数据
+    const primaryPoint = (point as any).primary_point
+    const secondaryPoints = (point as any).secondary_points || []
+    const rejectionPoints = (point as any).rejection_points || []
+
+    // 获取主考点颜色和名称
+    const primaryColor = getPointTagColor(point)
+    const primaryName = getPointDisplayName(point)
+
     return (
       <div style={{ padding: '8px 0', minWidth: 300, maxWidth: 420, maxHeight: '55vh', overflow: 'auto', overflowX: 'hidden' }}>
-        {/* 标题行 */}
+        {/* 标题行 - v2 多标签 */}
         <div style={{ marginBottom: 8 }}>
-          <Space>
+          <Space wrap>
             <Tag color="blue" style={{ fontSize: 12, padding: '2px 8px' }}>第 {blankNum} 空</Tag>
-            <Tag color={POINT_TYPE_COLORS[pointType] || 'default'} style={{ fontSize: 11 }}>
-              {pointType}
+            {/* 主考点 */}
+            <Tag color={primaryColor} style={{ fontSize: 11 }}>
+              {primaryName}
             </Tag>
+            {/* 辅助考点标签（最多显示2个） */}
+            {secondaryPoints.slice(0, 2).map((sp: any, idx: number) => (
+              <Tag key={idx} color="default" style={{ fontSize: 10 }}>
+                +{sp.point_code}
+              </Tag>
+            ))}
+            {secondaryPoints.length > 2 && (
+              <Tag color="default" style={{ fontSize: 10 }}>+{secondaryPoints.length - 2}</Tag>
+            )}
           </Space>
         </div>
 
@@ -361,6 +403,56 @@ export function ClozeDetailContent({
         {/* 解析（显示答案时） */}
         {showAnswer && (
           <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #f0f0f0' }}>
+            {/* v2 多考点详情 */}
+            {primaryPoint && (
+              <div style={{ marginBottom: 8, padding: '6px 8px', background: '#f5f5f5', borderRadius: 4 }}>
+                <Text strong style={{ fontSize: 11 }}>
+                  主考点 ({primaryPoint.code})
+                </Text>
+                <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+                  {CATEGORY_NAMES[primaryPoint.category]} · {PRIORITY_NAMES[primaryPoint.priority]}
+                </Text>
+                {primaryPoint.description && (
+                  <div style={{ marginTop: 2 }}>
+                    <Text type="secondary" style={{ fontSize: 10 }}>{primaryPoint.description}</Text>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 辅助考点列表 */}
+            {secondaryPoints.length > 0 && (
+              <div style={{ marginBottom: 8, padding: '6px 8px', background: '#fafafa', borderRadius: 4 }}>
+                <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
+                  辅助考点：
+                </Text>
+                {secondaryPoints.map((sp: any, idx: number) => (
+                  <Tag key={idx} style={{ fontSize: 10, marginBottom: 2 }}>
+                    {sp.point_code}
+                    {sp.explanation && `: ${sp.explanation}`}
+                  </Tag>
+                ))}
+              </div>
+            )}
+
+            {/* 排错点列表 */}
+            {rejectionPoints.length > 0 && (
+              <div style={{ marginBottom: 8, padding: '6px 8px', background: '#fff2f0', borderRadius: 4, border: '1px solid #ffccc7' }}>
+                <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
+                  排错依据：
+                </Text>
+                {rejectionPoints.map((rp: any, idx: number) => (
+                  <div key={idx} style={{ fontSize: 10, marginBottom: 2 }}>
+                    <Text delete type="danger">{rp.option_word}</Text>
+                    <Text type="secondary" style={{ marginLeft: 4 }}>
+                      ← {rp.point_code}
+                      {rp.explanation && `: ${rp.explanation}`}
+                    </Text>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {point.translation && (
               <div style={{ marginBottom: 6 }}>
                 <Text strong style={{ fontSize: 12 }}>词义：</Text>
@@ -395,8 +487,8 @@ export function ClozeDetailContent({
               </div>
             )}
 
-            {/* 固定搭配专用内容 */}
-            {pointType === '固定搭配' && point.phrase && (
+            {/* 固定搭配专用内容 (v1: 固定搭配, v2: C2) */}
+            {(pointType === '固定搭配' || primaryPoint?.code === 'C2') && point.phrase && (
               <div style={{ marginTop: 8, padding: '8px 10px', background: '#f6ffed', borderRadius: 6, border: '1px solid #b7eb8f' }}>
                 <Text strong style={{ color: '#52c41a', fontSize: 11 }}>短语：</Text>
                 <Text code style={{ fontSize: 11 }}>{point.phrase}</Text>
@@ -413,8 +505,8 @@ export function ClozeDetailContent({
               </div>
             )}
 
-            {/* 词义辨析专用内容 - 三维度分析表格 */}
-            {pointType === '词义辨析' && (point as any).word_analysis && (
+            {/* 词义辨析专用内容 - 三维度分析表格 (v1: 词义辨析, v2: D1) */}
+            {(pointType === '词义辨析' || primaryPoint?.code === 'D1') && (point as any).word_analysis && (
               <div style={{ marginTop: 8 }}>
                 {(point as any).dictionary_source && (
                   <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
@@ -462,8 +554,8 @@ export function ClozeDetailContent({
               </div>
             )}
 
-            {/* 熟词僻义专用内容 */}
-            {pointType === '熟词僻义' && (point as any).textbook_meaning && (
+            {/* 熟词僻义专用内容 (v1: 熟词僻义, v2: D2) */}
+            {(pointType === '熟词僻义' || primaryPoint?.code === 'D2') && (point as any).textbook_meaning && (
               <div style={{ marginTop: 8, padding: '8px 10px', background: '#f9f0ff', borderRadius: 6, border: '1px solid #d3adf7', maxHeight: 200, overflow: 'auto' }}>
                 {(point as any).textbook_source && (
                   <div style={{ marginBottom: 4 }}>
@@ -566,8 +658,7 @@ export function ClozeDetailContent({
             const blankNum = part
             const isSelected = selectedBlank === blankNum
             const point = cloze?.points?.find(p => p.blank_number === blankNum)
-            const pointType = point?.point_type || '其他'
-            const tagColor = POINT_TYPE_COLORS[pointType] || 'default'
+            const tagColor = point ? getPointTagColor(point) : 'default'
 
             return (
               <Popover
@@ -639,8 +730,7 @@ export function ClozeDetailContent({
 
       const isSelected = selectedBlank === bp.num
       const point = cloze?.points?.find(p => p.blank_number === bp.num)
-      const pointType = point?.point_type || '其他'
-      const tagColor = POINT_TYPE_COLORS[pointType] || 'default'
+      const tagColor = point ? getPointTagColor(point) : 'default'
 
       result.push(
         <Popover
@@ -690,7 +780,8 @@ export function ClozeDetailContent({
   const renderPointCard = (point: ClozePoint, index: number) => {
     const blankNum = point.blank_number ?? (index + 1)
     const isSelected = selectedBlank === blankNum
-    const pointType = point.point_type || '其他'
+    const tagColor = getPointTagColor(point)
+    const displayName = getPointDisplayName(point)
     const showAnswer = showAnswerBlanks.has(blankNum)
 
     return (
@@ -708,8 +799,8 @@ export function ClozeDetailContent({
             <Tag color="blue" style={{ fontSize: 13, padding: '2px 10px', borderRadius: 12 }}>
               第 {blankNum} 空
             </Tag>
-            <Tag color={POINT_TYPE_COLORS[pointType] || 'default'} style={{ fontSize: 11, borderRadius: 8 }}>
-              {pointType}
+            <Tag color={tagColor} style={{ fontSize: 11, borderRadius: 8 }}>
+              {displayName}
             </Tag>
           </Space>
           <Button
@@ -846,11 +937,21 @@ export function ClozeDetailContent({
               ) : '-'}
             </Descriptions.Item>
           </Descriptions>
-          {/* 考点分布 */}
-          {Object.keys(cloze.point_distribution || {}).length > 0 && (
+          {/* 考点分布 - v2 按大类 */}
+          {(cloze as any).point_distribution_by_category && Object.keys((cloze as any).point_distribution_by_category).length > 0 && (
+            <Space size={4}>
+              {Object.entries((cloze as any).point_distribution_by_category).map(([category, count]) => (
+                <Tag key={category} color={CAT_COLORS[category] || 'default'}>
+                  {CATEGORY_NAMES[category] || category} ({count as number})
+                </Tag>
+              ))}
+            </Space>
+          )}
+          {/* 考点分布 - v1 向后兼容 */}
+          {!(cloze as any).point_distribution_by_category && Object.keys(cloze.point_distribution || {}).length > 0 && (
             <Space size={4}>
               {Object.entries(cloze.point_distribution).map(([type, count]) => (
-                <Tag key={type} color={POINT_TYPE_COLORS[type] || 'default'}>
+                <Tag key={type} color={POINT_TYPE_COLORS_V1[type] || 'default'}>
                   {type} ({count})
                 </Tag>
               ))}

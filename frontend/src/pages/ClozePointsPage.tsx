@@ -7,7 +7,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  *
  * 功能：
- * - 按考点类型筛选（固定搭配/词义辨析/熟词僻义）
+ * - 按考点类型筛选（v1: 固定搭配/词义辨析/熟词僻义，v2: 16种考点）
+ * - 按大类筛选（A-E）
  * - 按年级、关键词搜索
  * - 展示考点词/短语、释义、出现次数
  * - 例句列表（含出处链接，可跳转到原文）
@@ -26,8 +27,9 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import { getPointList, getClozeFilters } from '@/services/clozeService'
-import type { PointSummary, PointOccurrence, ClozeFiltersResponse } from '@/types'
+import { getPointList, getClozeFilters, getPointTypesByCategory } from '@/services/clozeService'
+import type { PointSummary, PointOccurrence, ClozeFiltersResponse, PointType, PointTypeByCategoryResponse } from '@/types'
+import { CATEGORY_COLORS } from '@/types'
 import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
 
 const { Text } = Typography
@@ -36,18 +38,49 @@ const { Text } = Typography
 //  常量定义
 // ============================================================================
 
-const POINT_TYPE_COLORS: Record<string, string> = {
+// v1 旧系统颜色（向后兼容）
+const POINT_TYPE_COLORS_V1: Record<string, string> = {
   '固定搭配': 'green',
   '词义辨析': 'orange',
   '熟词僻义': 'purple',
   '其他': 'default',
 }
 
-const POINT_TYPE_OPTIONS = [
+// v1 考点类型选项（向后兼容）
+const POINT_TYPE_OPTIONS_V1 = [
   { value: '固定搭配', label: '固定搭配' },
   { value: '词义辨析', label: '词义辨析' },
   { value: '熟词僻义', label: '熟词僻义' },
 ]
+
+// v2 大类选项
+const CATEGORY_OPTIONS = [
+  { value: 'A', label: 'A - 语篇理解类' },
+  { value: 'B', label: 'B - 逻辑关系类' },
+  { value: 'C', label: 'C - 句法语法类' },
+  { value: 'D', label: 'D - 词汇选项类' },
+  { value: 'E', label: 'E - 常识主题类' },
+]
+
+// 获取考点颜色（兼容新旧格式）
+const getPointColor = (pointType: string, primaryPoint?: PointType): string => {
+  // v2: 使用大类颜色
+  if (primaryPoint?.category) {
+    return CATEGORY_COLORS[primaryPoint.category] || 'default'
+  }
+  // v1: 使用旧类型颜色
+  return POINT_TYPE_COLORS_V1[pointType] || 'default'
+}
+
+// 获取考点显示名称（兼容新旧格式）
+const getPointLabel = (pointType: string, primaryPoint?: PointType): string => {
+  // v2: 使用编码和名称
+  if (primaryPoint) {
+    return `${primaryPoint.code} ${primaryPoint.name}`
+  }
+  // v1: 使用旧类型
+  return pointType
+}
 
 // 次要列（抽屉打开时隐藏）
 const SECONDARY_COLUMN_KEYS = ['definition', 'occurrences', 'source']
@@ -73,9 +106,13 @@ export function ClozePointsPage() {
 
   // 筛选条件
   const [pointType, setPointType] = useState<string | undefined>()
+  const [category, setCategory] = useState<string | undefined>() // v2 大类筛选
   const [grade, setGrade] = useState<string | undefined>()
   const [keyword, setKeyword] = useState<string>('')
   const [searchKeyword, setSearchKeyword] = useState<string>('')
+
+  // v2 考点类型数据（按大类分组）
+  const [pointTypesByCategory, setPointTypesByCategory] = useState<PointTypeByCategoryResponse>({} as PointTypeByCategoryResponse)
 
   // 分页
   const [page, setPage] = useState(1)
@@ -89,12 +126,13 @@ export function ClozePointsPage() {
   // 加载筛选项
   useEffect(() => {
     loadFilters()
+    loadPointTypes()
   }, [])
 
   // 加载考点列表
   useEffect(() => {
     loadPointsList()
-  }, [pointType, grade, searchKeyword, page, size])
+  }, [pointType, category, grade, searchKeyword, page, size])
 
   const loadFilters = async () => {
     try {
@@ -102,6 +140,15 @@ export function ClozePointsPage() {
       setFilters(data)
     } catch (error) {
       console.error('加载筛选项失败:', error)
+    }
+  }
+
+  const loadPointTypes = async () => {
+    try {
+      const data = await getPointTypesByCategory()
+      setPointTypesByCategory(data)
+    } catch (error) {
+      console.error('加载考点类型失败:', error)
     }
   }
 
@@ -172,11 +219,16 @@ export function ClozePointsPage() {
       dataIndex: 'point_type',
       key: 'point_type',
       width: 100,
-      render: (type: string) => (
-        <Tag color={POINT_TYPE_COLORS[type] || 'default'}>
-          {type}
-        </Tag>
-      ),
+      render: (type: string, record) => {
+        const primaryPoint = (record as any).primary_point
+        const color = getPointColor(type, primaryPoint)
+        const label = getPointLabel(type, primaryPoint)
+        return (
+          <Tag color={color}>
+            {label}
+          </Tag>
+        )
+      },
     },
     {
       title: '出现次数',
@@ -260,13 +312,26 @@ export function ClozePointsPage() {
       {/* 筛选器 */}
       <Card style={{ marginBottom: 16, flexShrink: 0 }}>
         <Space wrap>
+          {/* v2 大类筛选 */}
+          <Select
+            placeholder="选择大类"
+            allowClear
+            style={{ width: 160 }}
+            value={category}
+            onChange={(val) => {
+              setCategory(val)
+              setPointType(undefined) // 切换大类时清空具体类型
+            }}
+            options={CATEGORY_OPTIONS}
+          />
+          {/* v2/v1 具体考点类型筛选 */}
           <Select
             placeholder="考点类型"
             allowClear
-            style={{ width: 120 }}
+            style={{ width: 140 }}
             value={pointType}
             onChange={setPointType}
-            options={POINT_TYPE_OPTIONS}
+            options={POINT_TYPE_OPTIONS_V1}
           />
           <Select
             placeholder="选择年级"
@@ -349,8 +414,11 @@ export function ClozePointsPage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <Space>
                           <Tag color="blue" style={{ fontSize: 11 }}>第 {occ.blank_number} 空</Tag>
-                          <Tag color={POINT_TYPE_COLORS[occ.point_type] || 'default'} style={{ fontSize: 11 }}>
-                            {occ.point_type}
+                          <Tag
+                            color={getPointColor(occ.point_type, (occ as any).primary_point)}
+                            style={{ fontSize: 11 }}
+                          >
+                            {getPointLabel(occ.point_type, (occ as any).primary_point)}
                           </Tag>
                           <Text type="secondary" style={{ fontSize: 11 }}>{occ.source}</Text>
                         </Space>
@@ -368,8 +436,8 @@ export function ClozePointsPage() {
                       {/* 根据考点类型展示不同的分析内容 */}
                       {occ.analysis && (
                         <div style={{ marginTop: 8, padding: '8px 12px', background: '#fff', borderRadius: 4 }}>
-                          {/* 固定搭配 */}
-                          {occ.point_type === '固定搭配' && occ.analysis.phrase && (
+                          {/* 固定搭配 (v1: 固定搭配, v2: C2) */}
+                          {(occ.point_type === '固定搭配' || (occ as any).primary_point?.code === 'C2') && occ.analysis.phrase && (
                             <>
                               <div style={{ marginBottom: 8 }}>
                                 <Text strong style={{ color: '#52c41a' }}>短语：</Text>
@@ -391,8 +459,8 @@ export function ClozePointsPage() {
                             </>
                           )}
 
-                          {/* 词义辨析 - 三维度分析 */}
-                          {occ.point_type === '词义辨析' && occ.analysis.word_analysis && (
+                          {/* 词义辨析 - 三维度分析 (v1: 词义辨析, v2: D1) */}
+                          {(occ.point_type === '词义辨析' || (occ as any).primary_point?.code === 'D1') && occ.analysis.word_analysis && (
                             <>
                               {occ.analysis.dictionary_source && (
                                 <div style={{ marginBottom: 8 }}>
@@ -445,8 +513,8 @@ export function ClozePointsPage() {
                             </>
                           )}
 
-                          {/* 熟词僻义 */}
-                          {occ.point_type === '熟词僻义' && occ.analysis.textbook_meaning && (
+                          {/* 熟词僻义 (v1: 熟词僻义, v2: D2) */}
+                          {(occ.point_type === '熟词僻义' || (occ as any).primary_point?.code === 'D2') && occ.analysis.textbook_meaning && (
                             <>
                               <div style={{ marginBottom: 8 }}>
                                 <Text type="secondary" style={{ fontSize: 11 }}>课本出处：</Text>
@@ -477,8 +545,9 @@ export function ClozePointsPage() {
                             </>
                           )}
 
-                          {/* 易混淆词（通用展示） */}
-                          {occ.analysis.confusion_words && occ.analysis.confusion_words.length > 0 && occ.point_type !== '固定搭配' && (
+                          {/* 易混淆词（通用展示，非固定搭配时） */}
+                          {occ.analysis.confusion_words && occ.analysis.confusion_words.length > 0 &&
+                            occ.point_type !== '固定搭配' && (occ as any).primary_point?.code !== 'C2' && (
                             <div style={{ marginTop: 8 }}>
                               <Text type="secondary" style={{ fontSize: 11 }}>易混淆词：</Text>
                               <div style={{ marginTop: 4 }}>

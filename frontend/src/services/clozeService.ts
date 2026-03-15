@@ -11,6 +11,8 @@ import type {
   PointListResponse,
   ClozeFiltersResponse,
   ClozeFilter,
+  PointTypeListResponse,
+  PointTypeByCategoryResponse,
 } from '../types'
 
 /**
@@ -121,5 +123,25 @@ export async function getClozeGradeHandout(
     `/cloze/handouts/${grade}`,
     { params: { edition } }
   )
+  return response.data
+}
+
+// ============================================================================
+//  考点类型定义 API（V2 新增）
+// ============================================================================
+
+/**
+ * 获取所有考点类型定义
+ */
+export async function getPointTypes(): Promise<PointTypeListResponse> {
+  const response = await api.get<PointTypeListResponse>('/cloze/point-types')
+  return response.data
+}
+
+/**
+ * 按大类获取考点类型定义
+ */
+export async function getPointTypesByCategory(): Promise<PointTypeByCategoryResponse> {
+  const response = await api.get<PointTypeByCategoryResponse>('/cloze/point-types/by-category')
   return response.data
 }

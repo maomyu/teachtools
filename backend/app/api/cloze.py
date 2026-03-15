@@ -5,16 +5,23 @@
 [OUTPUT]: 对外提供完形填空相关的 REST API
 [POS]: backend/app/api 的完形路由
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+考点分类系统 v2:
+- 5大类(A-E) 16个考点
+- 支持多标签: 主考点 + 辅助考点 + 排错点
+- 优先级: P1(核心) > P2(重要) > P3(一般)
+
+旧类型映射: 固定搭配→C2, 词义辨析→D1, 熟词僻义→D2
 """
 import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.cloze import ClozePassage, ClozePoint
+from app.models.cloze import ClozePassage, ClozePoint, PointTypeDefinition, ClozeSecondaryPoint, ClozeRejectionPoint
 from app.models.paper import ExamPaper
 from app.models.vocabulary_cloze import VocabularyCloze
 from app.models.vocabulary import Vocabulary
@@ -32,9 +39,88 @@ from app.schemas.cloze import (
     VocabularyInCloze,
     ClozeFilters,
     SourceInfo,
+    # V2 新增
+    PointTypeBase,
+    PointTypeListResponse,
+    PointTypeByCategoryResponse,
+    ClozePointNewResponse,
+    ClozeDetailNewResponse,
+    SecondaryPointBase,
+    RejectionPointBase,
 )
 
 router = APIRouter()
+
+
+# ============================================================================
+#  考点类型定义（V2 新增，必须放在 /{cloze_id} 之前）
+# ============================================================================
+
+# 旧类型到新编码的映射
+LEGACY_TO_NEW_CODE = {
+    "固定搭配": "C2",
+    "词义辨析": "D1",
+    "熟词僻义": "D2",
+}
+
+# 新编码到旧类型的映射
+NEW_CODE_TO_LEGACY = {
+    "C2": "固定搭配",
+    "D1": "词义辨析",
+    "D2": "熟词僻义",
+}
+
+
+@router.get("/point-types", response_model=PointTypeListResponse)
+async def get_point_types(db: AsyncSession = Depends(get_db)):
+    """获取所有考点类型定义（V2）"""
+    result = await db.execute(
+        select(PointTypeDefinition).order_by(PointTypeDefinition.category, PointTypeDefinition.code)
+    )
+    definitions = result.scalars().all()
+
+    items = [PointTypeBase(
+        code=d.code,
+        category=d.category,
+        category_name=d.category_name,
+        name=d.name,
+        priority=d.priority,
+        description=d.description
+    ) for d in definitions]
+
+    return PointTypeListResponse(total=len(items), items=items)
+
+
+@router.get("/point-types/by-category", response_model=PointTypeByCategoryResponse)
+async def get_point_types_by_category(db: AsyncSession = Depends(get_db)):
+    """按大类获取考点类型（V2）"""
+    result = await db.execute(
+        select(PointTypeDefinition).order_by(PointTypeDefinition.code)
+    )
+    definitions = result.scalars().all()
+
+    response = PointTypeByCategoryResponse()
+    for d in definitions:
+        pt = PointTypeBase(
+            code=d.code,
+            category=d.category,
+            category_name=d.category_name,
+            name=d.name,
+            priority=d.priority,
+            description=d.description
+        )
+        if d.category == "A":
+            response.A.append(pt)
+        elif d.category == "B":
+            response.B.append(pt)
+        elif d.category == "C":
+            response.C.append(pt)
+        elif d.category == "D":
+            response.D.append(pt)
+        elif d.category == "E":
+            response.E.append(pt)
+
+    return response
 
 
 # ============================================================================
@@ -319,12 +405,106 @@ async def list_points(
 #  完形文章详情
 # ============================================================================
 
-@router.get("/{cloze_id}", response_model=ClozeDetailResponse)
+async def _build_point_v2_response(
+    pt: ClozePoint,
+    db: AsyncSession
+) -> ClozePointNewResponse:
+    """
+    构建单个考点的 v2 格式响应
+
+    [INPUT]: ClozePoint 对象、数据库会话
+    [OUTPUT]: ClozePointNewResponse 对象
+    [POS]: cloze.py 的私有辅助函数
+    [PROTOCOL]: 变更时更新此头部
+    """
+    # 1. 查询主考点定义
+    primary_point = None
+    if hasattr(pt, 'primary_point_code') and pt.primary_point_code:
+        result = await db.execute(
+            select(PointTypeDefinition).where(PointTypeDefinition.code == pt.primary_point_code)
+        )
+        pt_def = result.scalar_one_or_none()
+        if pt_def:
+            primary_point = PointTypeBase(
+                code=pt_def.code,
+                category=pt_def.category,
+                category_name=pt_def.category_name,
+                name=pt_def.name,
+                priority=pt_def.priority,
+                description=pt_def.description
+            )
+
+    # 2. 查询辅助考点
+    secondary_points = []
+    sec_result = await db.execute(
+        select(ClozeSecondaryPoint).where(ClozeSecondaryPoint.cloze_point_id == pt.id).order_by(ClozeSecondaryPoint.sort_order)
+    )
+    for sp in sec_result.scalars().all():
+        secondary_points.append(SecondaryPointBase(
+            point_code=sp.point_code,
+            explanation=sp.explanation
+        ))
+
+    # 3. 查询排错点
+    rejection_points = []
+    rej_result = await db.execute(
+        select(ClozeRejectionPoint).where(ClozeRejectionPoint.cloze_point_id == pt.id)
+    )
+    for rp in rej_result.scalars().all():
+        rejection_points.append(RejectionPointBase(
+            option_word=rp.option_word,
+            point_code=rp.point_code,
+            explanation=rp.explanation
+        ))
+
+    # 4. 确定旧类型（向后兼容）
+    legacy_point_type = None
+    if pt.point_type:
+        legacy_point_type = pt.point_type
+    elif pt.primary_point_code and pt.primary_point_code in NEW_CODE_TO_LEGACY:
+        legacy_point_type = NEW_CODE_TO_LEGACY[pt.primary_point_code]
+
+    return ClozePointNewResponse(
+        id=pt.id,
+        blank_number=pt.blank_number,
+        correct_answer=pt.correct_answer,
+        correct_word=pt.correct_word,
+        options=json.loads(pt.options) if pt.options else {},
+        sentence=pt.sentence,
+        # v2 字段
+        primary_point=primary_point,
+        secondary_points=secondary_points,
+        rejection_points=rejection_points,
+        # 兼容字段
+        legacy_point_type=legacy_point_type,
+        point_type=pt.point_type,
+        # 解析内容
+        translation=pt.translation,
+        explanation=pt.explanation,
+        confusion_words=json.loads(pt.confusion_words) if pt.confusion_words else None,
+        tips=pt.tips if hasattr(pt, 'tips') else None,
+        # 固定搭配
+        phrase=pt.phrase if hasattr(pt, 'phrase') else None,
+        similar_phrases=json.loads(pt.similar_phrases) if hasattr(pt, 'similar_phrases') and pt.similar_phrases else None,
+        # 词义辨析
+        word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
+        dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
+        # 熟词僻义
+        textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
+        textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
+        context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
+        similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words else None,
+        # 状态
+        point_verified=pt.point_verified if hasattr(pt, 'point_verified') else False
+    )
+
+
+@router.get("/{cloze_id}", response_model=ClozeDetailNewResponse)
 async def get_cloze(
     cloze_id: int,
     db: AsyncSession = Depends(get_db)
 ):
-    """获取完形文章详情"""
+    """获取完形文章详情 (v2 格式，支持多标签考点)"""
     result = await db.execute(
         select(ClozePassage)
         .options(
@@ -338,11 +518,35 @@ async def get_cloze(
     if not passage:
         raise HTTPException(status_code=404, detail="完形文章不存在")
 
-    # 统计考点分布
-    point_dist = {}
+    # 构建考点列表（v2 格式）
+    points_v2 = []
+    point_dist_v1 = {}  # 旧分布
+    point_dist_by_category = {}  # 新分布：按大类
+    point_dist_by_priority = {}  # 新分布：按优先级
+
     for pt in passage.points:
+        # 构建 v2 考点响应
+        point_v2 = await _build_point_v2_response(pt, db)
+        points_v2.append(point_v2)
+
+        # 统计旧分布
         if pt.point_type:
-            point_dist[pt.point_type] = point_dist.get(pt.point_type, 0) + 1
+            point_dist_v1[pt.point_type] = point_dist_v1.get(pt.point_type, 0) + 1
+
+        # 统计新分布
+        if hasattr(pt, 'primary_point_code') and pt.primary_point_code:
+            category = pt.primary_point_code[0] if pt.primary_point_code else None
+            if category:
+                point_dist_by_category[category] = point_dist_by_category.get(category, 0) + 1
+
+            # 查询优先级
+            pt_def_result = await db.execute(
+                select(PointTypeDefinition.priority).where(PointTypeDefinition.code == pt.primary_point_code)
+            )
+            priority_row = pt_def_result.first()
+            if priority_row:
+                priority_key = f"P{priority_row[0]}"
+                point_dist_by_priority[priority_key] = point_dist_by_priority.get(priority_key, 0) + 1
 
     source = None
     if passage.paper:
@@ -379,7 +583,7 @@ async def get_cloze(
 
     vocabulary = list(vocab_map.values())
 
-    return ClozeDetailResponse(
+    return ClozeDetailNewResponse(
         id=passage.id,
         paper_id=passage.paper_id,
         content=passage.content,
@@ -389,33 +593,12 @@ async def get_cloze(
         secondary_topics=json.loads(passage.secondary_topics) if passage.secondary_topics else [],
         topic_confidence=passage.topic_confidence,
         source=source,
-        points=[ClozePointResponse(
-            id=pt.id,
-            blank_number=pt.blank_number,
-            correct_answer=pt.correct_answer,
-            correct_word=pt.correct_word,
-            options=json.loads(pt.options) if pt.options else {},
-            point_type=pt.point_type,
-            translation=pt.translation,
-            explanation=pt.explanation,
-            confusion_words=json.loads(pt.confusion_words) if pt.confusion_words else None,
-            sentence=pt.sentence,
-            point_verified=pt.point_verified if hasattr(pt, 'point_verified') else False,
-            # 固定搭配
-            phrase=pt.phrase if hasattr(pt, 'phrase') else None,
-            similar_phrases=json.loads(pt.similar_phrases) if hasattr(pt, 'similar_phrases') and pt.similar_phrases else None,
-            # 词义辨析
-            word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
-            dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
-            # 熟词僻义
-            textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
-            textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
-            context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
-            similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words else None,
-            # 通用
-            tips=pt.tips if hasattr(pt, 'tips') else None
-        ) for pt in passage.points],
-        point_distribution=point_dist,
+        points=points_v2,
+        # v2 分布统计
+        point_distribution_by_category=point_dist_by_category,
+        point_distribution_by_priority=point_dist_by_priority,
+        # v1 兼容分布
+        point_distribution=point_dist_v1,
         vocabulary=vocabulary
     )
 
@@ -471,6 +654,112 @@ async def update_blank_point(
 
     await db.commit()
     return {"message": "考点更新成功"}
+
+
+@router.post("/blanks/{blank_id}/analyze-v2")
+async def analyze_blank_point_v2(
+    blank_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    使用 V2 分析器重新分析单个考点（16种考点 + 多标签）
+
+    [INPUT]: 考点 ID
+    [OUTPUT]: 分析结果（包含主考点、辅助考点、排错点）
+    [POS]: cloze.py 的 V2 分析端点
+    [PROTOCOL]: 变更时更新此头部
+    """
+    from app.services.cloze_analyzer import ClozeAnalyzerV2
+
+    # 1. 查询考点
+    result = await db.execute(
+        select(ClozePoint)
+        .options(selectinload(ClozePoint.cloze_passage))
+        .where(ClozePoint.id == blank_id)
+    )
+    point = result.scalar_one_or_none()
+
+    if not point:
+        raise HTTPException(status_code=404, detail="考点不存在")
+
+    if not point.cloze_passage:
+        raise HTTPException(status_code=400, detail="考点未关联文章")
+
+    # 2. 获取上下文
+    context = point.cloze_passage.original_content or point.cloze_passage.content
+    options = json.loads(point.options) if point.options else {}
+
+    # 3. 调用 V2 分析器
+    analyzer = ClozeAnalyzerV2()
+    analysis_result = await analyzer.analyze_point(
+        blank_number=point.blank_number,
+        correct_word=point.correct_word or "",
+        options=options,
+        context=context,
+        db_session=db
+    )
+
+    if not analysis_result.success:
+        raise HTTPException(status_code=500, detail=f"分析失败: {analysis_result.error}")
+
+    # 4. 保存结果到数据库
+    # 更新主考点编码
+    if analysis_result.primary_point:
+        point.primary_point_code = analysis_result.primary_point.get("code")
+        # 更新旧类型（向后兼容）
+        if point.primary_point_code in NEW_CODE_TO_LEGACY:
+            point.point_type = NEW_CODE_TO_LEGACY[point.primary_point_code]
+
+    # 更新解析字段
+    if analysis_result.translation:
+        point.translation = analysis_result.translation
+    if analysis_result.explanation:
+        point.explanation = analysis_result.explanation
+    if analysis_result.confusion_words:
+        point.confusion_words = json.dumps(analysis_result.confusion_words, ensure_ascii=False)
+    if analysis_result.tips:
+        point.tips = analysis_result.tips
+
+    # 5. 删除旧的辅助考点和排错点
+    await db.execute(
+        delete(ClozeSecondaryPoint).where(ClozeSecondaryPoint.cloze_point_id == point.id)
+    )
+    await db.execute(
+        delete(ClozeRejectionPoint).where(ClozeRejectionPoint.cloze_point_id == point.id)
+    )
+
+    # 6. 插入新的辅助考点
+    if analysis_result.secondary_points:
+        for idx, sp in enumerate(analysis_result.secondary_points):
+            new_sp = ClozeSecondaryPoint(
+                cloze_point_id=point.id,
+                point_code=sp.get("point_code"),
+                explanation=sp.get("explanation"),
+                sort_order=idx
+            )
+            db.add(new_sp)
+
+    # 7. 插入新的排错点
+    if analysis_result.rejection_points:
+        for rp in analysis_result.rejection_points:
+            new_rp = ClozeRejectionPoint(
+                cloze_point_id=point.id,
+                option_word=rp.get("option_word"),
+                point_code=rp.get("point_code"),
+                explanation=rp.get("explanation")
+            )
+            db.add(new_rp)
+
+    await db.commit()
+
+    return {
+        "message": "分析成功",
+        "primary_point": analysis_result.primary_point,
+        "secondary_points": analysis_result.secondary_points,
+        "rejection_points": analysis_result.rejection_points,
+        "translation": analysis_result.translation,
+        "explanation": analysis_result.explanation
+    }
 
 
 # ============================================================================
