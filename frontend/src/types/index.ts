@@ -243,6 +243,27 @@ export interface ClozePoint {
   explanation?: string
   confusion_words?: Array<{word: string; meaning: string; reason: string}>
   sentence?: string
+  // 固定搭配
+  phrase?: string
+  similar_phrases?: string[]
+  // 词义辨析
+  word_analysis?: Record<string, {
+    definition: string
+    dimensions?: {
+      使用对象: string
+      使用场景: string
+      正负态度: string
+    }
+    rejection_reason?: string
+  }>
+  dictionary_source?: string
+  // 熟词僻义
+  textbook_meaning?: string
+  textbook_source?: string
+  context_meaning?: string
+  similar_words?: Array<{word: string; textbook: string; rare: string}>
+  // 通用
+  tips?: string
 }
 
 // 完形词汇
@@ -321,6 +342,8 @@ export interface PointOccurrence {
   point_id?: number    // 考点ID
   // 嵌套分析详情
   analysis?: PointAnalysis
+  // 兼容旧数据
+  explanation?: string
 }
 
 // 完形考点汇总
@@ -447,4 +470,97 @@ export interface GradeHandoutResponse {
   edition: 'teacher' | 'student'
   topics: TopicStats[]
   content: TopicContent[]
+}
+
+// ============================================================================
+//  完形讲义类型
+// ============================================================================
+
+// 完形主题统计
+export interface ClozeTopicStats {
+  topic: string
+  passage_count: number
+  recent_years: number[]
+}
+
+// 词义辨析考点（聚合后）
+export interface WordAnalysisPoint {
+  word: string
+  frequency: number
+  definition?: string
+  word_analysis?: Record<string, {
+    definition: string
+    dimensions?: {
+      使用对象: string
+      使用场景: string
+      正负态度: string
+    }
+    rejection_reason?: string
+  }>
+  dictionary_source?: string
+  occurrences: PointOccurrence[]
+}
+
+// 固定搭配考点（聚合后）
+export interface FixedPhrasePoint {
+  word: string
+  frequency: number
+  phrase?: string
+  similar_phrases?: string[]
+  occurrences: PointOccurrence[]
+}
+
+// 熟词僻义考点（聚合后）
+export interface RareMeaningPoint {
+  word: string
+  frequency: number
+  textbook_meaning?: string
+  textbook_source?: string
+  context_meaning?: string
+  similar_words?: Array<{ word: string; textbook: string; rare: string }>
+  occurrences: PointOccurrence[]
+}
+
+// 按类型分组的考点
+export interface PointsByType {
+  词义辨析: WordAnalysisPoint[]
+  固定搭配: FixedPhrasePoint[]
+  熟词僻义: RareMeaningPoint[]
+}
+
+// 完形讲义文章
+export interface ClozeHandoutPassage {
+  id: number
+  content: string
+  word_count?: number
+  source?: SourceInfo
+  points: ClozePoint[]
+}
+
+// 完形主题内容
+export interface ClozeTopicContent {
+  topic: string
+  part1_article_sources: ArticleSource[]
+  part2_vocabulary: HandoutVocabulary[]
+  part3_points_by_type: PointsByType
+  part4_passages: ClozeHandoutPassage[]
+}
+
+// 完形讲义详情响应
+export interface ClozeHandoutDetailResponse {
+  topic: string
+  grade: string
+  edition: 'teacher' | 'student'
+  part1_article_sources: ArticleSource[]
+  part2_vocabulary: HandoutVocabulary[]
+  part3_points_by_type: PointsByType
+  part4_passages: ClozeHandoutPassage[]
+}
+
+// 完形年级讲义响应
+export interface ClozeGradeHandoutResponse {
+  grade: string
+  edition: 'teacher' | 'student'
+  topics: ClozeTopicStats[]
+  content: ClozeTopicContent[]
 }

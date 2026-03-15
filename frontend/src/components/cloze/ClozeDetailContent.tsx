@@ -21,12 +21,14 @@ import {
   Spin,
   Empty,
   Descriptions,
-  Collapse,
+  Popover,
+  List,
 } from 'antd'
 import { ArrowLeftOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons'
 
 import { getCloze } from '@/services/clozeService'
 import type { ClozeDetailResponse, VocabularyInCloze, ClozePoint } from '@/types'
+import styles from './ClozeDetailContent.module.css'
 
 const { Text } = Typography
 
@@ -51,6 +53,7 @@ interface ClozeDetailContentProps {
   showBackButton?: boolean
   highlightWord?: string      // 初始高亮词汇
   charPosition?: number       // 初始滚动位置
+  initialBlankNumber?: number // 初始定位的空格编号
 }
 
 // ============================================================================
@@ -63,6 +66,7 @@ export function ClozeDetailContent({
   showBackButton = true,
   highlightWord: initialHighlightWord,
   charPosition: _initialCharPosition,
+  initialBlankNumber,
 }: ClozeDetailContentProps) {
   // Refs
   const contentRef = useRef<HTMLDivElement>(null)
@@ -74,7 +78,7 @@ export function ClozeDetailContent({
   const [loading, setLoading] = useState(true)
   const [cloze, setCloze] = useState<ClozeDetailResponse | null>(null)
   const [selectedBlank, setSelectedBlank] = useState<number | null>(null)
-  const [showAllAnswers, setShowAllAnswers] = useState(false)
+  const [showAnswerBlanks, setShowAnswerBlanks] = useState<Set<number>>(new Set())
 
   // 词汇高亮状态
   const [highlightedWord, setHighlightedWord] = useState<string | null>(null)
@@ -87,12 +91,15 @@ export function ClozeDetailContent({
 
   useEffect(() => {
     setLoading(true)
-    setShowAllAnswers(false)
+    setShowAnswerBlanks(new Set())
     setHighlightedWord(null)
     getCloze(clozeId)
       .then(data => {
         setCloze(data)
-        if (data.points?.length > 0) {
+        // 如果有初始空格编号，则选中它；否则默认选中第一个
+        if (initialBlankNumber) {
+          setSelectedBlank(initialBlankNumber)
+        } else if (data.points?.length > 0) {
           setSelectedBlank(data.points[0].blank_number || 1)
         }
       })
@@ -100,16 +107,38 @@ export function ClozeDetailContent({
         console.error('加载完形详情失败:', err)
       })
       .finally(() => setLoading(false))
-  }, [clozeId])
+  }, [clozeId, initialBlankNumber])
 
   // ============================================================================
   //  文本处理
   // ============================================================================
 
-  // 分割原文
+  // 分割原文 - 支持统一的 (数字) 格式
   const contentParts = useMemo(() => {
     if (!cloze?.content) return []
-    return cloze.content.split(/_{2,}(\d+)_{2,}/g)
+
+    // 匹配 (数字) 格式的空格标记
+    const BLANK_REGEX = /\((\d+)\)/g
+    const result: (string | number)[] = []
+    let lastIndex = 0
+    let match
+
+    while ((match = BLANK_REGEX.exec(cloze.content)) !== null) {
+      // 添加匹配前的文本
+      if (match.index > lastIndex) {
+        result.push(cloze.content.slice(lastIndex, match.index))
+      }
+      // 添加空格编号
+      result.push(parseInt(match[1]))
+      lastIndex = match.index + match[0].length
+    }
+
+    // 添加剩余文本
+    if (lastIndex < cloze.content.length) {
+      result.push(cloze.content.slice(lastIndex))
+    }
+
+    return result
   }, [cloze?.content])
 
   // 构建渲染后的纯文本、空格位置映射
@@ -120,19 +149,20 @@ export function ClozeDetailContent({
     const blankPositions: Array<{ start: number; end: number; num: number }> = []
     const positionMap: number[] = []
 
-    contentParts.forEach((part, idx) => {
-      if (idx % 2 === 1) {
+    contentParts.forEach((part) => {
+      if (typeof part === 'number') {
         // 空格部分
-        const blankNum = parseInt(part)
-        const originalLen = part.length
+        const blankNum = part
         const start = text.length
         text += `[${blankNum}]`
         blankPositions.push({ start, end: text.length, num: blankNum })
 
-        for (let i = 0; i < originalLen; i++) {
-          positionMap.push(start + Math.min(i, 2))
+        // 位置映射（简化处理）
+        for (let i = 0; i < 3; i++) {
+          positionMap.push(start + i)
         }
       } else {
+        // 文本部分
         for (let i = 0; i < part.length; i++) {
           positionMap.push(text.length + i)
         }
@@ -154,6 +184,15 @@ export function ClozeDetailContent({
       element.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [])
+
+  // 初始空格定位
+  useEffect(() => {
+    if (!loading && cloze && initialBlankNumber) {
+      setTimeout(() => {
+        scrollToBlank(initialBlankNumber)
+      }, 100)
+    }
+  }, [loading, cloze, initialBlankNumber, scrollToBlank])
 
   // 滚动到考点位置
   const scrollToPoint = useCallback((blankNumber: number) => {
@@ -201,6 +240,20 @@ export function ClozeDetailContent({
     setSelectedBlank(blankNumber)
     scrollToBlank(blankNumber)
   }, [scrollToBlank])
+
+  // 切换单个考点答案显示
+  const toggleAnswerShow = useCallback((blankNumber: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowAnswerBlanks(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(blankNumber)) {
+        newSet.delete(blankNumber)
+      } else {
+        newSet.add(blankNumber)
+      }
+      return newSet
+    })
+  }, [])
 
   // 词汇点击 - 高亮原文
   const handleWordClick = useCallback((vocab: VocabularyInCloze) => {
@@ -258,6 +311,203 @@ export function ClozeDetailContent({
   //  渲染函数
   // ============================================================================
 
+  // 渲染考点 Popover 内容
+  const renderPointPopover = (point: ClozePoint, blankNum: number) => {
+    const showAnswer = showAnswerBlanks.has(blankNum)
+    const pointType = point.point_type || '其他'
+
+    return (
+      <div style={{ padding: '8px 0', minWidth: 300, maxWidth: 420, maxHeight: '55vh', overflow: 'auto', overflowX: 'hidden' }}>
+        {/* 标题行 */}
+        <div style={{ marginBottom: 8 }}>
+          <Space>
+            <Tag color="blue" style={{ fontSize: 12, padding: '2px 8px' }}>第 {blankNum} 空</Tag>
+            <Tag color={POINT_TYPE_COLORS[pointType] || 'default'} style={{ fontSize: 11 }}>
+              {pointType}
+            </Tag>
+          </Space>
+        </div>
+
+        {/* 选项 */}
+        <div style={{ marginBottom: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {['A', 'B', 'C', 'D'].map(opt => {
+            const optionValue = point.options?.[opt as keyof typeof point.options]
+            const isCorrect = point.correct_answer === opt
+            return (
+              <Tag
+                key={opt}
+                color={showAnswer && isCorrect ? 'success' : 'default'}
+                style={{ fontSize: 12, padding: '2px 6px' }}
+              >
+                {opt}. {optionValue}
+                {showAnswer && isCorrect && point.correct_word && ` (${point.correct_word})`}
+              </Tag>
+            )
+          })}
+        </div>
+
+        {/* 显示答案按钮 */}
+        <Button
+          size="small"
+          type={showAnswer ? 'default' : 'primary'}
+          ghost={!showAnswer}
+          icon={showAnswer ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+          onClick={(e) => toggleAnswerShow(blankNum, e)}
+          block
+        >
+          {showAnswer ? '隐藏答案' : '显示答案'}
+        </Button>
+
+        {/* 解析（显示答案时） */}
+        {showAnswer && (
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #f0f0f0' }}>
+            {point.translation && (
+              <div style={{ marginBottom: 6 }}>
+                <Text strong style={{ fontSize: 12 }}>词义：</Text>
+                <Text style={{ fontSize: 12 }}>{point.translation}</Text>
+              </div>
+            )}
+            {point.explanation && (
+              <div style={{ marginBottom: 6 }}>
+                <Text strong style={{ fontSize: 12 }}>解析：</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{point.explanation}</Text>
+              </div>
+            )}
+
+            {/* 易混淆词 */}
+            {point.confusion_words && point.confusion_words.length > 0 && (
+              <div style={{
+                marginTop: 8,
+                padding: '8px 10px',
+                background: '#fffbe6',
+                borderRadius: 6,
+                border: '1px solid #ffe58f'
+              }}>
+                <Text type="secondary" style={{ fontSize: 11, marginBottom: 4, display: 'block' }}>易混淆词：</Text>
+                {point.confusion_words.map((item: { word: string; meaning: string; reason: string }, idx: number) => (
+                  <div key={idx} style={{ padding: '4px 0', borderBottom: idx < point.confusion_words!.length - 1 ? '1px dashed #e8e8e8' : 'none' }}>
+                    <Text strong style={{ fontSize: 11 }}>{item.word}</Text>
+                    <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>
+                      {item.meaning} — {item.reason}
+                    </Text>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 固定搭配专用内容 */}
+            {pointType === '固定搭配' && point.phrase && (
+              <div style={{ marginTop: 8, padding: '8px 10px', background: '#f6ffed', borderRadius: 6, border: '1px solid #b7eb8f' }}>
+                <Text strong style={{ color: '#52c41a', fontSize: 11 }}>短语：</Text>
+                <Text code style={{ fontSize: 11 }}>{point.phrase}</Text>
+                {point.similar_phrases && point.similar_phrases.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 10 }}>相似短语：</Text>
+                    <Space size={4} wrap>
+                      {point.similar_phrases.map((phrase: string, i: number) => (
+                        <Tag key={i} style={{ fontSize: 10 }}>{phrase}</Tag>
+                      ))}
+                    </Space>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 词义辨析专用内容 - 三维度分析表格 */}
+            {pointType === '词义辨析' && (point as any).word_analysis && (
+              <div style={{ marginTop: 8 }}>
+                {(point as any).dictionary_source && (
+                  <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
+                    词典来源：{(point as any).dictionary_source}
+                  </Text>
+                )}
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: 10, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#f5f5f5' }}>
+                        <th style={{ padding: '3px 6px', border: '1px solid #e8e8e8', whiteSpace: 'nowrap' }}>单词</th>
+                        <th style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>释义</th>
+                        <th style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>使用对象</th>
+                        <th style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>使用场景</th>
+                        <th style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>正负态度</th>
+                        <th style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>排除理由</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries((point as any).word_analysis).map(([word, data]: [string, any]) => (
+                        <tr key={word} style={{ background: word === point.correct_word ? '#e6f7ff' : 'white' }}>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e8e8e8', whiteSpace: 'nowrap' }}>
+                            <Text strong={word === point.correct_word}>{word}</Text>
+                          </td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>
+                            <Text type="secondary" style={{ fontSize: 9 }}>{data.definition}</Text>
+                          </td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>
+                            {data.dimensions?.使用对象 || '-'}
+                          </td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>
+                            {data.dimensions?.使用场景 || '-'}
+                          </td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e8e8e8' }}>
+                            {data.dimensions?.正负态度 || '-'}
+                          </td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e8e8e8', color: '#ff4d4f' }}>
+                            {data.rejection_reason || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 熟词僻义专用内容 */}
+            {pointType === '熟词僻义' && (point as any).textbook_meaning && (
+              <div style={{ marginTop: 8, padding: '8px 10px', background: '#f9f0ff', borderRadius: 6, border: '1px solid #d3adf7', maxHeight: 200, overflow: 'auto' }}>
+                {(point as any).textbook_source && (
+                  <div style={{ marginBottom: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 10 }}>课本出处：</Text>
+                    <Text style={{ fontSize: 10 }}>{(point as any).textbook_source}</Text>
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <Text type="secondary" style={{ fontSize: 10 }}>课本释义：</Text>
+                    <Text style={{ fontSize: 10, wordBreak: 'break-word' }}>{(point as any).textbook_meaning}</Text>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <Text type="secondary" style={{ fontSize: 10 }}>语境释义：</Text>
+                    <Text style={{ fontSize: 10, color: '#722ed1', wordBreak: 'break-word' }}>{(point as any).context_meaning}</Text>
+                  </div>
+                </div>
+                {(point as any).similar_words && (point as any).similar_words.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 10 }}>其他熟词僻义示例：</Text>
+                    <div style={{ marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {(point as any).similar_words.map((item: { word: string; textbook: string; rare: string }, i: number) => (
+                        <Tag key={i} color="purple" style={{ fontSize: 9, marginBottom: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                          {item.word}: {item.textbook} → {item.rare}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 记忆技巧 */}
+            {(point as any).tips && (
+              <div style={{ marginTop: 8, padding: '4px 8px', background: '#fffbe6', borderRadius: 4 }}>
+                <Text type="secondary" style={{ fontSize: 10 }}>💡 {(point as any).tips}</Text>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // 渲染带高亮的原文
   const renderContent = () => {
     const { text: renderedText, blankPositions } = renderedTextInfo
@@ -312,28 +562,44 @@ export function ClozeDetailContent({
     return (
       <div style={{ whiteSpace: 'pre-wrap', lineHeight: 2.2, fontSize: 15 }}>
         {contentParts.map((part, idx) => {
-          if (idx % 2 === 1) {
-            const blankNum = parseInt(part)
+          if (typeof part === 'number') {
+            const blankNum = part
             const isSelected = selectedBlank === blankNum
+            const point = cloze?.points?.find(p => p.blank_number === blankNum)
+            const pointType = point?.point_type || '其他'
+            const tagColor = POINT_TYPE_COLORS[pointType] || 'default'
 
             return (
-              <Tag
+              <Popover
                 key={idx}
-                ref={(el) => {
-                  if (el) blankRefs.current.set(blankNum, el)
-                }}
-                color={isSelected ? 'blue' : 'default'}
-                style={{
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  padding: '2px 10px',
-                  margin: '0 2px',
-                  transition: 'all 0.2s',
-                }}
-                onClick={() => handleBlankClick(blankNum)}
+                content={point ? renderPointPopover(point, blankNum) : null}
+                trigger="click"
+                placement="bottom"
+                arrow={false}
+                overlayStyle={{ maxWidth: 420, maxHeight: '60vh' }}
+                overlayInnerStyle={{ maxHeight: '60vh', overflow: 'auto' }}
+                getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
               >
-                {blankNum}
-              </Tag>
+                <Tag
+                  ref={(el) => {
+                    if (el) blankRefs.current.set(blankNum, el)
+                  }}
+                  color={tagColor}
+                  style={{
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    padding: '2px 10px',
+                    margin: '0 2px',
+                    transition: 'all 0.3s ease',
+                    boxShadow: isSelected ? '0 0 0 3px #1890ff, 0 2px 8px rgba(24,144,255,0.4)' : 'none',
+                    transform: isSelected ? 'scale(1.2)' : 'scale(1)',
+                    background: isSelected ? '#fffbe6' : undefined,
+                    border: isSelected ? '2px solid #faad14' : undefined,
+                  }}
+                >
+                  {blankNum}
+                </Tag>
+              </Popover>
             )
           }
           return <span key={idx}>{part}</span>
@@ -372,23 +638,40 @@ export function ClozeDetailContent({
       }
 
       const isSelected = selectedBlank === bp.num
+      const point = cloze?.points?.find(p => p.blank_number === bp.num)
+      const pointType = point?.point_type || '其他'
+      const tagColor = POINT_TYPE_COLORS[pointType] || 'default'
+
       result.push(
-        <Tag
+        <Popover
           key={`blank-${bp.num}-${idx}`}
-          ref={(el) => {
-            if (el) blankRefs.current.set(bp.num, el)
-          }}
-          color={isSelected ? 'blue' : 'default'}
-          style={{
-            cursor: 'pointer',
-            fontSize: 14,
-            padding: '2px 10px',
-            margin: '0 2px',
-          }}
-          onClick={() => handleBlankClick(bp.num)}
+          content={point ? renderPointPopover(point, bp.num) : null}
+          trigger="click"
+          placement="bottom"
+          arrow={false}
+          overlayStyle={{ maxWidth: 420, maxHeight: '60vh' }}
+          overlayInnerStyle={{ maxHeight: '60vh', overflow: 'auto' }}
+          getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
         >
-          {bp.num}
-        </Tag>
+          <Tag
+            ref={(el) => {
+              if (el) blankRefs.current.set(bp.num, el)
+            }}
+            color={tagColor}
+            style={{
+              cursor: 'pointer',
+              fontSize: 14,
+              padding: '2px 10px',
+              margin: '0 2px',
+              boxShadow: isSelected ? '0 0 0 3px #1890ff, 0 2px 8px rgba(24,144,255,0.4)' : 'none',
+              transform: isSelected ? 'scale(1.2)' : 'scale(1)',
+              background: isSelected ? '#fffbe6' : undefined,
+              border: isSelected ? '2px solid #faad14' : undefined,
+            }}
+          >
+            {bp.num}
+          </Tag>
+        </Popover>
       )
 
       textOffset = localEnd
@@ -408,6 +691,7 @@ export function ClozeDetailContent({
     const blankNum = point.blank_number ?? (index + 1)
     const isSelected = selectedBlank === blankNum
     const pointType = point.point_type || '其他'
+    const showAnswer = showAnswerBlanks.has(blankNum)
 
     return (
       <div
@@ -416,64 +700,49 @@ export function ClozeDetailContent({
           if (el) pointRefs.current.set(blankNum, el)
         }}
         onClick={() => handlePointClick(blankNum)}
-        style={{
-          padding: '12px 16px',
-          marginBottom: 8,
-          background: isSelected ? '#e6f7ff' : '#fafafa',
-          border: isSelected ? '2px solid #1890ff' : '1px solid #f0f0f0',
-          borderRadius: 8,
-          cursor: 'pointer',
-          transition: 'all 0.2s',
-        }}
+        className={`${styles.pointCard} ${isSelected ? styles.pointCardSelected : ''}`}
       >
         {/* 考点标题 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div className={styles.pointHeader}>
           <Space>
-            <Tag color="blue" style={{ fontSize: 13, padding: '2px 8px' }}>
+            <Tag color="blue" style={{ fontSize: 13, padding: '2px 10px', borderRadius: 12 }}>
               第 {blankNum} 空
             </Tag>
-            <Tag color={POINT_TYPE_COLORS[pointType] || 'default'} style={{ fontSize: 11 }}>
+            <Tag color={POINT_TYPE_COLORS[pointType] || 'default'} style={{ fontSize: 11, borderRadius: 8 }}>
               {pointType}
             </Tag>
           </Space>
-          {showAllAnswers && point.correct_answer && (
-            <Tag color="success" style={{ fontSize: 12 }}>
-              答案: {point.correct_answer}. {point.correct_word}
-            </Tag>
-          )}
+          <Button
+            size="small"
+            type={showAnswer ? 'default' : 'primary'}
+            icon={showAnswer ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+            onClick={(e) => toggleAnswerShow(blankNum, e)}
+          >
+            {showAnswer ? '隐藏答案' : '显示答案'}
+          </Button>
         </div>
 
         {/* 选项 */}
-        <div style={{ marginBottom: 8 }}>
-          <Space wrap size={4}>
-            {['A', 'B', 'C', 'D'].map(opt => {
-              const optionValue = point.options?.[opt as keyof typeof point.options]
-              const isCorrect = point.correct_answer === opt
-              return (
-                <Tag
-                  key={opt}
-                  color={showAllAnswers && isCorrect ? 'success' : 'default'}
-                  style={{
-                    fontSize: 12,
-                    padding: '2px 8px',
-                    border: showAllAnswers && isCorrect ? '2px solid #52c41a' : undefined,
-                  }}
-                >
-                  {opt}. {optionValue}
-                </Tag>
-              )
-            })}
-          </Space>
+        <div className={styles.optionsGrid}>
+          {['A', 'B', 'C', 'D'].map(opt => {
+            const optionValue = point.options?.[opt as keyof typeof point.options]
+            const isCorrect = point.correct_answer === opt
+            return (
+              <Tag
+                key={opt}
+                color={showAnswer && isCorrect ? 'success' : 'default'}
+                className={`${styles.optionTag} ${showAnswer && isCorrect ? styles.optionTagCorrect : ''}`}
+              >
+                {opt}. {optionValue}
+                {showAnswer && isCorrect && point.correct_word && ` (${point.correct_word})`}
+              </Tag>
+            )
+          })}
         </div>
 
         {/* 解析（显示答案时） */}
-        {showAllAnswers && (
-          <div style={{
-            padding: 8,
-            background: '#fff',
-            borderLeft: '3px solid #52c41a',
-            borderRadius: 4,
-          }}>
+        {showAnswer && (
+          <div className={styles.explanationBox}>
             {point.translation && (
               <div style={{ marginBottom: 4 }}>
                 <Text strong style={{ fontSize: 12 }}>词义：</Text>
@@ -490,19 +759,17 @@ export function ClozeDetailContent({
         )}
 
         {/* 易混淆词 */}
-        {showAllAnswers && point.confusion_words && point.confusion_words.length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <Text type="secondary" style={{ fontSize: 11 }}>易混淆词：</Text>
-            <div style={{ marginTop: 4 }}>
-              {point.confusion_words.map((item: { word: string; meaning: string; reason: string }, idx: number) => (
-                <div key={idx} style={{ padding: '4px 0', borderBottom: '1px dashed #f0f0f0' }}>
-                  <Text strong style={{ fontSize: 11 }}>{item.word}</Text>
-                  <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>
-                    {item.meaning} — {item.reason}
-                  </Text>
-                </div>
-              ))}
-            </div>
+        {showAnswer && point.confusion_words && point.confusion_words.length > 0 && (
+          <div className={styles.confusionList}>
+            <Text type="secondary" style={{ fontSize: 11, marginBottom: 4, display: 'block' }}>易混淆词：</Text>
+            {point.confusion_words.map((item: { word: string; meaning: string; reason: string }, idx: number) => (
+              <div key={idx} className={styles.confusionItem}>
+                <Text strong style={{ fontSize: 11 }}>{item.word}</Text>
+                <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>
+                  {item.meaning} — {item.reason}
+                </Text>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -541,20 +808,10 @@ export function ClozeDetailContent({
   }
 
   return (
-    <div style={{
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
+    <div className={styles.container}>
       {/* 顶部工具栏 */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-        flexShrink: 0,
-      }}>
-        <Space>
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarLeft}>
           {showBackButton && onBack && (
             <Button
               type="text"
@@ -566,31 +823,26 @@ export function ClozeDetailContent({
             </Button>
           )}
           {cloze.source && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
               {cloze.source.year} {cloze.source.region} {cloze.source.grade} {cloze.source.exam_type}
             </Text>
           )}
-        </Space>
-        <Space>
-          <Button
-            size="small"
-            icon={showAllAnswers ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-            onClick={() => setShowAllAnswers(!showAllAnswers)}
-          >
-            {showAllAnswers ? '隐藏答案' : '显示全部答案'}
-          </Button>
-        </Space>
+        </div>
       </div>
 
       {/* 文章信息卡片 */}
-      <Card size="small" style={{ marginBottom: 8, flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Card size="small" className={styles.infoCard}>
+        <div className={styles.infoCardContent}>
           <Descriptions column={4} size="small">
-            <Descriptions.Item label="词数">{cloze.word_count || '-'}</Descriptions.Item>
-            <Descriptions.Item label="空格数">{cloze.points?.length || 0}</Descriptions.Item>
+            <Descriptions.Item label="词数">
+              <Text strong>{cloze.word_count || '-'}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="空格数">
+              <Text strong>{cloze.points?.length || 0}</Text>
+            </Descriptions.Item>
             <Descriptions.Item label="话题">
               {cloze.primary_topic ? (
-                <Tag color="blue" style={{ fontSize: 11 }}>{cloze.primary_topic}</Tag>
+                <Tag color="blue">{cloze.primary_topic}</Tag>
               ) : '-'}
             </Descriptions.Item>
           </Descriptions>
@@ -598,7 +850,7 @@ export function ClozeDetailContent({
           {Object.keys(cloze.point_distribution || {}).length > 0 && (
             <Space size={4}>
               {Object.entries(cloze.point_distribution).map(([type, count]) => (
-                <Tag key={type} color={POINT_TYPE_COLORS[type] || 'default'} style={{ fontSize: 11 }}>
+                <Tag key={type} color={POINT_TYPE_COLORS[type] || 'default'}>
                   {type} ({count})
                 </Tag>
               ))}
@@ -607,33 +859,18 @@ export function ClozeDetailContent({
         </div>
       </Card>
 
-      {/* 左右分栏主体 */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        gap: 12,
-        minHeight: 0,
-        overflow: 'hidden',
-      }}>
-        {/* 左侧：原文 */}
+      {/* 上下分栏主体 */}
+      <div className={styles.mainContent}>
+        {/* 上方：原文 */}
         <Card
-          style={{
-            flex: '1 1 55%',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-          bodyStyle={{
-            flex: 1,
-            overflow: 'auto',
-            padding: 16,
-          }}
+          className={styles.passageCard}
+          styles={{ body: { padding: 16 } }}
           title={
-            <Space>
-              <Text strong style={{ fontSize: 13 }}>完形原文</Text>
+            <div className={styles.passageCardHeader}>
+              <Text strong style={{ fontSize: 14 }}>完形原文</Text>
               {highlightedWord && (
                 <>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
                     "{highlightedWord}"
                   </Text>
                   <Button size="small" onClick={handleClearHighlight}>
@@ -641,119 +878,59 @@ export function ClozeDetailContent({
                   </Button>
                 </>
               )}
-            </Space>
+            </div>
           }
           size="small"
         >
-          <div ref={contentRef}>
+          <div ref={contentRef} className={styles.passageContent}>
             {renderContent()}
           </div>
         </Card>
 
-        {/* 右侧：考点列表 */}
-        <Card
-          ref={pointListRef}
-          style={{
-            flex: '1 1 45%',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-          bodyStyle={{
-            flex: 1,
-            overflow: 'auto',
-            padding: 12,
-          }}
-          title={
-            <Text strong style={{ fontSize: 13 }}>
-              考点分析 ({cloze.points?.length || 0})
-            </Text>
-          }
-          size="small"
-        >
-          <div>
-            {cloze.points?.map((point, idx) => renderPointCard(point, idx))}
-          </div>
-        </Card>
-      </div>
-
-      {/* 底部：核心词汇（可折叠） */}
-      {cloze.vocabulary && cloze.vocabulary.length > 0 && (
-        <Card
-          size="small"
-          style={{ marginTop: 8, flexShrink: 0 }}
-        >
-          <Collapse
-            ghost
-            items={[
-              {
-                key: 'vocab',
-                label: (
-                  <Space>
-                    <Text strong style={{ fontSize: 13 }}>核心词汇 ({cloze.vocabulary.length})</Text>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      点击词汇可在原文中高亮
-                    </Text>
-                  </Space>
-                ),
-                children: (
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                    gap: 8,
-                  }}>
-                    {[...cloze.vocabulary]
-                      .sort((a, b) => b.frequency - a.frequency)
-                      .map((vocab) => (
-                        <div
-                          key={vocab.id}
-                          onClick={() => handleWordClick(vocab)}
-                          style={{
-                            padding: '6px 10px',
-                            background: highlightedWord === vocab.word ? '#e6f7ff' : '#fafafa',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            border: highlightedWord === vocab.word ? '1px solid #1890ff' : '1px solid transparent',
-                            transition: 'all 0.2s',
-                          }}
-                        >
-                          <Space>
-                            <Text strong style={{ fontSize: 12 }}>{vocab.word}</Text>
-                            {vocab.definition && (
-                              <Text type="secondary" style={{ fontSize: 11 }}>
-                                {vocab.definition.length > 15 ? vocab.definition.slice(0, 15) + '...' : vocab.definition}
-                              </Text>
-                            )}
-                            <Tag style={{ fontSize: 10 }}>{vocab.frequency}次</Tag>
-                          </Space>
-                        </div>
-                      ))}
+        {/* 下方：核心词汇列表 */}
+        {cloze.vocabulary && cloze.vocabulary.length > 0 && (
+          <Card
+            className={styles.pointsCard}
+            styles={{ body: { padding: '12px 16px' } }}
+            size="small"
+          >
+            <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 14 }}>
+              核心词汇 ({cloze.vocabulary.length})
+            </div>
+            <List
+              dataSource={[...cloze.vocabulary].sort((a, b) => b.frequency - a.frequency)}
+              renderItem={(vocab) => (
+                <List.Item
+                  onClick={() => handleWordClick(vocab)}
+                  style={{
+                    cursor: 'pointer',
+                    padding: '6px 8px',
+                    borderRadius: 4,
+                    background: highlightedWord === vocab.word ? '#e6f7ff' : 'transparent',
+                    border: highlightedWord === vocab.word ? '1px solid #91d5ff' : '1px solid transparent',
+                    marginBottom: 4,
+                  }}
+                >
+                  <div style={{ width: '100%', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <Text strong style={{ fontSize: 14, minWidth: 80 }}>{vocab.word}</Text>
+                    <Tag color="blue" style={{ fontSize: 11, flexShrink: 0 }}>{vocab.frequency}次</Tag>
+                    {vocab.definition && (
+                      <Text type="secondary" style={{ fontSize: 12, flex: 1 }}>
+                        {vocab.definition}
+                      </Text>
+                    )}
                   </div>
-                ),
-              },
-            ]}
-          />
-        </Card>
-      )}
+                </List.Item>
+              )}
+              style={{ maxHeight: 200, overflow: 'auto' }}
+            />
+          </Card>
+        )}
+      </div>
 
       {/* 高亮导航栏 */}
       {highlightedWord && highlightPositions.length > 0 && (
-        <div
-          style={{
-            position: 'sticky',
-            bottom: 0,
-            background: '#fff',
-            padding: '8px 12px',
-            borderTop: '1px solid #f0f0f0',
-            boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.1)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            zIndex: 100,
-            flexShrink: 0,
-            marginTop: 8,
-          }}
-        >
+        <div className={styles.highlightNav}>
           <Text type="secondary" style={{ fontSize: 12 }}>
             "<Text strong>{highlightedWord}</Text>" - 第 {currentHighlightIndex + 1}/{highlightPositions.length} 处
           </Text>

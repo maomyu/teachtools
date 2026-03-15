@@ -25,6 +25,7 @@ from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser
 from app.services.cloze_analyzer import ClozeAnalyzer
 from app.services.topic_classifier import TopicClassifier
+from app.services.text_utils import normalize_cloze_blanks
 
 
 async def get_or_create_paper(
@@ -166,11 +167,18 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                 blanks = cloze_data.get("blanks", [])
 
                 if content_with_blanks and blanks:
+                    # 标准化空格格式
+                    normalized_content = await normalize_cloze_blanks(
+                        content_with_blanks,
+                        len(blanks),
+                        use_ai_fallback=True
+                    )
+
                     # 创建完形文章记录
                     cloze_passage = ClozePassage(
                         paper_id=paper.id,
-                        content=content_with_blanks,
-                        word_count=len(content_with_blanks.split())
+                        content=normalized_content,
+                        word_count=len(normalized_content.split())
                     )
                     session.add(cloze_passage)
                     await session.flush()
@@ -178,7 +186,7 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                     # 调用 AI 分类主题
                     try:
                         topic_result = await topic_classifier.classify(
-                            content_with_blanks,
+                            normalized_content,
                             grade=grade
                         )
                         if topic_result.success and topic_result.primary_topic:
@@ -210,13 +218,13 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                             blank_number=blank_number,
                             correct_word=correct_word or "",
                             options=options,
-                            context=content_with_blanks,
+                            context=normalized_content,
                             db_session=session  # 支持课本单词表查询
                         )
 
                         # 提取上下文句子
                         sentence = cloze_analyzer.extract_context(
-                            content_with_blanks, blank_number
+                            normalized_content, blank_number
                         )
 
                         # 创建考点记录

@@ -19,6 +19,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, async_session_factory
+from app.services.text_utils import normalize_cloze_blanks
 
 
 def count_english_words(text: str) -> int:
@@ -411,10 +412,15 @@ async def upload_paper_with_progress(
                 if llm_result.cloze and llm_result.cloze.get("found"):
                     cloze_data = llm_result.cloze
 
+                    # 标准化空格格式
+                    cloze_content = cloze_data.get("content_with_blanks", "")
+                    blanks_count = len(cloze_data.get("blanks", []))
+                    normalized_content = await normalize_cloze_blanks(cloze_content, blanks_count)
+
                     # 创建完形文章
                     cloze_passage = ClozePassage(
                         paper_id=paper.id,
-                        content=cloze_data.get("content_with_blanks", ""),
+                        content=normalized_content,
                         original_content=cloze_data.get("content_full"),
                         word_count=cloze_data.get("word_count", 0)
                     )

@@ -209,16 +209,23 @@ export function PassageDetailContent({
       return <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
     }
 
-    // 合并重叠的位置区间
-    const mergedRanges: { start: number; end: number }[] = []
-    for (const pos of actualPositions) {
+    // 合并重叠的位置区间，并记录每个区间包含的原始索引
+    interface MergedRange {
+      start: number
+      end: number
+      indices: number[]  // 包含的原始位置索引
+    }
+    const mergedRanges: MergedRange[] = []
+    for (let i = 0; i < actualPositions.length; i++) {
+      const pos = actualPositions[i]
       const lastRange = mergedRanges[mergedRanges.length - 1]
       if (lastRange && pos.start < lastRange.end) {
-        // 重叠：扩展当前区间
+        // 重叠：扩展当前区间，并记录索引
         lastRange.end = Math.max(lastRange.end, pos.end)
+        lastRange.indices.push(i)
       } else {
         // 不重叠：新建区间
-        mergedRanges.push({ start: pos.start, end: pos.end })
+        mergedRanges.push({ start: pos.start, end: pos.end, indices: [i] })
       }
     }
 
@@ -236,8 +243,8 @@ export function PassageDetailContent({
         )
       }
 
-      // 判断当前区间是否包含聚焦位置（使用合并后区间的索引）
-      const isCurrentFocus = rangeIdx === currentIndex
+      // 判断当前区间是否包含聚焦位置（使用原始索引映射）
+      const isCurrentFocus = range.indices.includes(currentIndex)
       parts.push(
         <mark
           key={`highlight-${rangeIdx}`}

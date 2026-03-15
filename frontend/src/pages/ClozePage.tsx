@@ -1,12 +1,12 @@
 /**
- * 完形填空列表页面（抽屉式交互）
+ * 完形填空列表页面（抽屉式交互 + 视图切换）
  *
  * [INPUT]: 依赖 antd 组件、@/services/clozeService、@/types
  * [OUTPUT]: 对外提供 ClozePage 组件
  * [POS]: frontend/src/pages 的完形文章列表页面
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Table,
   Select,
@@ -15,12 +15,15 @@ import {
   message,
   Card,
   Badge,
+  Radio,
 } from 'antd'
+import { UnorderedListOutlined, BookOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import { getClozeList, getClozeFilters } from '@/services/clozeService'
 import type { ClozePassage, ClozeFiltersResponse, ClozeFilter } from '@/types'
 import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
+import { ClozeHandoutView } from '@/components/clozeHandout/ClozeHandoutView'
 
 const POINT_TYPE_COLORS: Record<string, string> = {
   '固定搭配': 'green',
@@ -29,10 +32,16 @@ const POINT_TYPE_COLORS: Record<string, string> = {
   '词汇': 'blue',
 }
 
+// 次要列（抽屉打开时隐藏）
+const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'topic', 'word_count', 'point_distribution']
+
 export function ClozePage() {
   // ============================================================================
   //  状态管理
   // ============================================================================
+
+  // 视图模式：列表视图 / 讲义视图
+  const [viewMode, setViewMode] = useState<'list' | 'handout'>('list')
 
   const [loading, setLoading] = useState(false)
   const [clozeList, setClozeList] = useState<ClozePassage[]>([])
@@ -117,10 +126,11 @@ export function ClozePage() {
   // 关闭抽屉
   const handleCloseDrawer = () => {
     setDrawerOpen(false)
+    setSelectedClozeId(null)
   }
 
   // ============================================================================
-  //  表格列定义（参考阅读模块）
+  //  表格列定义
   // ============================================================================
 
   const columns: ColumnsType<ClozePassage> = [
@@ -206,130 +216,180 @@ export function ClozePage() {
     },
   ]
 
+  // 响应式列（抽屉打开时只显示精简字段，且更紧凑）
+  const visibleColumns = useMemo(() => {
+    if (drawerOpen) {
+      return columns
+        .filter(col => !SECONDARY_COLUMN_KEYS.includes(col.key as string))
+        .map(col => ({
+          ...col,
+          width: col.key === 'year' ? 50 : col.key === 'grade' ? 50 : 55,
+        }))
+    }
+    return columns
+  }, [drawerOpen, columns])
+
   // ============================================================================
   //  渲染
   // ============================================================================
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff' }}>
-      {/* 筛选器 */}
+      {/* 视图切换 + 筛选器 */}
       <Card style={{ marginBottom: 16, flexShrink: 0 }}>
-        <Space wrap>
-          <Select
-            placeholder="选择年级"
-            allowClear
-            style={{ width: 120 }}
-            value={grade}
-            onChange={setGrade}
-            options={filters.grades.map(g => ({ value: g, label: g }))}
-          />
-          <Select
-            placeholder="选择区县"
-            allowClear
-            style={{ width: 120 }}
-            value={region}
-            onChange={setRegion}
-            options={filters.regions.map(r => ({ value: r, label: r }))}
-          />
-          <Select
-            placeholder="选择年份"
-            allowClear
-            style={{ width: 100 }}
-            value={year}
-            onChange={setYear}
-            options={filters.years.map(y => ({ value: y, label: `${y}` }))}
-          />
-          <Select
-            placeholder="考试类型"
-            allowClear
-            style={{ width: 100 }}
-            value={examType}
-            onChange={setExamType}
-            options={filters.exam_types.map(e => ({ value: e, label: e }))}
-          />
-          <Select
-            placeholder="学期"
-            allowClear
-            style={{ width: 100 }}
-            value={semester}
-            onChange={setSemester}
-            options={filters.semesters.map(s => ({ value: s, label: `${s}学期` }))}
-          />
-          <Select
-            placeholder="选择话题"
-            allowClear
-            showSearch
-            style={{ width: 160 }}
-            value={topic}
-            onChange={setTopic}
-            options={filters.topics.map(t => ({ value: t, label: t }))}
-            filterOption={(input, option) =>
-              (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-            }
-          />
-          <Select
-            placeholder="考点类型"
-            allowClear
-            style={{ width: 120 }}
-            value={pointType}
-            onChange={setPointType}
-            options={filters.point_types.map(t => ({ value: t, label: t }))}
-          />
-        </Space>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {/* 筛选器 */}
+          <Space wrap>
+            <Select
+              placeholder="选择年级"
+              allowClear
+              style={{ width: 120 }}
+              value={grade}
+              onChange={setGrade}
+              options={filters.grades.map(g => ({ value: g, label: g }))}
+            />
+            <Select
+              placeholder="选择区县"
+              allowClear
+              style={{ width: 120 }}
+              value={region}
+              onChange={setRegion}
+              options={filters.regions.map(r => ({ value: r, label: r }))}
+            />
+            <Select
+              placeholder="选择年份"
+              allowClear
+              style={{ width: 100 }}
+              value={year}
+              onChange={setYear}
+              options={filters.years.map(y => ({ value: y, label: `${y}` }))}
+            />
+            <Select
+              placeholder="考试类型"
+              allowClear
+              style={{ width: 100 }}
+              value={examType}
+              onChange={setExamType}
+              options={filters.exam_types.map(e => ({ value: e, label: e }))}
+            />
+            <Select
+              placeholder="学期"
+              allowClear
+              style={{ width: 100 }}
+              value={semester}
+              onChange={setSemester}
+              options={filters.semesters.map(s => ({ value: s, label: `${s}学期` }))}
+            />
+            <Select
+              placeholder="选择话题"
+              allowClear
+              showSearch
+              style={{ width: 160 }}
+              value={topic}
+              onChange={setTopic}
+              options={filters.topics.map(t => ({ value: t, label: t }))}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
+            <Select
+              placeholder="考点类型"
+              allowClear
+              style={{ width: 120 }}
+              value={pointType}
+              onChange={setPointType}
+              options={filters.point_types.map(t => ({ value: t, label: t }))}
+            />
+          </Space>
+
+          {/* 视图切换器 */}
+          <Radio.Group
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value)}
+            buttonStyle="solid"
+            size="small"
+          >
+            <Radio.Button value="list">
+              <Space size={4}>
+                <UnorderedListOutlined />
+                列表视图
+              </Space>
+            </Radio.Button>
+            <Radio.Button value="handout">
+              <Space size={4}>
+                <BookOutlined />
+                讲义视图
+              </Space>
+            </Radio.Button>
+          </Radio.Group>
+        </div>
       </Card>
 
-      {/* 内容区：表格 + 抽屉 */}
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* 左侧: 文章表格 */}
-        <div style={{ flex: 1, minWidth: 0, paddingRight: drawerOpen ? 16 : 0, transition: 'padding-right 0.3s ease-in-out' }}>
-          <Table
-            columns={columns}
-            dataSource={clozeList}
-            rowKey="id"
-            loading={loading}
-            onRow={(record) => ({
-              onClick: () => handleViewCloze(record.id),
-              style: { cursor: 'pointer' },
-            })}
-            pagination={{
-              current: page,
-              pageSize: size,
-              total,
-              showSizeChanger: true,
-              showTotal: (total) => `共 ${total} 篇`,
-              onChange: (p, s) => {
-                setPage(p)
-                setSize(s)
-              },
-            }}
-          />
-        </div>
-
-        {/* 右侧: 详情抽屉 */}
-        {drawerOpen && selectedClozeId && (
-          <div
-            style={{
-              width: 520,
-              flexShrink: 0,
-              height: '100%',
-              overflow: 'hidden',
-              borderLeft: '3px solid #1890ff',
-              background: '#fafcff',
-              display: 'flex',
-              flexDirection: 'column',
-              animation: 'slideIn 0.3s ease-out',
-            }}
-          >
-            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-              <ClozeDetailContent
-                clozeId={selectedClozeId}
-                onBack={handleCloseDrawer}
-                showBackButton={true}
-              />
-            </div>
+      {/* 根据视图模式显示不同内容 */}
+      {viewMode === 'list' ? (
+        /* 列表视图 */
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+          {/* 左侧: 文章表格 */}
+          <div style={{
+            flex: 1,
+            minWidth: 0,
+            paddingRight: drawerOpen ? 16 : 0,
+            transition: 'padding-right 0.3s ease-in-out'
+          }}>
+            <Table
+              columns={visibleColumns}
+              dataSource={clozeList}
+              rowKey="id"
+              loading={loading}
+              onRow={(record) => ({
+                onClick: () => handleViewCloze(record.id),
+                style: { cursor: 'pointer' },
+              })}
+              pagination={{
+                current: page,
+                pageSize: size,
+                total,
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 篇`,
+                onChange: (p, s) => {
+                  setPage(p)
+                  setSize(s)
+                },
+              }}
+            />
           </div>
-        )}
-      </div>
+
+          {/* 右侧: 详情抽屉 */}
+          {drawerOpen && selectedClozeId && (
+            <div
+              style={{
+                width: '70%',
+                flexShrink: 0,
+                height: '100%',
+                overflow: 'hidden',
+                borderLeft: '3px solid #1890ff',
+                background: '#fafcff',
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'slideIn 0.3s ease-out',
+              }}
+            >
+              <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+                <ClozeDetailContent
+                  clozeId={selectedClozeId}
+                  onBack={handleCloseDrawer}
+                  showBackButton={true}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* 讲义视图 */
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <ClozeHandoutView />
+        </div>
+      )}
 
       {/* CSS 动画 */}
       <style>{`

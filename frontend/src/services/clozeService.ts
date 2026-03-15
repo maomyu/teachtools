@@ -17,7 +17,7 @@ import type {
  * 获取完形文章列表
  */
 export async function getClozeList(params: ClozeFilter): Promise<ClozeListResponse> {
-  const response = await api.get<ClozeListResponse>('/cloze/', { params })
+  const response = await api.get<ClozeListResponse>('/cloze', { params })
   return response.data
 }
 
@@ -25,7 +25,7 @@ export async function getClozeList(params: ClozeFilter): Promise<ClozeListRespon
  * 获取完形文章详情
  */
 export async function getCloze(id: number): Promise<ClozeDetailResponse> {
-  const response = await api.get<ClozeDetailResponse>(`/cloze/${id}/`)
+  const response = await api.get<ClozeDetailResponse>(`/cloze/${id}`)
   return response.data
 }
 
@@ -39,7 +39,7 @@ export async function getPointList(params: {
   page?: number
   size?: number
 }): Promise<PointListResponse> {
-  const response = await api.get<PointListResponse>('/cloze/points/summary/', { params })
+  const response = await api.get<PointListResponse>('/cloze/points/summary', { params })
   return response.data
 }
 
@@ -73,6 +73,53 @@ export async function updatePointAnalysis(
  * 获取完形筛选器选项
  */
 export async function getClozeFilters(): Promise<ClozeFiltersResponse> {
-  const response = await api.get<ClozeFiltersResponse>('/cloze/filters/')
+  const response = await api.get<ClozeFiltersResponse>('/cloze/filters')
+  return response.data
+}
+
+// ============================================================================
+//  讲义 API
+// ============================================================================
+
+import type {
+  ClozeTopicStats,
+  ClozeHandoutDetailResponse,
+  ClozeGradeHandoutResponse,
+} from '@/types'
+
+/**
+ * 获取某年级的完形主题统计
+ */
+export async function getClozeTopicStats(grade: string): Promise<{ topics: ClozeTopicStats[] }> {
+  const response = await api.get(`/cloze/handouts/${grade}/topics`)
+  return response.data
+}
+
+/**
+ * 获取某年级某主题的完形讲义详情
+ */
+export async function getClozeHandoutDetail(
+  grade: string,
+  topic: string,
+  edition: 'teacher' | 'student' = 'teacher'
+): Promise<ClozeHandoutDetailResponse> {
+  const response = await api.get(
+    `/cloze/handouts/${grade}/topics/${encodeURIComponent(topic)}`,
+    { params: { edition } }
+  )
+  return response.data
+}
+
+/**
+ * 获取某年级的完整完形讲义
+ */
+export async function getClozeGradeHandout(
+  grade: string,
+  edition: 'teacher' | 'student' = 'teacher'
+): Promise<ClozeGradeHandoutResponse> {
+  const response = await api.get(
+    `/cloze/handouts/${grade}`,
+    { params: { edition } }
+  )
   return response.data
 }

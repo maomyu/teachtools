@@ -1,64 +1,41 @@
 /**
  * 年级选择器组件
  *
- * [INPUT]: 依赖 antd、readingService
+ * [INPUT]: 依赖 antd
  * [OUTPUT]: 对外提供 GradeSelector 组件
  * [POS]: frontend/src/components/handout 的年级选择器
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useEffect } from 'react'
 import { Card, Row, Col, Typography, Spin, Empty } from 'antd'
 import { BookOutlined } from '@ant-design/icons'
-
-import { getPassageFilters } from '@/services/readingService'
 
 const { Title, Text } = Typography
 
 interface GradeSelectorProps {
+  grades: string[]          // 年级列表
+  title?: string            // 标题后缀（如 "阅读 CD篇" 或 "完形填空"）
+  loading?: boolean         // 加载状态
   onSelect: (grade: string) => void
 }
 
 interface GradeInfo {
   grade: string
   icon: string
-  count: number
 }
 
-export function GradeSelector({ onSelect }: GradeSelectorProps) {
-  const [grades, setGrades] = useState<GradeInfo[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    loadGrades()
-  }, [])
-
-  const loadGrades = async () => {
-    try {
-      setLoading(true)
-      // 获取筛选项（包含年级列表）
-      const filters = await getPassageFilters()
-
-      // 为每个年级设置图标和初始计数
-      const gradeData: GradeInfo[] = filters.grades.map(grade => ({
-        grade,
-        icon: getGradeIcon(grade),
-        count: 0, // 暂时设为0，实际应该调用统计API
-      }))
-
-      setGrades(gradeData)
-    } catch (error) {
-      console.error('加载年级失败:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+export function GradeSelector({ grades, title = '', loading = false, onSelect }: GradeSelectorProps) {
   const getGradeIcon = (grade: string): string => {
     if (grade.includes('初三') || grade.includes('中考')) return '🎓'
     if (grade.includes('初二')) return '📚'
     if (grade.includes('初一')) return '📖'
     return '📓'
   }
+
+  // 将年级列表转换为带图标的格式
+  const gradeData: GradeInfo[] = grades.map(grade => ({
+    grade,
+    icon: getGradeIcon(grade),
+  }))
 
   if (loading) {
     return (
@@ -84,7 +61,7 @@ export function GradeSelector({ onSelect }: GradeSelectorProps) {
       </Title>
 
       <Row gutter={[16, 16]}>
-        {grades.map(g => (
+        {gradeData.map(g => (
           <Col xs={24} sm={12} md={8} lg={6} key={g.grade}>
             <Card
               hoverable
@@ -112,7 +89,7 @@ export function GradeSelector({ onSelect }: GradeSelectorProps) {
                 {g.icon}
               </div>
               <Title level={4} style={{ marginBottom: 8 }}>
-                {g.grade}阅读 CD篇
+                {g.grade}{title}
               </Title>
               <Text type="secondary">
                 点击查看讲义

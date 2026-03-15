@@ -208,3 +208,107 @@ class ClozeFilters(BaseModel):
     exam_types: List[str] = []
     point_types: List[str] = []
     semesters: List[str] = []
+
+
+# ============================================================================
+#  讲义相关
+# ============================================================================
+
+class ClozeTopicStats(BaseModel):
+    """完形主题统计"""
+    topic: str
+    passage_count: int
+    recent_years: List[int] = []
+
+
+class ArticleSource(BaseModel):
+    """文章来源（按试卷分组）"""
+    year: Optional[int] = None
+    region: Optional[str] = None
+    exam_type: Optional[str] = None
+    semester: Optional[str] = None
+    passages: List[Dict] = []  # [{"type": None, "id": 1, "title": None}]
+
+
+class HandoutVocabulary(BaseModel):
+    """讲义词汇（带来源类型）"""
+    id: int
+    word: str
+    definition: Optional[str] = None
+    phonetic: Optional[str] = None
+    frequency: int
+    source_type: str  # 'both' | 'reading' | 'cloze'
+
+
+class WordAnalysisPoint(BaseModel):
+    """词义辨析考点（聚合后）"""
+    word: str
+    frequency: int
+    definition: Optional[str] = None
+    word_analysis: Optional[Dict] = None
+    dictionary_source: Optional[str] = None
+    occurrences: List[PointOccurrence] = []
+
+
+class FixedPhrasePoint(BaseModel):
+    """固定搭配考点（聚合后）"""
+    word: str
+    frequency: int
+    phrase: Optional[str] = None
+    similar_phrases: Optional[List[str]] = None
+    occurrences: List[PointOccurrence] = []
+
+
+class RareMeaningPoint(BaseModel):
+    """熟词僻义考点（聚合后）"""
+    word: str
+    frequency: int
+    textbook_meaning: Optional[str] = None
+    textbook_source: Optional[str] = None
+    context_meaning: Optional[str] = None
+    similar_words: Optional[List[Dict]] = None
+    occurrences: List[PointOccurrence] = []
+
+
+class PointsByType(BaseModel):
+    """按类型分组的考点"""
+    词义辨析: List[WordAnalysisPoint] = []
+    固定搭配: List[FixedPhrasePoint] = []
+    熟词僻义: List[RareMeaningPoint] = []
+
+
+class ClozeHandoutPassage(BaseModel):
+    """完形讲义文章"""
+    id: int
+    content: str
+    word_count: Optional[int] = None
+    source: Optional[SourceInfo] = None
+    points: List[ClozePointResponse] = []
+
+
+class ClozeTopicContent(BaseModel):
+    """完形主题内容"""
+    topic: str
+    part1_article_sources: List[ArticleSource] = []
+    part2_vocabulary: List[HandoutVocabulary] = []
+    part3_points_by_type: PointsByType = PointsByType()
+    part4_passages: List[ClozeHandoutPassage] = []
+
+
+class ClozeHandoutDetailResponse(BaseModel):
+    """完形讲义详情响应"""
+    topic: str
+    grade: str
+    edition: str
+    part1_article_sources: List[ArticleSource] = []
+    part2_vocabulary: List[HandoutVocabulary] = []
+    part3_points_by_type: PointsByType = PointsByType()
+    part4_passages: List[ClozeHandoutPassage] = []
+
+
+class ClozeGradeHandoutResponse(BaseModel):
+    """完形年级讲义响应"""
+    grade: str
+    edition: str
+    topics: List[ClozeTopicStats] = []
+    content: List[ClozeTopicContent] = []

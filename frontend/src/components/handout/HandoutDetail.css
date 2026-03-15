@@ -28,8 +28,8 @@
   height: 297mm;
   min-height: 297mm;
   max-height: 297mm;
-  /* 页边距：上25mm 右20mm 下25mm 左20mm */
-  padding: 25mm 20mm;
+  /* 页边距：上15mm 右20mm 下25mm 左20mm */
+  padding: 15mm 20mm 25mm;
   margin: 0 auto 20px;
   background: white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -258,7 +258,7 @@
   .handout-page {
     box-shadow: none;
     margin: 0;
-    padding: 25mm 20mm !important;
+    padding: 15mm 20mm 25mm !important;
     width: 210mm !important;
     min-height: 297mm !important;
     page-break-after: always;

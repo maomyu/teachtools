@@ -1,0 +1,288 @@
+/**
+ * 完形填空详情页面样式
+ */
+
+/* 容器 */
+.container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+}
+
+/* 顶部工具栏 */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, #fff 0%, #fafbfc 100%);
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+}
+
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 文章信息卡片 */
+.infoCard {
+  margin: 8px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e8e8e8;
+}
+
+.infoCardContent {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 上下分栏 */
+.mainContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+/* 上方原文卡片 */
+.passageCard {
+  flex-shrink: 0;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8e8e8;
+}
+
+.passageCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.passageContent {
+  line-height: 2.4;
+  font-size: 15px;
+  color: #333;
+}
+
+/* 下方考点卡片 */
+.pointsCard {
+  flex-shrink: 0;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8e8e8;
+}
+
+/* 空格标记 */
+.blankTag {
+  cursor: pointer;
+  font-size: 13px;
+  padding: 3px 12px;
+  margin: 0 3px;
+  transition: all 0.25s ease;
+  border-radius: 14px;
+  font-weight: 500;
+}
+
+.blankTag:hover {
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+}
+
+.blankTagSelected {
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 3px 12px rgba(24, 144, 255, 0.4);
+}
+
+/* 考点卡片 */
+.pointCard {
+  padding: 14px 18px;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #fff 0%, #fafbfc 100%);
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.pointCard:hover {
+  background: linear-gradient(135deg, #f5f7ff 0%, #e6f4ff 100%);
+  border-color: #d6e4ff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.pointCardSelected {
+  background: linear-gradient(135deg, #e6f7ff 0%, #d6f4ff 100%);
+  border: 2px solid #1890ff;
+  box-shadow: 0 4px 20px rgba(24, 144, 255, 0.2);
+}
+
+/* 考点标题 */
+.pointHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* 选项网格 */
+.optionsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.optionTag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.optionTagCorrect {
+  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
+  border: 2px solid #52c41a;
+  color: #52c41a;
+  font-weight: 500;
+}
+
+/* 解析区域 */
+.explanationBox {
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #f6ffed 0%, #fcffe6 100%);
+  border-left: 4px solid #52c41a;
+  border-radius: 6px;
+  margin-top: 10px;
+}
+
+/* 易混淆词 */
+.confusionList {
+  margin-top: 10px;
+  padding: 10px;
+  background: linear-gradient(135deg, #fffbe6 0%, #fff7e6 100%);
+  border-radius: 8px;
+  border: 1px solid #ffe58f;
+}
+
+.confusionItem {
+  padding: 6px 0;
+  border-bottom: 1px dashed #e8e8e8;
+}
+
+.confusionItem:last-child {
+  border-bottom: none;
+}
+
+/* 词汇区域 */
+.vocabSection {
+  margin: 8px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e8e8e8;
+}
+
+.vocabGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.vocabItem {
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #fff 0%, #fafbfc 100%);
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.25s ease;
+}
+
+.vocabItem:hover {
+  background: linear-gradient(135deg, #f0f5ff 0%, #e6f4ff 100%);
+  border-color: #d6e4ff;
+  transform: translateY(-1px);
+}
+
+.vocabItemActive {
+  background: linear-gradient(135deg, #e6f7ff 0%, #d6f4ff 100%);
+  border: 1px solid #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
+}
+
+/* 高亮导航栏 */
+.highlightNav {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
+  padding: 10px 16px;
+  border-top: 1px solid #e8e8e8;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+/* 高亮标记 */
+.highlightMark {
+  padding: 0 3px;
+  border-radius: 3px;
+  transition: all 0.3s ease;
+}
+
+.highlightCurrent {
+  background: linear-gradient(135deg, #ffeb3b 0%, #ffc53d 100%);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(255, 193, 7, 0.3);
+}
+
+.highlightOther {
+  background-color: #fff9db;
+}
+
+/* 加载状态 */
+.loadingContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 300px;
+}
+
+/* 考点类型标签颜色 */
+.pointTypeFixed {
+  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
+  border-color: #b7eb8f;
+  color: #389e0c;
+}
+
+.pointTypeMeaning {
+  background: linear-gradient(135deg, #fff7e6 0%, #fff1b8 100%);
+  border-color: #ffd591;
+  color: #d46b08;
+}
+
+.pointTypeRare {
+  background: linear-gradient(135deg, #f9f0ff 0%, #efdbff 100%);
+  border-color: #d3adf7;
+  color: #531dab;
+}
+
+/* 文本区域 */
+.textSection {
+  color: #333;
+}
+
+.textSub {
+  color: #666;
+}
