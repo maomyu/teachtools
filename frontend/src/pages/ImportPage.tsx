@@ -249,7 +249,7 @@ export function ImportPage() {
       setCurrentFileIndex(i + 1)
 
       try {
-        const result = await uploadWithProgress(file, true)  // 强制导入
+        const result = await uploadWithProgress(file)  // 强制导入
         uploadResults.push(result)
         setResults([...uploadResults])
       } catch (error: any) {

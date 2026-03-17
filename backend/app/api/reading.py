@@ -351,6 +351,75 @@ async def delete_passage(
     }
 
 
+@router.post("/batch-delete")
+async def batch_delete_passages(
+    ids: List[int],
+    db: AsyncSession = Depends(get_db)
+):
+    """批量删除文章及其关联数据"""
+    from sqlalchemy import delete
+
+    if not ids:
+        raise HTTPException(status_code=400, detail="请提供要删除的文章ID")
+
+    # 1. 收集所有受影响的 paper_id
+    query = select(ReadingPassage).where(ReadingPassage.id.in_(ids))
+    result = await db.execute(query)
+    passages = result.scalars().all()
+
+    if not passages:
+        raise HTTPException(status_code=404, detail="未找到要删除的文章")
+
+    paper_ids = {p.paper_id for p in passages}
+
+    # 2. 批量删除关联数据
+    # 删除词汇出现记录
+    await db.execute(
+        delete(VocabularyPassage).where(VocabularyPassage.passage_id.in_(ids))
+    )
+    # 删除题目记录
+    await db.execute(
+        delete(Question).where(Question.passage_id.in_(ids))
+    )
+    # 删除文章
+    deleted_count = 0
+    for passage in passages:
+        await db.delete(passage)
+        deleted_count += 1
+
+    await db.commit()
+
+    # 3. 检查并清理空试卷
+    paper_deleted_count = 0
+    for paper_id in paper_ids:
+        # 检查该试卷下是否还有阅读文章
+        remaining_reading = await db.scalar(
+            select(func.count()).select_from(ReadingPassage).where(
+                ReadingPassage.paper_id == paper_id
+            )
+        )
+        # 检查该试卷下是否还有完形文章
+        remaining_cloze = await db.scalar(
+            select(func.count()).select_from(ClozePassage).where(
+                ClozePassage.paper_id == paper_id
+            )
+        )
+        # 如果没有文章了，删除试卷
+        if remaining_reading == 0 and remaining_cloze == 0:
+            paper = await db.get(ExamPaper, paper_id)
+            if paper:
+                await db.delete(paper)
+                paper_deleted_count += 1
+
+    await db.commit()
+
+    return {
+        "message": f"成功删除 {deleted_count} 篇文章",
+        "deleted_count": deleted_count,
+        "paper_deleted": paper_deleted_count
+    }
+
+
 # ============================================================================
 #  讲义API端点
 # ============================================================================

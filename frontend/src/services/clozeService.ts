@@ -7,12 +7,14 @@
 import api from './api'
 import type {
   ClozeListResponse,
-  ClozeDetailResponse,
+  ClozeDetailNewResponse,
   PointListResponse,
   ClozeFiltersResponse,
   ClozeFilter,
   PointTypeListResponse,
   PointTypeByCategoryResponse,
+  // 批量删除
+  BatchDeleteResponse,
 } from '../types'
 
 /**
@@ -26,8 +28,8 @@ export async function getClozeList(params: ClozeFilter): Promise<ClozeListRespon
 /**
  * 获取完形文章详情
  */
-export async function getCloze(id: number): Promise<ClozeDetailResponse> {
-  const response = await api.get<ClozeDetailResponse>(`/cloze/${id}`)
+export async function getCloze(id: number): Promise<ClozeDetailNewResponse> {
+  const response = await api.get<ClozeDetailNewResponse>(`/cloze/${id}`)
   return response.data
 }
 
@@ -69,6 +71,22 @@ export async function updatePointAnalysis(
   }
 ): Promise<void> {
   await api.put(`/cloze/blanks/${blankId}/point`, data)
+}
+
+/**
+ * 删除完形文章
+ */
+export async function deleteCloze(id: number): Promise<{ message: string; cloze_id: number }> {
+  const response = await api.delete(`/cloze/${id}`)
+  return response.data
+}
+
+/**
+ * 批量删除完形文章
+ */
+export async function batchDeleteClozes(ids: number[]): Promise<BatchDeleteResponse> {
+  const response = await api.post<BatchDeleteResponse>('/cloze/batch-delete', ids)
+  return response.data
 }
 
 /**

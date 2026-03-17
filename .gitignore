@@ -77,3 +77,4 @@ frontend/.vite/
 # Test coverage
 coverage/
 .nyc_output/
+.gstack/

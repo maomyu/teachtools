@@ -38,6 +38,20 @@ const { Text } = Typography
 //  常量定义
 // ============================================================================
 
+// 考点编码到简称的映射
+const POINT_CODE_TO_SHORT_NAME: Record<string, string> = {
+  // A类-语篇理解
+  A1: "上下文语义", A2: "复现照应", A3: "代词指代", A4: "情节顺序", A5: "情感态度",
+  // B类-逻辑关系
+  B1: "并列一致", B2: "转折对比", B3: "因果关系", B4: "其他逻辑",
+  // C类-句法语法
+  C1: "词性成分", C2: "固定搭配", C3: "语法形式",
+  // D类-词汇选项
+  D1: "词义辨析", D2: "熟词僻义",
+  // E类-常识主题
+  E1: "生活常识", E2: "主题共情",
+}
+
 // v1 旧系统颜色（向后兼容）
 const POINT_TYPE_COLORS_V1: Record<string, string> = {
   '固定搭配': 'green',
@@ -74,11 +88,16 @@ const getPointColor = (pointType: string, primaryPoint?: PointType): string => {
 
 // 获取考点显示名称（兼容新旧格式）
 const getPointLabel = (pointType: string, primaryPoint?: PointType): string => {
-  // v2: 使用编码和名称
-  if (primaryPoint) {
-    return `${primaryPoint.code} ${primaryPoint.name}`
+  // v2: 有 primary_point 对象，使用简称映射
+  if (primaryPoint?.code) {
+    return POINT_CODE_TO_SHORT_NAME[primaryPoint.code] || primaryPoint.name || primaryPoint.code
   }
-  // v1: 使用旧类型
+  // v2: point_type 格式为 "D1 常规词义辨析"，提取编码
+  if (pointType && pointType.match(/^[A-E]\d\s/)) {
+    const code = pointType.split(' ')[0]  // 提取 "D1"
+    return POINT_CODE_TO_SHORT_NAME[code] || pointType
+  }
+  // v1: 使用旧类型（固定搭配/词义辨析/熟词僻义）
   return pointType
 }
 
@@ -107,12 +126,13 @@ export function ClozePointsPage() {
   // 筛选条件
   const [pointType, setPointType] = useState<string | undefined>()
   const [category, setCategory] = useState<string | undefined>() // v2 大类筛选
+  const [priority, setPriority] = useState<number | undefined>() // 优先级筛选
   const [grade, setGrade] = useState<string | undefined>()
   const [keyword, setKeyword] = useState<string>('')
   const [searchKeyword, setSearchKeyword] = useState<string>('')
 
-  // v2 考点类型数据（按大类分组）
-  const [pointTypesByCategory, setPointTypesByCategory] = useState<PointTypeByCategoryResponse>({} as PointTypeByCategoryResponse)
+  // v2 考点类型数据（按大类分组）- TODO: 未来用于考点类型筛选
+  const [_pointTypesByCategory, setPointTypesByCategory] = useState<PointTypeByCategoryResponse>({} as PointTypeByCategoryResponse)
 
   // 分页
   const [page, setPage] = useState(1)
@@ -314,7 +334,7 @@ export function ClozePointsPage() {
         <Space wrap>
           {/* v2 大类筛选 */}
           <Select
-            placeholder="选择大类"
+            placeholder="选择大类 (A-E)"
             allowClear
             style={{ width: 160 }}
             value={category}
@@ -323,6 +343,19 @@ export function ClozePointsPage() {
               setPointType(undefined) // 切换大类时清空具体类型
             }}
             options={CATEGORY_OPTIONS}
+          />
+          {/* 优先级筛选 */}
+          <Select
+            placeholder="优先级"
+            allowClear
+            style={{ width: 120 }}
+            value={priority}
+            onChange={setPriority}
+            options={[
+              { value: 1, label: 'P1 核心考点' },
+              { value: 2, label: 'P2 重要考点' },
+              { value: 3, label: 'P3 一般考点' },
+            ]}
           />
           {/* v2/v1 具体考点类型筛选 */}
           <Select
@@ -480,7 +513,6 @@ export function ClozePointsPage() {
                                         <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用对象</th>
                                         <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用场景</th>
                                         <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>正负态度</th>
-                                        <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>排除理由</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -500,9 +532,6 @@ export function ClozePointsPage() {
                                           </td>
                                           <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
                                             {data.dimensions?.正负态度 || '-'}
-                                          </td>
-                                          <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8', color: '#ff4d4f' }}>
-                                            {data.rejection_reason || '-'}
                                           </td>
                                         </tr>
                                       ))}

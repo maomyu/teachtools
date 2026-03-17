@@ -230,6 +230,20 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                         # 确定 legacy_point_type（向后兼容）
                         legacy_point_type = analysis.point_type if analysis.success and analysis.point_type else None
 
+                        # 提取 primary_point_code（带调试日志）
+                        primary_point_code = None
+                        if analysis.success and analysis.primary_point:
+                            primary_point_code = analysis.primary_point.get("code")
+                            if primary_point_code:
+                                print(f"    空{blank_number}: {correct_word} → {primary_point_code}")
+                            else:
+                                print(f"    ⚠ 空{blank_number}: primary_point.code 为空")
+                        else:
+                            if not analysis.success:
+                                print(f"    ⚠ 空{blank_number}: 分析失败 - {analysis.error}")
+                            else:
+                                print(f"    ⚠ 空{blank_number}: primary_point 为 None")
+
                         # 创建考点记录（V2 格式）
                         cloze_point = ClozePoint(
                             cloze_id=cloze_passage.id,
@@ -238,7 +252,7 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                             correct_word=correct_word,
                             options=json.dumps(options, ensure_ascii=False),
                             # V2 考点分类
-                            primary_point_code=analysis.primary_point.get("code") if analysis.success and analysis.primary_point else None,
+                            primary_point_code=primary_point_code,
                             legacy_point_type=legacy_point_type,
                             # 保留旧字段兼容
                             point_type=legacy_point_type,

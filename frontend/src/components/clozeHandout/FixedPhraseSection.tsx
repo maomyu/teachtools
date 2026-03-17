@@ -87,21 +87,6 @@ function FixedPhraseItem({ point, edition, index }: FixedPhraseItemProps) {
         </div>
       )}
 
-      {/* 教师版：出现记录（直接展开） */}
-      {edition === 'teacher' && occurrences && occurrences.length > 0 && (
-        <div style={{ marginTop: 8, fontSize: '10pt' }}>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-            出现记录 ({occurrences.length})：
-          </Text>
-          {occurrences.map((occ, occIdx) => (
-            <div key={occIdx} style={{ marginBottom: 8, paddingLeft: 12, borderLeft: '2px solid #d9d9d9' }}>
-              <Text type="secondary">{occ.source}</Text>
-              <br />
-              <Text italic>"{occ.sentence}"</Text>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

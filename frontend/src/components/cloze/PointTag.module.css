@@ -1,0 +1,211 @@
+/**
+ * 考点标签样式
+ *
+ * [INPUT]: 无
+ * [OUTPUT]: CSS Module 样式
+ * [POS]: frontend/src/components/cloze 的考点标签样式
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
+/* ============================================================================
+ *  优先级样式
+ * ============================================================================ */
+
+/* P1 核心考点 - 粗边框 + 加粗 + 阴影 */
+.priorityHigh {
+  border-width: 2px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* P2 重要考点 - 中等边框 + 中等字重 + 浅阴影 */
+.priorityMedium {
+  border-width: 1.5px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* P3 一般考点 - 细边框 + 普通字重 + 无阴影 */
+.priorityLow {
+  border-width: 1px !important;
+  font-weight: 400 !important;
+}
+
+/* ============================================================================
+ *  变体样式
+ * ============================================================================ */
+
+/* 辅助考点标签 */
+.secondaryTag {
+  background: #f5f5f5 !important;
+  border: 1px solid #e8e8e8 !important;
+  color: #666 !important;
+}
+
+.secondaryTag::before {
+  content: '+';
+  margin-right: 2px;
+  font-weight: 500;
+}
+
+/* 排错点标签 */
+.rejectionTag {
+  background: #fff1f0 !important;
+  border: 1px solid #ffa39e !important;
+  color: #cf1322 !important;
+}
+
+/* ============================================================================
+ *  空格标签样式
+ * ============================================================================ */
+
+.blankTag {
+  transition: all 0.3s ease;
+}
+
+.blankTag:hover {
+  transform: scale(1.1);
+}
+
+.blankTagSelected {
+  box-shadow: 0 0 0 3px #1890ff, 0 2px 8px rgba(24, 144, 255, 0.4) !important;
+  transform: scale(1.2);
+  background: #fffbe6 !important;
+  border-color: #faad14 !important;
+  border-width: 2px !important;
+}
+
+/* ============================================================================
+ *  折叠指示器
+ * ============================================================================ */
+
+.moreTag {
+  font-size: 9px;
+  color: #999;
+  cursor: pointer;
+  padding: 1px 4px;
+  background: #fafafa;
+  border-radius: 4px;
+  border: 1px dashed #d9d9d9;
+}
+
+.moreTag:hover {
+  background: #f0f0f0;
+  border-color: #bfbfbf;
+  color: #666;
+}
+
+/* ============================================================================
+ *  标签组容器
+ * ============================================================================ */
+
+.tagGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tagGroupVertical {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ============================================================================
+ *  考点详情区块
+ * ============================================================================ */
+
+.primaryPointSection {
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.primaryPointHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.primaryPointCode {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.primaryPointMeta {
+  font-size: 10px;
+  color: #8c8c8c;
+}
+
+.secondaryPointSection {
+  padding: 6px 8px;
+  background: #fafafa;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.secondaryPointLabel {
+  font-size: 10px;
+  color: #8c8c8c;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.rejectionPointSection {
+  padding: 8px 10px;
+  background: #fff2f0;
+  border-radius: 4px;
+  border: 1px solid #ffccc7;
+  margin-bottom: 8px;
+}
+
+.rejectionPointLabel {
+  font-size: 12px;
+  color: #cf1322;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.rejectionItem {
+  font-size: 12px;
+  margin-bottom: 4px;
+  padding: 4px 0;
+  display: block;
+  line-height: 1.5;
+  border-bottom: 1px dashed #ffccc7;
+}
+
+.rejectionItem:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.rejectionWord {
+  text-decoration: line-through;
+  color: #cf1322;
+}
+
+.rejectionReason {
+  color: #8c8c8c;
+}
+
+/* ============================================================================
+ *  响应式调整
+ * ============================================================================ */
+
+@media (max-width: 768px) {
+  .tagGroup {
+    gap: 2px;
+  }
+
+  .priorityHigh {
+    border-width: 1.5px !important;
+  }
+
+  .priorityMedium {
+    border-width: 1px !important;
+  }
+}

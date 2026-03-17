@@ -103,9 +103,11 @@ function WordAnalysisItem({ point, edition, index }: WordAnalysisItemProps) {
         <tbody>
           {analysisEntries.map(([w, data]) => {
             const isCorrect = w === word
+            // 教师版才高亮正确答案
+            const showAnswer = edition === 'teacher' && isCorrect
             return (
-              <tr key={w} className={isCorrect ? 'correct-answer' : ''} style={isCorrect ? { background: '#e6f7ff' } : {}}>
-                <td style={{ fontWeight: isCorrect ? 'bold' : 'normal' }}>{w}</td>
+              <tr key={w} className={showAnswer ? 'correct-answer' : ''} style={showAnswer ? { background: '#e6f7ff' } : {}}>
+                <td style={{ fontWeight: showAnswer ? 'bold' : 'normal' }}>{w}</td>
                 <td>{data.definition || '-'}</td>
                 <td>{data.dimensions?.使用对象 || '-'}</td>
                 <td>{data.dimensions?.使用场景 || '-'}</td>
@@ -116,21 +118,6 @@ function WordAnalysisItem({ point, edition, index }: WordAnalysisItemProps) {
         </tbody>
       </table>
 
-      {/* 教师版：出现记录（直接展开） */}
-      {edition === 'teacher' && occurrences && occurrences.length > 0 && (
-        <div style={{ marginTop: 16, fontSize: '10pt' }}>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-            出现记录 ({occurrences.length})：
-          </Text>
-          {occurrences.map((occ, occIdx) => (
-            <div key={occIdx} style={{ marginBottom: 8, paddingLeft: 12, borderLeft: '2px solid #d9d9d9' }}>
-              <Text type="secondary">{occ.source}</Text>
-              <br />
-              <Text italic>"{occ.sentence}"</Text>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

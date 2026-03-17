@@ -87,6 +87,8 @@ export interface Passage {
 export interface PassageListResponse {
   total: number
   items: Passage[]
+  c_count?: number  // C篇数量
+  d_count?: number  // D篇数量
 }
 
 // 词汇出现位置
@@ -379,7 +381,7 @@ export interface ClozePassage {
   secondary_topics?: string[]
   topic_confidence?: number
   source?: SourceInfo
-  points: ClozePoint[]
+  points: ClozePointNew[]  // 使用 V2 类型，支持 primary_point
 }
 
 // 完形列表响应
@@ -388,11 +390,8 @@ export interface ClozeListResponse {
   items: ClozePassage[]
 }
 
-// 完形详情响应
-export interface ClozeDetailResponse extends ClozePassage {
-  point_distribution: Record<string, number>  // {"固定搭配": 4, "词义辨析": 5}
-  vocabulary: VocabularyInCloze[]  // 完形相关词汇
-}
+// 完形详情响应 - 继承 V2 格式，兼容旧代码
+export interface ClozeDetailResponse extends ClozeDetailNewResponse {}
 
 // ============================================================================
 //  完形考点 V2（多标签版本）
@@ -438,7 +437,8 @@ export interface ClozePointNew {
   }>
   dictionary_source?: string
 
-  // 熟词僻义专用字段
+  // 熟词僻义专用字段（作为附加标签）
+  is_rare_meaning?: boolean  // 是否包含熟词僻义
   textbook_meaning?: string
   textbook_source?: string
   context_meaning?: string
@@ -753,11 +753,46 @@ export interface RareMeaningPoint {
   occurrences: PointOccurrence[]
 }
 
-// 按类型分组的考点
+// V2 考点词数据（整合所有类型的字段）
+export interface PointWordData {
+  word: string
+  frequency: number
+  definition?: string
+  // 词义辨析字段
+  word_analysis?: Record<string, {
+    definition: string
+    dimensions?: {
+      使用对象: string
+      使用场景: string
+      正负态度: string
+    }
+    rejection_reason?: string
+  }>
+  dictionary_source?: string
+  // 固定搭配字段
+  phrase?: string
+  similar_phrases?: string[]
+  // 熟词僻义字段
+  textbook_meaning?: string
+  textbook_source?: string
+  context_meaning?: string
+  similar_words?: Array<{ word: string; textbook: string; rare: string }>
+  // 出现记录
+  occurrences: PointOccurrence[]
+}
+
+// V2 考点分组数据（按编码分组）
+export interface PointGroupData {
+  code: string              // A1, B2, C2, etc.
+  name: string              // 上下文语义推断, 转折对比, etc.
+  category: string          // A, B, C, D, E
+  category_name: string     // 语篇理解类, 逻辑关系类, etc.
+  points: PointWordData[]   // 该考点的所有考点词
+}
+
+// 按考点编码分组的考点（V2）
 export interface PointsByType {
-  词义辨析: WordAnalysisPoint[]
-  固定搭配: FixedPhrasePoint[]
-  熟词僻义: RareMeaningPoint[]
+  [pointCode: string]: PointGroupData  // A1, A2, ..., E2
 }
 
 // 完形讲义文章
@@ -795,4 +830,15 @@ export interface ClozeGradeHandoutResponse {
   edition: 'teacher' | 'student'
   topics: ClozeTopicStats[]
   content: ClozeTopicContent[]
+}
+
+// ============================================================================
+//  批量删除类型
+// ============================================================================
+
+/** 批量删除响应 */
+export interface BatchDeleteResponse {
+  message: string
+  deleted_count: number
+  paper_deleted: number  // 被删除的试卷数量
 }

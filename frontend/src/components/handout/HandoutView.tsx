@@ -40,22 +40,25 @@ export function HandoutView() {
 
   return (
     <div style={{ padding: 24, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 版本切换器 */}
-      {selectedGrade && (
-        <div
-          style={{
-            marginBottom: 16,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
+      {/* 版本切换器（始终显示） */}
+      <div
+        style={{
+          marginBottom: 16,
+          display: 'flex',
+          justifyContent: selectedGrade ? 'space-between' : 'flex-start',
+          alignItems: 'center',
+        }}
+      >
+        {selectedGrade && (
           <Space>
             <Text strong style={{ fontSize: 16 }}>
               当前年级：{selectedGrade}
             </Text>
           </Space>
+        )}
 
+        <Space>
+          <span style={{ fontWeight: 500 }}>版本：</span>
           <Radio.Group
             value={edition}
             onChange={(e) => setEdition(e.target.value)}
@@ -64,8 +67,8 @@ export function HandoutView() {
             <Radio.Button value="teacher">教师版</Radio.Button>
             <Radio.Button value="student">学生版</Radio.Button>
           </Radio.Group>
-        </div>
-      )}
+        </Space>
+      </div>
 
       {/* 内容区域 */}
       <div style={{ flex: 1, overflow: 'auto' }}>
@@ -74,7 +77,7 @@ export function HandoutView() {
           <GradeSelector
             grades={grades}
             loading={loadingGrades}
-            title="阅读 CD篇"
+            title={edition === 'teacher' ? '阅读 CD篇（教师版）' : '阅读 CD篇（学生版）'}
             onSelect={setSelectedGrade}
           />
         )}

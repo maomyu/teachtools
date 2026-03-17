@@ -36,40 +36,45 @@ export function ClozeHandoutView() {
   }
 
   return (
-    <div>
-      {/* 版本切换（在年级选择后显示） */}
-      {selectedGrade && (
-        <div style={{ marginBottom: 16 }}>
-          <Space>
-            <span>版本：</span>
-            <Radio.Group
-              value={edition}
-              onChange={(e) => setEdition(e.target.value)}
-              optionType="button"
-              buttonStyle="solid"
-            >
-              <Radio.Button value="teacher">教师版</Radio.Button>
-              <Radio.Button value="student">学生版</Radio.Button>
-            </Radio.Group>
-          </Space>
-        </div>
-      )}
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* 顶部工具栏：版本切换（右上角） */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        marginBottom: 16
+      }}>
+        <Space>
+          <span style={{ fontWeight: 500 }}>版本：</span>
+          <Radio.Group
+            value={edition}
+            onChange={(e) => setEdition(e.target.value)}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            <Radio.Button value="teacher">教师版</Radio.Button>
+            <Radio.Button value="student">学生版</Radio.Button>
+          </Radio.Group>
+        </Space>
+      </div>
 
       {/* 年级选择或讲义内容 */}
-      {!selectedGrade ? (
-        <GradeSelector
-          grades={grades}
-          loading={loadingGrades}
-          title="完形填空"
-          onSelect={setSelectedGrade}
-        />
-      ) : (
-        <ClozeGradeHandout
-          grade={selectedGrade}
-          edition={edition}
-          onBack={() => setSelectedGrade(null)}
-        />
-      )}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {!selectedGrade ? (
+          <GradeSelector
+            grades={grades}
+            loading={loadingGrades}
+            title={edition === 'teacher' ? '完形填空（教师版）' : '完形填空（学生版）'}
+            onSelect={setSelectedGrade}
+          />
+        ) : (
+          <ClozeGradeHandout
+            grade={selectedGrade}
+            edition={edition}
+            onBack={() => setSelectedGrade(null)}
+          />
+        )}
+      </div>
     </div>
   )
 }

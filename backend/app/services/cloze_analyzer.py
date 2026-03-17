@@ -150,7 +150,7 @@ class ClozeAnalyzer:
     "translation": "该词的中文翻译",
     "dictionary_source": "柯林斯词典",
     "word_analysis": {{
-        "正确词": {{
+        "{correct_word}": {{
             "definition": "英英解释（柯林斯词典风格）",
             "dimensions": {{
                 "使用对象": "描述该词的使用对象",
@@ -187,6 +187,8 @@ class ClozeAnalyzer:
     ],
     "tips": "记忆技巧"
 }}
+
+**重要：word_analysis 必须首先列出正确答案 "{correct_word}" 的分析，然后列出三个干扰词的分析。所有四个选项都必须包含。
 
 ### 如果是熟词僻义（必须包含课本参照）：
 {{
@@ -485,6 +487,9 @@ class PointAnalysisResultV2:
     context_meaning: Optional[str] = None
     similar_words: Optional[List[Dict]] = None
 
+    # 熟词僻义标记（用于自动添加 D2 辅助标签）
+    is_rare_meaning: bool = False
+
 
 # 旧类型到新编码的映射
 LEGACY_TO_NEW_CODE = {
@@ -579,6 +584,7 @@ class ClozeAnalyzerV2:
 
 **D2_熟词僻义**: 常见词的非常见含义
 - 信号: run a company, head north, tie for first place
+- **重要**: D2 也必须生成 word_analysis，提供正确答案词的英英定义（柯林斯风格），帮助学生理解僻义
 
 ### E. 常识主题类 (P3-背景知识)
 
@@ -617,7 +623,7 @@ class ClozeAnalyzerV2:
             "explanation": "为什么可以排除这个选项"
         }}
     ],
-    "translation": "句子翻译",
+    "translation": "正确答案的中文翻译",
     "explanation": "详细解析",
     "confusion_words": [
         {{
@@ -626,9 +632,49 @@ class ClozeAnalyzerV2:
             "reason": "排除理由"
         }}
     ],
-    "tips": "解题技巧"
+    "word_analysis": {{
+        "{correct_word}": {{
+            "definition": "英英解释（柯林斯词典风格）",
+            "dimensions": {{
+                "使用对象": "该词的典型使用对象",
+                "使用场景": "该词的典型使用场景",
+                "正负态度": "正面/负面/中性"
+            }}
+        }},
+        "干扰词A": {{
+            "definition": "英英解释",
+            "dimensions": {{
+                "使用对象": "...",
+                "使用场景": "...",
+                "正负态度": "..."
+            }},
+            "rejection_reason": "排除理由"
+        }},
+        "干扰词B": {{
+            "definition": "...",
+            "dimensions": {{...}},
+            "rejection_reason": "..."
+        }},
+        "干扰词C": {{
+            "definition": "...",
+            "dimensions": {{...}},
+            "rejection_reason": "..."
+        }}
+    }},
+    "dictionary_source": "柯林斯词典",
+    "tips": "解题技巧",
+
+    // 熟词僻义判断（每个考点必填）
+    "is_rare_meaning": false,
+    "rare_meaning_info": {{
+        "textbook_meaning": "课本中的常见释义（如果正确答案词在课本单词表中存在）",
+        "textbook_source": "课本出处",
+        "context_meaning": "当前语境中的含义"
+    }}
 }}
-"""
+
+**重要：word_analysis 对所有 16 种考点类型都是必填的。必须首先列出正确答案 "{correct_word}" 的分析（包含 definition 和 dimensions），然后列出三个干扰词的分析。所有四个选项都必须包含。这样教师可以在讲义中展示 4 个选项词的区别，帮助学生理解为什么选正确答案、为什么不选其他选项。"""
+
 
     TEXTBOOK_SECTION_TEMPLATE = """## 课本释义参照（用于熟词僻义判断 D2）
 单词 "{word}" 在课本中存在：
@@ -755,8 +801,8 @@ class ClozeAnalyzerV2:
 
             data = json.loads(json_str)
 
-            # 验证主考点
-            primary = data.get("primary_point", {})
+            # 验证主考点（使用 or {} 处理 None 值）
+            primary = data.get("primary_point") or {}
             primary_code = primary.get("code", "")
             valid_codes = ["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "D1", "D2", "E1", "E2"]
 
@@ -798,6 +844,25 @@ class ClozeAnalyzerV2:
                 result.context_meaning = data.get("context_meaning")
                 result.similar_words = data.get("similar_words", [])
 
+            # === 熟词僻义作为附加标签（每个考点都判断）===
+            is_rare_meaning = data.get("is_rare_meaning", False)
+            rare_meaning_info = data.get("rare_meaning_info")
+
+            if is_rare_meaning and rare_meaning_info:
+                # 标记为熟词僻义
+                result.is_rare_meaning = True
+                result.textbook_meaning = rare_meaning_info.get("textbook_meaning") or result.textbook_meaning
+                result.textbook_source = rare_meaning_info.get("textbook_source") or result.textbook_source
+                result.context_meaning = rare_meaning_info.get("context_meaning") or result.context_meaning
+
+                # 自动将 D2 添加到 secondary_points
+                d2_exists = any(sp.get("code") == "D2" for sp in result.secondary_points)
+                if not d2_exists:
+                    result.secondary_points.append({
+                        "code": "D2",
+                        "explanation": f"课本释义'{result.textbook_meaning}'在此语境下表示'{result.context_meaning}'"
+                    })
+
             return result
 
         except json.JSONDecodeError as e:
@@ -806,34 +871,53 @@ class ClozeAnalyzerV2:
                 error=f"JSON解析失败: {str(e)}"
             )
 
-    def extract_context(self, content: str, blank_number: int, window: int = 100) -> str:
-        """从文章中提取包含指定空格的上下文"""
+    def extract_context(self, content: str, blank_number: int, context_sentences: int = 2) -> str:
+        """
+        从文章中提取包含指定空格的完整上下文
+
+        Args:
+            content: 文章内容
+            blank_number: 空格编号
+            context_sentences: 前后各包含的句子数量（默认2句）
+
+        Returns:
+            包含空格及其上下文的文本片段
+        """
         import re
 
+        # 支持的空格格式模式（优先级从高到低）
         patterns = [
-            rf'___{blank_number}___',
-            rf'[{blank_number}]',
-            rf'\({blank_number}\)',
-            rf'\[{blank_number}\]',
+            rf'___{blank_number}___',      # ___11___格式 (最常见)
+            rf'_{blank_number}_',          # _11_格式
+            rf'\({blank_number}\)',        # (11)格式
+            rf'\[{blank_number}\]',        # [11]格式
+            rf'（{blank_number}）',         # 中文括号格式
+            rf'[{blank_number}]',          # 圆圈数字格式
         ]
 
+        # 按句子分割（支持中英文）
+        # 使用更精确的正则：匹配句号、问号、感叹号（中英文）
+        sentences = re.split(r'(?<=[。.!?！？])\s*', content)
+
         for pattern in patterns:
-            match = re.search(pattern, content)
-            if match:
-                pos = match.start()
-                start = max(0, pos - window)
-                end = min(len(content), pos + window)
-                context = content[start:end]
+            for i, sentence in enumerate(sentences):
+                if re.search(pattern, sentence):
+                    # 找到包含空格的句子，提取前后各 context_sentences 个句子
+                    start_idx = max(0, i - context_sentences)
+                    end_idx = min(len(sentences), i + context_sentences + 1)
 
-                sentences = re.split(r'[.!?]', context)
-                if len(sentences) >= 2:
-                    for i, sent in enumerate(sentences):
-                        if re.search(pattern, sent):
-                            return sent.strip()
+                    context = ' '.join(sentences[start_idx:end_idx])
 
-                return context.strip()
+                    # 如果上下文太短，尝试扩大范围
+                    if len(context) < 150 and (start_idx > 0 or end_idx < len(sentences)):
+                        start_idx = max(0, i - context_sentences - 1)
+                        end_idx = min(len(sentences), i + context_sentences + 2)
+                        context = ' '.join(sentences[start_idx:end_idx])
 
-        return content[:window * 2] if len(content) > window * 2 else content
+                    return context.strip()
+
+        # 如果没找到匹配的空格格式，返回文章开头部分
+        return content[:300] if len(content) > 300 else content
 
 
 # 使用示例

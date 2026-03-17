@@ -32,14 +32,14 @@ def count_english_words(text: str) -> int:
 from app.models.paper import ExamPaper
 from app.models.reading import ReadingPassage, Question
 from app.models.vocabulary import Vocabulary, VocabularyPassage
-from app.models.cloze import ClozePassage, ClozePoint
+from app.models.cloze import ClozePassage, ClozePoint, ClozeSecondaryPoint, ClozeRejectionPoint
 from app.models.vocabulary_cloze import VocabularyCloze
 from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse
 from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser
 from app.services.topic_classifier import TopicClassifier
 from app.services.vocab_extractor import VocabExtractor
-from app.services.cloze_analyzer import ClozeAnalyzer
+from app.services.cloze_analyzer import ClozeAnalyzer, ClozeAnalyzerV2, NEW_CODE_TO_LEGACY
 
 router = APIRouter()
 
@@ -257,9 +257,27 @@ async def upload_paper_with_progress(
                     )
                     cloze_id_list = [c[0] for c in cloze_ids.all()]
                     if cloze_id_list:
+                        # 先获取所有 ClozePoint 的 ID，用于删除子表数据
+                        cloze_point_ids = await db.execute(
+                            select(ClozePoint.id).where(ClozePoint.cloze_id.in_(cloze_id_list))
+                        )
+                        cloze_point_id_list = [p[0] for p in cloze_point_ids.all()]
+
+                        if cloze_point_id_list:
+                            # 删除辅助考点
+                            await db.execute(
+                                delete(ClozeSecondaryPoint).where(ClozeSecondaryPoint.cloze_point_id.in_(cloze_point_id_list))
+                            )
+                            # 删除排错点
+                            await db.execute(
+                                delete(ClozeRejectionPoint).where(ClozeRejectionPoint.cloze_point_id.in_(cloze_point_id_list))
+                            )
+
+                        # 删除词汇关联
                         await db.execute(
                             delete(VocabularyCloze).where(VocabularyCloze.cloze_id.in_(cloze_id_list))
                         )
+                        # 删除考点主表
                         await db.execute(
                             delete(ClozePoint).where(ClozePoint.cloze_id.in_(cloze_id_list))
                         )
@@ -456,7 +474,7 @@ async def upload_paper_with_progress(
                     yield emit()
 
                     try:
-                        analyzer = ClozeAnalyzer()
+                        analyzer = ClozeAnalyzerV2()  # 使用 V2 分析器（16种考点 + 多标签）
                         analyzed_count = 0
 
                         # 获取刚创建的空格列表
@@ -491,8 +509,16 @@ async def upload_paper_with_progress(
                                 )
 
                                 if analysis_result.success:
+                                    # === V2 考点分类系统 ===
+                                    # 保存主考点编码
+                                    if analysis_result.primary_point:
+                                        point.primary_point_code = analysis_result.primary_point.get("code")
+                                        # 向后兼容：映射到旧类型
+                                        if point.primary_point_code in NEW_CODE_TO_LEGACY:
+                                            point.point_type = NEW_CODE_TO_LEGACY[point.primary_point_code]
+                                            point.legacy_point_type = point.point_type
+
                                     # 基础字段
-                                    point.point_type = analysis_result.point_type
                                     point.translation = analysis_result.translation
                                     point.explanation = analysis_result.explanation
                                     point.sentence = context  # 保存上下文句子
@@ -523,7 +549,9 @@ async def upload_paper_with_progress(
                                     if analysis_result.dictionary_source:
                                         point.dictionary_source = analysis_result.dictionary_source
 
-                                    # 熟词僻义专用
+                                    # 熟词僻义专用（作为附加标签）
+                                    if analysis_result.is_rare_meaning:
+                                        point.is_rare_meaning = True
                                     if analysis_result.textbook_meaning:
                                         point.textbook_meaning = analysis_result.textbook_meaning
                                     if analysis_result.textbook_source:
@@ -534,6 +562,30 @@ async def upload_paper_with_progress(
                                         point.similar_words = json.dumps(
                                             analysis_result.similar_words, ensure_ascii=False
                                         )
+
+                                    # 保存辅助考点（V2 多标签）
+                                    if analysis_result.secondary_points:
+                                        for idx, sp in enumerate(analysis_result.secondary_points):
+                                            point_code = sp.get("code") or sp.get("point_code") or "D1"
+                                            sec_point = ClozeSecondaryPoint(
+                                                cloze_point_id=point.id,
+                                                point_code=point_code,
+                                                explanation=sp.get("explanation"),
+                                                sort_order=idx
+                                            )
+                                            db.add(sec_point)
+
+                                    # 保存排错点（V2 多标签）
+                                    if analysis_result.rejection_points:
+                                        for rp in analysis_result.rejection_points:
+                                            point_code = rp.get("code") or rp.get("point_code") or "D1"
+                                            rej_point = ClozeRejectionPoint(
+                                                cloze_point_id=point.id,
+                                                option_word=rp.get("option_word"),
+                                                point_code=point_code,
+                                                explanation=rp.get("explanation")
+                                            )
+                                            db.add(rej_point)
 
                                     analyzed_count += 1
                                 else:

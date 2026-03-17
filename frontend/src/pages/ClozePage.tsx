@@ -16,11 +16,13 @@ import {
   Card,
   Badge,
   Radio,
+  Button,
+  Popconfirm,
 } from 'antd'
-import { UnorderedListOutlined, BookOutlined } from '@ant-design/icons'
+import { UnorderedListOutlined, BookOutlined, DeleteOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
-import { getClozeList, getClozeFilters } from '@/services/clozeService'
+import { getClozeList, getClozeFilters, deleteCloze, batchDeleteClozes } from '@/services/clozeService'
 import type { ClozePassage, ClozeFiltersResponse, ClozeFilter } from '@/types'
 import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
 import { ClozeHandoutView } from '@/components/clozeHandout/ClozeHandoutView'
@@ -70,6 +72,9 @@ export function ClozePage() {
   // 抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedClozeId, setSelectedClozeId] = useState<number | null>(null)
+
+  // 批量选择状态
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
 
   // ============================================================================
   //  数据加载
@@ -127,6 +132,43 @@ export function ClozePage() {
   const handleCloseDrawer = () => {
     setDrawerOpen(false)
     setSelectedClozeId(null)
+  }
+
+  // 单条删除
+  const handleDeleteCloze = async (id: number) => {
+    try {
+      await deleteCloze(id)
+      message.success('删除成功')
+      loadClozeList()
+    } catch (error) {
+      message.error('删除失败')
+      console.error(error)
+    }
+  }
+
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请选择要删除的完形文章')
+      return
+    }
+    try {
+      const result = await batchDeleteClozes(selectedRowKeys as number[])
+      message.success(result.message)
+      setSelectedRowKeys([])
+      loadClozeList()
+    } catch (error) {
+      message.error('批量删除失败')
+      console.error(error)
+    }
+  }
+
+  // 表格行选择配置
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys)
+    },
   }
 
   // ============================================================================
@@ -214,6 +256,47 @@ export function ClozePage() {
         )
       },
     },
+    {
+      title: '操作',
+      key: 'action',
+      width: 100,
+      render: (_, record) => (
+        <Space>
+          <Button
+            type="link"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleViewCloze(record.id)
+            }}
+          >
+            查看
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="删除后无法恢复，确定要删除吗？"
+            onConfirm={(e) => {
+              e?.stopPropagation()
+              handleDeleteCloze(record.id)
+            }}
+            onCancel={(e) => e?.stopPropagation()}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={(e) => e.stopPropagation()}
+            >
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ]
 
   // 响应式列（抽屉打开时只显示精简字段，且更紧凑）
@@ -240,6 +323,21 @@ export function ClozePage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           {/* 筛选器 */}
           <Space wrap>
+            {/* 批量删除按钮 */}
+            {selectedRowKeys.length > 0 && (
+              <Popconfirm
+                title="批量删除确认"
+                description={`确定要删除选中的 ${selectedRowKeys.length} 篇完形文章吗？此操作不可恢复。`}
+                onConfirm={handleBatchDelete}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button danger icon={<DeleteOutlined />}>
+                  批量删除 ({selectedRowKeys.length} 篇)
+                </Button>
+              </Popconfirm>
+            )}
             <Select
               placeholder="选择年级"
               allowClear
@@ -341,6 +439,7 @@ export function ClozePage() {
               dataSource={clozeList}
               rowKey="id"
               loading={loading}
+              rowSelection={rowSelection}
               onRow={(record) => ({
                 onClick: () => handleViewCloze(record.id),
                 style: { cursor: 'pointer' },

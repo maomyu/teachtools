@@ -45,3 +45,13 @@ async def init_db():
     """初始化数据库"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # 迁移：添加 is_rare_meaning 列（如果不存在）
+        # SQLite 不支持 IF NOT EXISTS，需要捕获异常
+        try:
+            await conn.execute(
+                "ALTER TABLE cloze_points ADD COLUMN is_rare_meaning BOOLEAN DEFAULT 0"
+            )
+        except Exception:
+            # 列已存在，忽略
+            pass

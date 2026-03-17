@@ -25,6 +25,7 @@ from app.models.cloze import ClozePassage, ClozePoint, PointTypeDefinition, Cloz
 from app.models.paper import ExamPaper
 from app.models.vocabulary_cloze import VocabularyCloze
 from app.models.vocabulary import Vocabulary
+from app.models.reading import ReadingPassage
 from app.schemas.cloze import (
     ClozeListResponse,
     ClozeDetailResponse,
@@ -283,6 +284,7 @@ async def list_cloze(
                 word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
                 dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
                 # 熟词僻义
+                is_rare_meaning=pt.is_rare_meaning if hasattr(pt, 'is_rare_meaning') else False,
                 textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
                 textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
                 context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
@@ -304,19 +306,31 @@ async def list_points(
     point_type: Optional[str] = None,
     grade: Optional[str] = None,
     keyword: Optional[str] = None,
+    # v2 新增筛选参数
+    category: Optional[str] = Query(None, description="按大类筛选 (A/B/C/D/E)"),
+    point_code: Optional[str] = Query(None, description="按考点编码筛选 (A1/B2/C2等)"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取考点汇总（支持 frequency 聚合）"""
+    """获取考点汇总（支持 v2 16种考点分类 + frequency 聚合）"""
     # 先查询所有匹配的考点，不做分页（需要聚合）
     query = select(ClozePoint).options(
         selectinload(ClozePoint.cloze).selectinload(ClozePassage.paper)
     )
 
-    # 筛选
+    # v1 筛选（旧类型：固定搭配/词义辨析/熟词僻义）
     if point_type:
         query = query.where(ClozePoint.point_type == point_type)
+
+    # v2 筛选（新分类：按大类或考点编码）
+    if category:
+        # 按大类筛选：A/B/C/D/E
+        query = query.where(ClozePoint.primary_point_code.startswith(category))
+    if point_code:
+        # 按具体考点编码筛选：A1/B2/C2等
+        query = query.where(ClozePoint.primary_point_code == point_code)
+
     if grade:
         query = query.join(ClozePassage).join(ExamPaper).where(ExamPaper.grade == grade)
     if keyword:
@@ -328,19 +342,45 @@ async def list_points(
     result = await db.execute(query)
     all_points = result.scalars().all()
 
-    # 按 (correct_word, point_type) 聚合
+    # 按 (correct_word, primary_point_code 或 point_type) 聚合
+    # v2 优先使用 primary_point_code，v1 兼容使用 point_type
     aggregated = {}
     for pt in all_points:
-        key = (pt.correct_word or "", pt.point_type or "词汇")
+        # v2 使用 primary_point_code，v1 使用 point_type
+        agg_key = pt.primary_point_code or pt.point_type or "词汇"
+        key = (pt.correct_word or "", agg_key)
         if key not in aggregated:
             aggregated[key] = []
         aggregated[key].append(pt)
 
     # 构建聚合后的列表
     summaries = []
-    for (word, ptype), points in aggregated.items():
+    for (word, agg_key), points in aggregated.items():
         occurrences = []
         first_point = points[0]
+
+        # 查询 v2 考点定义（如果有 primary_point_code）
+        primary_point = None
+        if hasattr(first_point, 'primary_point_code') and first_point.primary_point_code:
+            pt_def_result = await db.execute(
+                select(PointTypeDefinition).where(PointTypeDefinition.code == first_point.primary_point_code)
+            )
+            pt_def = pt_def_result.scalar_one_or_none()
+            if pt_def:
+                primary_point = PointTypeBase(
+                    code=pt_def.code,
+                    category=pt_def.category,
+                    category_name=pt_def.category_name,
+                    name=pt_def.name,
+                    priority=pt_def.priority,
+                    description=pt_def.description
+                )
+
+        # 兼容 v1：如果没有 v2 数据，使用 point_type
+        point_type_display = first_point.point_type or "词汇"
+        if primary_point:
+            # 有 v2 数据时，使用编码作为显示
+            point_type_display = f"{primary_point.code} {primary_point.name}"
 
         for pt in points:
             source = ""
@@ -360,36 +400,63 @@ async def list_points(
                 word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
                 dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
                 # 熟词僻义
+                is_rare_meaning=pt.is_rare_meaning if hasattr(pt, 'is_rare_meaning') else False,
                 textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
                 textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
                 context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
                 similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words else None,
             )
 
+            # 每个出现位置也包含 v2 考点信息
+            occurrence_point = None
+            if hasattr(pt, 'primary_point_code') and pt.primary_point_code:
+                pt_def_occ_result = await db.execute(
+                    select(PointTypeDefinition).where(PointTypeDefinition.code == pt.primary_point_code)
+                )
+                pt_def_occ = pt_def_occ_result.scalar_one_or_none()
+                if pt_def_occ:
+                    occurrence_point = PointTypeBase(
+                        code=pt_def_occ.code,
+                        category=pt_def_occ.category,
+                        category_name=pt_def_occ.category_name,
+                        name=pt_def_occ.name,
+                        priority=pt_def_occ.priority,
+                        description=pt_def_occ.description
+                    )
+
             occurrences.append(PointOccurrence(
                 sentence=pt.sentence or "",
                 source=source,
                 blank_number=pt.blank_number,
-                point_type=ptype,
+                point_type=pt.point_type or "词汇",
                 passage_id=pt.cloze_id,
                 point_id=pt.id,
                 analysis=analysis
             ))
+            # 附加 v2 数据（扩展字段，前端通过 (occ as any).primary_point 访问）
+            if occurrence_point:
+                occurrences[-1].__dict__['primary_point'] = occurrence_point
 
         # 根据考点类型选择释义字段：熟词僻义优先使用 context_meaning
+        ptype = first_point.point_type or "词汇"
         if ptype == '熟词僻义' and hasattr(first_point, 'context_meaning') and first_point.context_meaning:
             definition = first_point.context_meaning
         else:
             definition = first_point.translation
 
-        summaries.append(PointSummary(
+        summary = PointSummary(
             word=word,
             definition=definition,
             frequency=len(points),
-            point_type=ptype,
+            point_type=point_type_display,
             occurrences=occurrences,
             tips=first_point.tips if hasattr(first_point, 'tips') else None
-        ))
+        )
+        # 附加 v2 主考点数据（前端通过 (summary as any).primary_point 访问）
+        if primary_point:
+            summary.__dict__['primary_point'] = primary_point
+
+        summaries.append(summary)
 
     # 按频率排序后分页
     summaries.sort(key=lambda x: x.frequency, reverse=True)
@@ -490,6 +557,7 @@ async def _build_point_v2_response(
         word_analysis=json.loads(pt.word_analysis) if hasattr(pt, 'word_analysis') and pt.word_analysis else None,
         dictionary_source=pt.dictionary_source if hasattr(pt, 'dictionary_source') else None,
         # 熟词僻义
+        is_rare_meaning=pt.is_rare_meaning if hasattr(pt, 'is_rare_meaning') else False,
         textbook_meaning=pt.textbook_meaning if hasattr(pt, 'textbook_meaning') else None,
         textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') else None,
         context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
@@ -656,6 +724,126 @@ async def update_blank_point(
     return {"message": "考点更新成功"}
 
 
+# ============================================================================
+#  删除接口
+# ============================================================================
+
+@router.delete("/{cloze_id}")
+async def delete_cloze(
+    cloze_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """删除完形文章及其关联数据"""
+    # 1. 查询完形文章
+    result = await db.execute(
+        select(ClozePassage).where(ClozePassage.id == cloze_id)
+    )
+    cloze = result.scalar_one_or_none()
+
+    if not cloze:
+        raise HTTPException(status_code=404, detail="完形文章不存在")
+
+    paper_id = cloze.paper_id
+    filename = None
+
+    # 获取试卷信息
+    paper_result = await db.execute(
+        select(ExamPaper).where(ExamPaper.id == paper_id)
+    )
+    paper = paper_result.scalar_one_or_none()
+    if paper:
+        filename = paper.filename
+
+    # 2. 删除完形文章（ORM 级联删除关联的考点和词汇记录）
+    await db.delete(cloze)
+    await db.commit()
+
+    # 3. 检查该试卷下是否还有其他文章
+    remaining_reading = await db.scalar(
+        select(func.count()).select_from(ReadingPassage).where(
+            ReadingPassage.paper_id == paper_id
+        )
+    )
+    remaining_cloze = await db.scalar(
+        select(func.count()).select_from(ClozePassage).where(
+            ClozePassage.paper_id == paper_id
+        )
+    )
+
+    # 如果没有文章了，删除试卷
+    paper_deleted = False
+    if remaining_reading == 0 and remaining_cloze == 0 and paper:
+        await db.delete(paper)
+        await db.commit()
+        paper_deleted = True
+
+    return {
+        "message": "删除成功，试卷也已删除" if paper_deleted else "删除成功",
+        "cloze_id": cloze_id,
+        "paper_deleted": paper_deleted,
+        "filename": filename
+    }
+
+
+@router.post("/batch-delete")
+async def batch_delete_clozes(
+    ids: List[int],
+    db: AsyncSession = Depends(get_db)
+):
+    """批量删除完形文章及其关联数据"""
+    if not ids:
+        raise HTTPException(status_code=400, detail="请提供要删除的完形文章ID")
+
+    # 1. 收集所有受影响的 paper_id
+    result = await db.execute(
+        select(ClozePassage).where(ClozePassage.id.in_(ids))
+    )
+    clozes = result.scalars().all()
+
+    if not clozes:
+        raise HTTPException(status_code=404, detail="未找到要删除的完形文章")
+
+    paper_ids = {c.paper_id for c in clozes}
+
+    # 2. 批量删除完形文章（ORM 级联删除关联数据）
+    deleted_count = 0
+    for cloze in clozes:
+        await db.delete(cloze)
+        deleted_count += 1
+
+    await db.commit()
+
+    # 3. 检查并清理空试卷
+    paper_deleted_count = 0
+    for paper_id in paper_ids:
+        # 检查该试卷下是否还有阅读文章
+        remaining_reading = await db.scalar(
+            select(func.count()).select_from(ReadingPassage).where(
+                ReadingPassage.paper_id == paper_id
+            )
+        )
+        # 检查该试卷下是否还有完形文章
+        remaining_cloze = await db.scalar(
+            select(func.count()).select_from(ClozePassage).where(
+                ClozePassage.paper_id == paper_id
+            )
+        )
+        # 如果没有文章了，删除试卷
+        if remaining_reading == 0 and remaining_cloze == 0:
+            paper = await db.get(ExamPaper, paper_id)
+            if paper:
+                await db.delete(paper)
+                paper_deleted_count += 1
+
+    await db.commit()
+
+    return {
+        "message": f"成功删除 {deleted_count} 篇完形文章",
+        "deleted_count": deleted_count,
+        "paper_deleted": paper_deleted_count
+    }
+
+
 @router.post("/blanks/{blank_id}/analyze-v2")
 async def analyze_blank_point_v2(
     blank_id: int,
@@ -674,7 +862,7 @@ async def analyze_blank_point_v2(
     # 1. 查询考点
     result = await db.execute(
         select(ClozePoint)
-        .options(selectinload(ClozePoint.cloze_passage))
+        .options(selectinload(ClozePoint.cloze))
         .where(ClozePoint.id == blank_id)
     )
     point = result.scalar_one_or_none()
@@ -682,15 +870,19 @@ async def analyze_blank_point_v2(
     if not point:
         raise HTTPException(status_code=404, detail="考点不存在")
 
-    if not point.cloze_passage:
+    if not point.cloze:
         raise HTTPException(status_code=400, detail="考点未关联文章")
 
     # 2. 获取上下文
-    context = point.cloze_passage.original_content or point.cloze_passage.content
+    full_content = point.cloze.original_content or point.cloze.content
     options = json.loads(point.options) if point.options else {}
 
     # 3. 调用 V2 分析器
     analyzer = ClozeAnalyzerV2()
+
+    # 提取空格附近的上下文（前后各2句），提高分析精准度
+    context = analyzer.extract_context(full_content, point.blank_number, context_sentences=2)
+
     analysis_result = await analyzer.analyze_point(
         blank_number=point.blank_number,
         correct_word=point.correct_word or "",
@@ -731,9 +923,11 @@ async def analyze_blank_point_v2(
     # 6. 插入新的辅助考点
     if analysis_result.secondary_points:
         for idx, sp in enumerate(analysis_result.secondary_points):
+            # 兼容两种字段名，默认值为 D1
+            point_code = sp.get("code") or sp.get("point_code") or "D1"
             new_sp = ClozeSecondaryPoint(
                 cloze_point_id=point.id,
-                point_code=sp.get("point_code"),
+                point_code=point_code,
                 explanation=sp.get("explanation"),
                 sort_order=idx
             )
@@ -742,10 +936,12 @@ async def analyze_blank_point_v2(
     # 7. 插入新的排错点
     if analysis_result.rejection_points:
         for rp in analysis_result.rejection_points:
+            # 兼容两种字段名，默认值为 D1
+            point_code = rp.get("code") or rp.get("point_code") or "D1"
             new_rp = ClozeRejectionPoint(
                 cloze_point_id=point.id,
                 option_word=rp.get("option_word"),
-                point_code=rp.get("point_code"),
+                point_code=point_code,
                 explanation=rp.get("explanation")
             )
             db.add(new_rp)
@@ -1050,71 +1246,79 @@ async def _get_topic_vocabulary_with_source(db: AsyncSession, grade: str, topic:
 
 async def _get_points_by_type(db: AsyncSession, grade: str, topic: str):
     """
-    获取主题下按类型分组的考点（聚合统计）
+    获取主题下按 V2 考点编码分组的考点（聚合统计）
 
     [INPUT]: 数据库会话、年级、主题
-    [OUTPUT]: 按类型分组的考点数据
+    [OUTPUT]: 按考点编码分组的考点数据（A1-E2）
     [POS]: cloze.py 的私有辅助函数
     [PROTOCOL]: 变更时更新此头部
     """
+    # 首先获取所有考点类型定义，用于获取名称和大类信息
+    type_defs_result = await db.execute(select(PointTypeDefinition))
+    type_defs = {td.code: td for td in type_defs_result.scalars().all()}
+
+    # 查询考点数据
     query = (
         select(ClozePoint, ClozePassage, ExamPaper)
         .join(ClozePassage, ClozePoint.cloze_id == ClozePassage.id)
         .join(ExamPaper, ClozePassage.paper_id == ExamPaper.id)
         .where(ExamPaper.grade == grade)
         .where(ClozePassage.primary_topic == topic)
-        .where(ClozePoint.point_type.isnot(None))
         .where(ClozePoint.correct_word.isnot(None))
     )
 
     result = await db.execute(query)
 
-    # 按考点类型和单词分组
-    grouped = {
-        "词义辨析": {},
-        "固定搭配": {},
-        "熟词僻义": {}
-    }
+    # 按考点编码和单词分组（使用动态字典）
+    grouped: Dict[str, Dict] = {}
 
     for point, passage, paper in result.all():
-        ptype = point.point_type
-        word = point.correct_word or ""
+        # 获取考点编码：优先使用 primary_point_code，否则通过旧类型映射
+        point_code = point.primary_point_code
+        if not point_code and point.point_type:
+            point_code = LEGACY_TO_NEW_CODE.get(point.point_type)
 
-        if ptype not in grouped:
+        # 如果仍然没有编码，跳过
+        if not point_code:
             continue
 
-        if word not in grouped[ptype]:
-            # 初始化
-            if ptype == "词义辨析":
-                grouped[ptype][word] = {
-                    "word": word,
-                    "frequency": 0,
-                    "definition": point.translation,
-                    "word_analysis": json.loads(point.word_analysis) if point.word_analysis else None,
-                    "dictionary_source": point.dictionary_source,
-                    "occurrences": []
-                }
-            elif ptype == "固定搭配":
-                grouped[ptype][word] = {
-                    "word": word,
-                    "frequency": 0,
-                    "phrase": point.phrase,
-                    "similar_phrases": json.loads(point.similar_phrases) if point.similar_phrases else None,
-                    "occurrences": []
-                }
-            else:  # 熟词僻义
-                grouped[ptype][word] = {
-                    "word": word,
-                    "frequency": 0,
-                    "textbook_meaning": point.textbook_meaning,
-                    "textbook_source": point.textbook_source,
-                    "context_meaning": point.context_meaning,
-                    "similar_words": json.loads(point.similar_words) if point.similar_words else None,
-                    "occurrences": []
-                }
+        # 获取考点元数据
+        type_def = type_defs.get(point_code)
+        category = type_def.category if type_def else point_code[0] if point_code else ""
+        category_name = type_def.category_name if type_def else ""
+        point_name = type_def.name if type_def else point_code
+
+        word = point.correct_word or ""
+
+        # 初始化考点编码分组
+        if point_code not in grouped:
+            grouped[point_code] = {
+                "code": point_code,
+                "name": point_name,
+                "category": category,
+                "category_name": category_name,
+                "words": {}  # 按单词分组
+            }
+
+        # 初始化单词分组
+        if word not in grouped[point_code]["words"]:
+            grouped[point_code]["words"][word] = {
+                "word": word,
+                "frequency": 0,
+                "definition": point.translation,
+                "word_analysis": json.loads(point.word_analysis) if point.word_analysis else None,
+                "dictionary_source": point.dictionary_source,
+                "phrase": point.phrase,
+                "similar_phrases": json.loads(point.similar_phrases) if point.similar_phrases else None,
+                "textbook_meaning": point.textbook_meaning,
+                "textbook_source": point.textbook_source,
+                "context_meaning": point.context_meaning,
+                "similar_words": json.loads(point.similar_words) if point.similar_words else None,
+                "occurrences": []
+            }
 
         # 增加频次
-        grouped[ptype][word]["frequency"] += 1
+        grouped[point_code]["words"][word]["frequency"] += 1
 
         # 添加出现记录
         source = f"{paper.year}{paper.region}{paper.grade}{paper.exam_type or ''}·完形"
@@ -1122,33 +1326,42 @@ async def _get_points_by_type(db: AsyncSession, grade: str, topic: str):
             explanation=point.explanation,
             confusion_words=json.loads(point.confusion_words) if point.confusion_words else None,
             tips=point.tips if hasattr(point, 'tips') else None,
-            phrase=point.phrase if ptype == "固定搭配" else None,
-            similar_phrases=json.loads(point.similar_phrases) if ptype == "固定搭配" and point.similar_phrases else None,
-            word_analysis=json.loads(point.word_analysis) if ptype == "词义辨析" and point.word_analysis else None,
-            dictionary_source=point.dictionary_source if ptype == "词义辨析" else None,
-            textbook_meaning=point.textbook_meaning if ptype == "熟词僻义" else None,
-            textbook_source=point.textbook_source if ptype == "熟词僻义" else None,
-            context_meaning=point.context_meaning if ptype == "熟词僻义" else None,
-            similar_words=json.loads(point.similar_words) if ptype == "熟词僻义" and point.similar_words else None,
+            phrase=point.phrase,
+            similar_phrases=json.loads(point.similar_phrases) if point.similar_phrases else None,
+            word_analysis=json.loads(point.word_analysis) if point.word_analysis else None,
+            dictionary_source=point.dictionary_source,
+            textbook_meaning=point.textbook_meaning,
+            textbook_source=point.textbook_source,
+            context_meaning=point.context_meaning,
+            similar_words=json.loads(point.similar_words) if point.similar_words else None,
         )
 
         occurrence = PointOccurrence(
             sentence=point.sentence or "",
             source=source,
             blank_number=point.blank_number,
-            point_type=ptype,
+            point_type=point_code,  # 使用 V2 编码
             passage_id=passage.id,
             point_id=point.id,
             analysis=analysis
         )
-        grouped[ptype][word]["occurrences"].append(occurrence)
+        grouped[point_code]["words"][word]["occurrences"].append(occurrence)
 
-    # 转换为列表并按频次排序
-    points_by_type = {
-        "词义辨析": sorted(list(grouped["词义辨析"].values()), key=lambda x: -x["frequency"]),
-        "固定搭配": sorted(list(grouped["固定搭配"].values()), key=lambda x: -x["frequency"]),
-        "熟词僻义": sorted(list(grouped["熟词僻义"].values()), key=lambda x: -x["frequency"])
-    }
+    # 转换为最终格式，并按大类和编码排序
+    def sort_key(code):
+        # 按大类 (A-E) 和数字排序
+        return (code[0] if code else "Z", int(code[1]) if len(code) > 1 and code[1].isdigit() else 0)
+
+    points_by_type = {}
+    for code in sorted(grouped.keys(), key=sort_key):
+        data = grouped[code]
+        points_by_type[code] = {
+            "code": data["code"],
+            "name": data["name"],
+            "category": data["category"],
+            "category_name": data["category_name"],
+            "points": sorted(list(data["words"].values()), key=lambda x: -x["frequency"])
+        }
 
     return points_by_type
 
@@ -1213,6 +1426,7 @@ async def _get_cloze_passages_with_points(db: AsyncSession, grade: str, topic: s
                 textbook_source=pt.textbook_source if hasattr(pt, 'textbook_source') and edition == 'teacher' else None,
                 context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
                 similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words and edition == 'teacher' else None,
+                is_rare_meaning=pt.is_rare_meaning if hasattr(pt, 'is_rare_meaning') else False,
                 tips=pt.tips if hasattr(pt, 'tips') and edition == 'teacher' else None
             )
             points_list.append(point_data)

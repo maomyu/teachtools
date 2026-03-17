@@ -5,20 +5,40 @@
  * [OUTPUT]: 对外提供 ClozePassagePages 组件
  * [POS]: frontend/src/components/clozeHandout 的文章展示
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ *
+ * V2 更新：使用 CATEGORY_COLORS 替代旧的 POINT_TYPE_COLORS
  */
 import { Typography, Divider, Tag, Space } from 'antd'
-import type { ClozeHandoutPassage, QuestionOptions } from '@/types'
+import type { ClozeHandoutPassage } from '@/types'
+import { CATEGORY_COLORS, LEGACY_TO_NEW_CODE } from '@/types'
 
 const { Title, Text } = Typography
 
 // ============================================================================
-//  常量：考点类型颜色
+//  辅助函数：获取考点颜色
 // ============================================================================
 
-const POINT_TYPE_COLORS: Record<string, string> = {
-  '固定搭配': 'green',
-  '词义辨析': 'orange',
-  '熟词僻义': 'purple',
+/**
+ * 根据考点类型获取颜色
+ * 支持 V2 编码（如 A1, C2）和旧类型（如 固定搭配）
+ */
+function getPointColor(pointType?: string): string {
+  if (!pointType) return 'default'
+
+  // 如果是 V2 编码（如 A1, B2），直接从第一个字符获取大类
+  if (/^[A-E]\d/.test(pointType)) {
+    const category = pointType[0]
+    return CATEGORY_COLORS[category] || 'default'
+  }
+
+  // 如果是旧类型，先映射到 V2 编码
+  const v2Code = LEGACY_TO_NEW_CODE[pointType]
+  if (v2Code) {
+    const category = v2Code[0]
+    return CATEGORY_COLORS[category] || 'default'
+  }
+
+  return 'default'
 }
 
 // ============================================================================
@@ -178,8 +198,8 @@ export function ClozePassagePages({ passage, edition, index, total }: ClozePassa
         </section>
       )}
 
-      {/* 答案页 */}
-      {points && points.length > 0 && (
+      {/* 答案页（仅教师版） */}
+      {edition === 'teacher' && points && points.length > 0 && (
         <section className="handout-page part-page">
           <Title level={3}>参考答案</Title>
           <Divider style={{ margin: '12px 0' }} />
@@ -216,12 +236,12 @@ function ClozeContent({ content, points }: ClozeContentProps) {
         if (/^\d+$/.test(part)) {
           const blankNum = parseInt(part)
           const point = points?.find(p => p.blank_number === blankNum)
-          const pointType = point?.point_type || '其他'
+          const pointType = point?.point_type || ''
 
           return (
             <Tag
               key={idx}
-              color={POINT_TYPE_COLORS[pointType] || 'default'}
+              color={getPointColor(pointType)}
               style={{ margin: '0 2px', fontSize: '10pt' }}
             >
               [{blankNum}]

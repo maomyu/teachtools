@@ -18,6 +18,8 @@ import type {
   TopicStatsResponse,
   HandoutDetailResponse,
   GradeHandoutResponse,
+  // 批量删除
+  BatchDeleteResponse,
 } from '@/types'
 
 /**
@@ -70,6 +72,14 @@ export async function getTopics(grade?: string): Promise<TopicListResponse> {
  */
 export async function deletePassage(id: number): Promise<{ message: string; passage_id: number }> {
   const response = await api.delete(`/passages/${id}`)
+  return response.data
+}
+
+/**
+ * 批量删除文章
+ */
+export async function batchDeletePassages(ids: number[]): Promise<BatchDeleteResponse> {
+  const response = await api.post<BatchDeleteResponse>('/passages/batch-delete', ids)
   return response.data
 }
 

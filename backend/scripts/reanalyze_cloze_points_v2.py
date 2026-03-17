@@ -72,8 +72,11 @@ async def reanalyze_points(limit: int = None, dry_run: bool = False):
                 total_points += 1
 
                 try:
-                    # 获取上下文
-                    context = passage.original_content or passage.content
+                    # 获取完整文章内容
+                    full_content = passage.original_content or passage.content
+
+                    # 提取空格附近的上下文（前后各2句），提高分析精准度
+                    context = cloze_analyzer.extract_context(full_content, point.blank_number, context_sentences=2)
 
                     options_dict = json.loads(point.options) if point.options else {}
 

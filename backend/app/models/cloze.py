@@ -102,7 +102,8 @@ class ClozePoint(Base):
     word_analysis = Column(Text)  # JSON: 三维度分析
     dictionary_source = Column(String(100))  # 词典来源 (柯林斯词典)
 
-    # 熟词僻义专用字段
+    # 熟词僻义专用字段（作为附加标签）
+    is_rare_meaning = Column(Boolean, default=False)  # 是否包含熟词僻义
     textbook_meaning = Column(Text)  # 课本释义
     textbook_source = Column(String(100))  # 课本出处 (人教版八上 Unit 5)
     context_meaning = Column(Text)  # 语境释义

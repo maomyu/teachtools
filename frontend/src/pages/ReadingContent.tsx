@@ -24,7 +24,7 @@ import {
 import { SearchOutlined, DeleteOutlined, UnorderedListOutlined, BookOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
-import { getPassages, deletePassage, getPassageFilters } from '@/services/readingService'
+import { getPassages, deletePassage, getPassageFilters, batchDeletePassages } from '@/services/readingService'
 import type { Passage, PassageFilter, PassageFiltersResponse } from '@/types'
 import { PassageDetailContent } from '@/components/vocabulary/PassageDetailContent'
 import { HandoutView } from '@/components/handout/HandoutView'
@@ -47,6 +47,9 @@ export function ReadingContent() {
   // 抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedPassageId, setSelectedPassageId] = useState<number | null>(null)
+
+  // 批量选择状态
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
 
   // 动态筛选项
   const [filterOptions, setFilterOptions] = useState<PassageFiltersResponse>({
@@ -116,6 +119,31 @@ export function ReadingContent() {
       message.error('删除失败')
       console.error(error)
     }
+  }
+
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请选择要删除的文章')
+      return
+    }
+    try {
+      const result = await batchDeletePassages(selectedRowKeys as number[])
+      message.success(result.message)
+      setSelectedRowKeys([])
+      loadPassages()
+    } catch (error) {
+      message.error('批量删除失败')
+      console.error(error)
+    }
+  }
+
+  // 表格行选择配置
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys)
+    },
   }
 
   const handleSearch = (value: string) => {
@@ -305,6 +333,21 @@ export function ReadingContent() {
         <>
           <Card size="small" style={{ marginBottom: 12 }}>
             <Space wrap>
+              {/* 批量删除按钮 */}
+              {selectedRowKeys.length > 0 && (
+                <Popconfirm
+                  title="批量删除确认"
+                  description={`确定要删除选中的 ${selectedRowKeys.length} 篇文章吗？此操作不可恢复。`}
+                  onConfirm={handleBatchDelete}
+                  okText="删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                >
+                  <Button danger icon={<DeleteOutlined />}>
+                    批量删除 ({selectedRowKeys.length} 篇)
+                  </Button>
+                </Popconfirm>
+              )}
               <Select
                 placeholder="选择年级"
                 allowClear
@@ -367,6 +410,7 @@ export function ReadingContent() {
             dataSource={passages}
             rowKey="id"
             loading={loading}
+            rowSelection={rowSelection}
             onRow={(record) => ({
               onClick: () => handleViewPassage(record.id),
               style: { cursor: 'pointer' },

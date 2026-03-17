@@ -25,7 +25,7 @@ import {
 import { SearchOutlined, EyeOutlined, DeleteOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
-import { getPassages, getTopics, deletePassage } from '@/services/readingService'
+import { getPassages, getTopics, deletePassage, batchDeletePassages } from '@/services/readingService'
 import type { Passage, Topic, PassageFilter } from '@/types'
 
 const { Title } = Typography
@@ -42,6 +42,9 @@ export function ReadingPage() {
 
   // 文章类型筛选（C/D篇）
   const [passageType, setPassageType] = useState<'C' | 'D' | undefined>(undefined)
+
+  // 批量选择状态
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
 
   // 筛选条件
   const [filter, setFilter] = useState<PassageFilter>({
@@ -105,6 +108,31 @@ export function ReadingPage() {
       message.error('删除失败')
       console.error(error)
     }
+  }
+
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请选择要删除的文章')
+      return
+    }
+    try {
+      const result = await batchDeletePassages(selectedRowKeys as number[])
+      message.success(result.message)
+      setSelectedRowKeys([])
+      loadPassages()
+    } catch (error) {
+      message.error('批量删除失败')
+      console.error(error)
+    }
+  }
+
+  // 表格行选择配置
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys)
+    },
   }
 
   // Tab 切换处理
@@ -263,6 +291,21 @@ export function ReadingPage() {
 
       <Card style={{ marginBottom: 16 }}>
         <Space wrap>
+          {/* 批量删除按钮 */}
+          {selectedRowKeys.length > 0 && (
+            <Popconfirm
+              title="批量删除确认"
+              description={`确定要删除选中的 ${selectedRowKeys.length} 篇文章吗？此操作不可恢复。`}
+              onConfirm={handleBatchDelete}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+            >
+              <Button danger>
+                批量删除 ({selectedRowKeys.length} 篇)
+              </Button>
+            </Popconfirm>
+          )}
           <Select
             placeholder="选择年级"
             allowClear
@@ -315,6 +358,7 @@ export function ReadingPage() {
         dataSource={passages}
         rowKey="id"
         loading={loading}
+        rowSelection={rowSelection}
         pagination={{
           current: filter.page,
           pageSize: filter.size,
