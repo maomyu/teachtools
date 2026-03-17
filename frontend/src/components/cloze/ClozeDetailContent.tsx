@@ -711,7 +711,7 @@ export function ClozeDetailContent({
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" fullscreen />
       </div>
     )
   }
