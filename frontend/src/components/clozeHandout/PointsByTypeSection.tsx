@@ -156,8 +156,8 @@ function GenericPointSection({
   color,
   totalPoints
 }: BaseSectionProps) {
-  // 每页最多显示 4 个考点词（因为每个要展示 4 个选项词）
-  const MAX_PER_PAGE = 4
+  // 每页显示 1 个考点词（完整展示柯林斯词典表格）
+  const MAX_PER_PAGE = 1
   const pages: PointWordData[][] = []
   for (let i = 0; i < points.length; i += MAX_PER_PAGE) {
     pages.push(points.slice(i, i + MAX_PER_PAGE))
@@ -229,34 +229,46 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
           size="small"
           pagination={false}
           bordered
+          tableLayout="fixed"
+          style={{ width: '100%', maxWidth: '100%' }}
           columns={[
             {
               title: '选项词',
               dataIndex: 'word',
               key: 'word',
-              width: 80,
+              width: 60,
               render: (word: string) => <Text>{word}</Text>  // 不高亮正确答案
             },
             {
               title: '释义',
               dataIndex: 'definition',
               key: 'definition',
-              render: (def: string) => def || '-'
+              width: 130,
+              render: (def: string) => <div className="dimension-cell">{def || '-'}</div>
             },
             {
               title: '使用对象',
               key: 'user',
-              render: (_: unknown, record: { dimensions?: { 使用对象: string } }) => record.dimensions?.使用对象 || '-'
+              width: 85,
+              render: (_: unknown, record: { dimensions?: { 使用对象: string } }) => (
+                <div className="dimension-cell">{record.dimensions?.使用对象 || '-'}</div>
+              )
             },
             {
               title: '使用场景',
               key: 'scene',
-              render: (_: unknown, record: { dimensions?: { 使用场景: string } }) => record.dimensions?.使用场景 || '-'
+              width: 85,
+              render: (_: unknown, record: { dimensions?: { 使用场景: string } }) => (
+                <div className="dimension-cell">{record.dimensions?.使用场景 || '-'}</div>
+              )
             },
             {
               title: '正负态度',
               key: 'attitude',
-              render: (_: unknown, record: { dimensions?: { 正负态度: string } }) => record.dimensions?.正负态度 || '-'
+              width: 50,
+              render: (_: unknown, record: { dimensions?: { 正负态度: string } }) => (
+                <div className="dimension-cell">{record.dimensions?.正负态度 || '-'}</div>
+              )
             }
             // 不展示排除理由、例句 - 这些放在文章后面的答案解析中
           ]}
@@ -339,33 +351,46 @@ function WordAnalysisCard({ point, edition, index, pointCode, pointName }: { poi
           size="small"
           pagination={false}
           bordered
+          tableLayout="fixed"
+          style={{ width: '100%', maxWidth: '100%' }}
           columns={[
             {
               title: '选项词',
               dataIndex: 'word',
               key: 'word',
-              width: 80,
+              width: 60,
               render: (word: string) => <Text>{word}</Text>  // 不高亮正确答案，避免剧透
             },
             {
               title: '释义',
               dataIndex: 'definition',
               key: 'definition',
+              width: 130,
+              render: (def: string) => <div className="dimension-cell">{def || '-'}</div>
             },
             {
               title: '使用对象',
               key: 'user',
-              render: (_: unknown, record: { dimensions?: { 使用对象: string } }) => record.dimensions?.使用对象 || '-'
+              width: 85,
+              render: (_: unknown, record: { dimensions?: { 使用对象: string } }) => (
+                <div className="dimension-cell">{record.dimensions?.使用对象 || '-'}</div>
+              )
             },
             {
               title: '使用场景',
               key: 'scene',
-              render: (_: unknown, record: { dimensions?: { 使用场景: string } }) => record.dimensions?.使用场景 || '-'
+              width: 85,
+              render: (_: unknown, record: { dimensions?: { 使用场景: string } }) => (
+                <div className="dimension-cell">{record.dimensions?.使用场景 || '-'}</div>
+              )
             },
             {
               title: '正负态度',
               key: 'attitude',
-              render: (_: unknown, record: { dimensions?: { 正负态度: string } }) => record.dimensions?.正负态度 || '-'
+              width: 50,
+              render: (_: unknown, record: { dimensions?: { 正负态度: string } }) => (
+                <div className="dimension-cell">{record.dimensions?.正负态度 || '-'}</div>
+              )
             }
             // 不展示排除理由、例句 - 这些放在文章后面的答案解析中
           ]}

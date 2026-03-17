@@ -137,6 +137,51 @@
 }
 
 /* ============================================================================
+ *  考点分类表格 - A4 适配（每页1个卡片）
+ * ============================================================================ */
+
+/* 在 A4 页面内的 antd 表格样式 */
+.handout-page .ant-table-wrapper {
+  max-width: 100%;
+  overflow: hidden !important;
+}
+
+.handout-page .ant-table-content {
+  overflow: hidden !important;
+}
+
+.handout-page .ant-table {
+  font-size: 11pt !important;
+  table-layout: fixed !important;
+  width: 100% !important;
+}
+
+.handout-page .ant-table-thead > tr > th {
+  padding: 10px 8px !important;
+  font-size: 11pt !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.handout-page .ant-table-tbody > tr > td {
+  padding: 8px !important;
+  font-size: 11pt !important;
+  word-break: break-word;
+  line-height: 1.6;
+  overflow: hidden;
+}
+
+/* 柯林斯词典三维度表格单元格 */
+.handout-page .ant-table .dimension-cell {
+  font-size: 11pt;
+  word-break: break-word;
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================================
  *  打印样式
  * ============================================================================ */
 
