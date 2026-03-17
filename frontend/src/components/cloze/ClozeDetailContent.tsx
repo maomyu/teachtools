@@ -596,7 +596,7 @@ export function ClozeDetailContent({
                 placement="bottom"
                 arrow={false}
                 overlayStyle={{ maxWidth: 520, maxHeight: '70vh' }}
-                overlayInnerStyle={{ maxHeight: '70vh', overflow: 'auto' }}
+                styles={{ body: { maxHeight: '70vh', overflow: 'auto' }} }
                 getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
               >
                 <span
@@ -660,7 +660,7 @@ export function ClozeDetailContent({
           placement="bottom"
           arrow={false}
           overlayStyle={{ maxWidth: 420, maxHeight: '60vh' }}
-          overlayInnerStyle={{ maxHeight: '60vh', overflow: 'auto' }}
+          styles={{ body: { maxHeight: '60vh', overflow: 'auto' }}}
           getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
         >
           <span
