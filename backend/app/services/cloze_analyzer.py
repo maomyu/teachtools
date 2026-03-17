@@ -831,13 +831,14 @@ class ClozeAnalyzerV2:
                 tips=data.get("tips")
             )
 
+            # === word_analysis 对所有考点类型都是必填的（柯林斯词典表格）===
+            result.word_analysis = data.get("word_analysis")
+            result.dictionary_source = data.get("dictionary_source", "柯林斯词典")
+
             # 根据主考点类型填充专用字段
             if primary_code == "C2":  # 固定搭配
                 # 如果有固定搭配相关信息，填充
                 pass
-            elif primary_code == "D1":  # 词义辨析
-                result.word_analysis = data.get("word_analysis")
-                result.dictionary_source = data.get("dictionary_source", "柯林斯词典")
             elif primary_code == "D2":  # 熟词僻义
                 result.textbook_meaning = data.get("textbook_meaning")
                 result.textbook_source = data.get("textbook_source")

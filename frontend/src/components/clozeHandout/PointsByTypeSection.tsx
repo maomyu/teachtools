@@ -222,7 +222,7 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
         )}
       </div>
 
-      {/* 4 个选项词表格 - 只展示选项词和释义，不展示排除理由（剧透答案） */}
+      {/* 柯林斯词典表格 - 展示选项词、释义、三维度（使用对象、使用场景、正负态度） */}
       {optionWords.length > 1 ? (
         <Table
           dataSource={optionWords.map(word => ({ key: word, word, ...wordAnalysis?.[word] }))}
@@ -242,8 +242,23 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
               dataIndex: 'definition',
               key: 'definition',
               render: (def: string) => def || '-'
+            },
+            {
+              title: '使用对象',
+              key: 'user',
+              render: (_: unknown, record: { dimensions?: { 使用对象: string } }) => record.dimensions?.使用对象 || '-'
+            },
+            {
+              title: '使用场景',
+              key: 'scene',
+              render: (_: unknown, record: { dimensions?: { 使用场景: string } }) => record.dimensions?.使用场景 || '-'
+            },
+            {
+              title: '正负态度',
+              key: 'attitude',
+              render: (_: unknown, record: { dimensions?: { 正负态度: string } }) => record.dimensions?.正负态度 || '-'
             }
-            // 不展示排除理由、例句、解析 - 这些放在文章后面的答案解析中
+            // 不展示排除理由、例句 - 这些放在文章后面的答案解析中
           ]}
         />
       ) : (
