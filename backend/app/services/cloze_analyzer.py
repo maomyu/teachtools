@@ -503,6 +503,7 @@ NEW_CODE_TO_LEGACY = {
     "C2": "固定搭配",
     "D1": "词义辨析",
     "D2": "熟词僻义",
+    "XX": "待确认分类",
 }
 
 
@@ -601,6 +602,63 @@ class ClozeAnalyzerV2:
 3. **结构层面**: 分析句子结构、语法（C类）
 4. **词项层面**: 最后判断词汇选项（D类）
 5. **背景层面**: 是否需要常识或主题理解（E类）
+
+## 考点选择严格规则（必须遵守）
+
+### 优先级强制规则
+按以下顺序检查，**一旦匹配则必须选择对应的考点类型**：
+
+1. **B类（逻辑关系）优先**: 有明确逻辑关系词时必须选 B 类
+   - but, however, yet, although, instead, while → B2_转折对比
+   - because, so, therefore, since, as a result → B3_因果关系
+   - and, also, as well, both...and → B1_并列一致
+   - even if, unless, in fact, for example → B4_其他逻辑关系
+
+2. **C类（句法语法）优先**: 有明确语法特征时必须考虑 C 类
+   - 动词+介词/副词 → C2_固定搭配
+   - 冠词后需要名词、系动词后需要形容词 → C1_词性与句子成分
+   - 时态语态线索 → C3_语法形式限制
+
+3. **A类（语篇理解）需排除以上所有**: 只有在以下情况才能选择 A 类
+   - 文中没有明确的逻辑关系词
+   - 没有固定搭配特征
+   - 没有代词指代（选 A3 必须有代词）
+   - 没有情感态度词（选 A5 必须有情感词）
+   - 纯粹需要理解上下文语义才能判断
+
+4. **D类（词汇选项）是最后选择**: 只有排除以上所有后才选 D 类
+
+5. **E类（常识主题）通常作为辅助考点**: 除非纯粹依靠常识判断
+
+### A1 选择必要条件（必须同时满足）
+
+A1 "上下文语义推断" 只能在以下情况选择：
+- ✅ 空本身单靠选项看不出来，必须靠上下文补充信息
+- ✅ 文中没有明确的逻辑关系词（but, so, because 等）
+- ✅ 没有固定搭配特征（动词+介词等）
+- ✅ 没有代词指代需要解析（否则选 A3）
+- ✅ 没有情感态度词（否则选 A5）
+- ✅ 没有时态/语态等语法限制（否则选 C3）
+- ✅ 不是单纯的词汇辨析（否则选 D1）
+
+**如果不确定，请选择更具体的考点类型，不要用 A1 作为兜底。**
+
+### 多标签规则（教学严谨性）
+
+**互斥规则**（同一类内部只能选一个作为主考点）：
+- A 类内部互斥: A1, A2, A3, A4, A5 只能选一个作为主考点
+- B 类内部互斥: B1, B2, B3, B4 只能选一个作为主考点
+
+**共存规则**（常见组合，主考点 + 辅助考点）：
+- A1 + B3: 上下文语义 + 因果关系
+- C2 + D1: 固定搭配 + 词义辨析
+- A5 + E2: 情感态度 + 主题共情
+- A2 + D1: 复现照应 + 词义辨析
+- 主考点 + D2: 任何考点如果涉及熟词僻义，D2 作为辅助考点
+
+**排错点规则**（rejection_points）：
+- 每个干扰选项都应该有排除理由
+- 排除理由应基于考点特征（如：词义不符、搭配错误、逻辑矛盾等）
 
 ## 输出格式（严格JSON）
 
@@ -804,12 +862,29 @@ class ClozeAnalyzerV2:
             # 验证主考点（使用 or {} 处理 None 值）
             primary = data.get("primary_point") or {}
             primary_code = primary.get("code", "")
-            valid_codes = ["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "D1", "D2", "E1", "E2"]
+            valid_codes = ["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "D1", "D2", "E1", "E2", "XX"]
 
             if not primary_code or primary_code not in valid_codes:
-                # 如果编码无效，默认为 D1（常规词义辨析）
-                primary_code = "D1"
-                primary = {"code": "D1", "name": "常规词义辨析", "explanation": "默认分类"}
+                # 尝试二次判断：基于关键词和上下文特征
+                inferred_code = self._infer_point_code_from_context(
+                    data.get("explanation", ""),
+                    data.get("context", "")
+                )
+                if inferred_code:
+                    primary_code = inferred_code
+                    primary = {
+                        "code": inferred_code,
+                        "name": self._get_point_name(inferred_code),
+                        "explanation": "AI 返回编码无效，根据解析内容二次推断"
+                    }
+                else:
+                    # 如果仍然无法判断，标记为 XX（待确认分类），不用 D1 掩盖问题
+                    primary_code = "XX"
+                    primary = {
+                        "code": "XX",
+                        "name": "待确认分类",
+                        "explanation": f"AI 返回编码 '{primary_code}' 无效且无法推断，建议人工检查"
+                    }
 
             # 映射到旧类型（兼容）
             legacy_type = NEW_CODE_TO_LEGACY.get(primary_code, "词义辨析")
@@ -871,6 +946,93 @@ class ClozeAnalyzerV2:
                 success=False,
                 error=f"JSON解析失败: {str(e)}"
             )
+
+    def _infer_point_code_from_context(self, explanation: str, context: str) -> Optional[str]:
+        """
+        基于上下文特征的二次推断考点编码
+
+        当 AI 返回无效编码时，尝试从解析内容和上下文中推断合理的考点类型
+
+        Args:
+            explanation: AI 生成的解析文本
+            context: 空格周围的上下文
+
+        Returns:
+            推断的考点编码，如果无法推断则返回 None
+        """
+        combined = f"{explanation} {context}".lower()
+
+        # B 类逻辑关系检查（优先级最高）
+        b_keywords = {
+            "B2": ["but", "however", "yet", "although", "instead", "while", "contrast", "opposite", "转折", "对比"],
+            "B3": ["because", "so", "therefore", "since", "as a result", "cause", "result", "因果", "导致"],
+            "B1": ["and", "also", "as well", "both", "not only", "并列", "一致"],
+            "B4": ["even if", "unless", "in fact", "for example", "such as", "递进", "让步", "举例"]
+        }
+
+        for code, keywords in b_keywords.items():
+            if any(kw in combined for kw in keywords):
+                return code
+
+        # C 类句法语法检查
+        c_keywords = {
+            "C2": ["phrase", "collocation", "固定搭配", "短语", "depend on", "be interested", "look forward"],
+            "C1": ["part of speech", "noun", "verb", "adjective", "词性", "句子成分"],
+            "C3": ["tense", "passive", "active", "时态", "语态", "doing", "done", "to do"]
+        }
+
+        for code, keywords in c_keywords.items():
+            if any(kw in combined for kw in keywords):
+                return code
+
+        # A 类语篇理解检查
+        a_keywords = {
+            "A3": ["he ", "she ", "it ", "they ", "this ", "that ", "代词", "指代"],
+            "A5": ["happy", "sad", "angry", "excited", "surprised", "情感", "态度", "心情"],
+            "A2": ["repeat", "same", "similar", "复现", "照应", "呼应"],
+            "A4": ["first", "then", "later", "finally", "before", "after", "顺序", "情节"]
+        }
+
+        for code, keywords in a_keywords.items():
+            if any(kw in combined for kw in keywords):
+                return code
+
+        # D 类词汇选项检查
+        if any(kw in combined for kw in ["meaning", "definition", "synonym", "词义", "辨析", "区分"]):
+            # 检查是否是熟词僻义
+            if any(kw in combined for kw in ["rare", "uncommon", "僻义", "课本", "熟词"]):
+                return "D2"
+            return "D1"
+
+        # E 类常识主题检查
+        if any(kw in combined for kw in ["common sense", "knowledge", "常识", "背景", "主题", "共情"]):
+            return "E1"
+
+        # 无法推断
+        return None
+
+    def _get_point_name(self, code: str) -> str:
+        """获取考点编码对应的中文名称"""
+        point_names = {
+            "A1": "上下文语义推断",
+            "A2": "复现与照应",
+            "A3": "代词指代",
+            "A4": "情节/行为顺序",
+            "A5": "情感态度",
+            "B1": "并列一致",
+            "B2": "转折对比",
+            "B3": "因果关系",
+            "B4": "其他逻辑关系",
+            "C1": "词性与句子成分",
+            "C2": "固定搭配",
+            "C3": "语法形式限制",
+            "D1": "常规词义辨析",
+            "D2": "熟词僻义",
+            "E1": "生活常识/场景常识",
+            "E2": "主题主旨与人物共情",
+            "XX": "待确认分类"
+        }
+        return point_names.get(code, "未知考点")
 
     def extract_context(self, content: str, blank_number: int, context_sentences: int = 2) -> str:
         """
