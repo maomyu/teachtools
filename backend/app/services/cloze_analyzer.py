@@ -463,6 +463,10 @@ class PointAnalysisResultV2:
     secondary_points: List[Dict] = field(default_factory=list)  # [{"code": "A5", "explanation": "..."}]
     rejection_points: List[Dict] = field(default_factory=list)  # [{"option_word": "...", "code": "A5", "explanation": "..."}]
 
+    # === 置信度字段 ===
+    confidence: str = "medium"  # high/medium/low
+    confidence_reason: Optional[str] = None  # 置信度判断依据
+
     # === 兼容旧系统 ===
     point_type: Optional[str] = None  # 固定搭配/词义辨析/熟词僻义（映射后的值）
 
@@ -529,71 +533,136 @@ class ClozeAnalyzerV2:
 
 {textbook_section}
 
-## 16种考点分类体系
+## 快速决策树（最高优先级）
+
+按此顺序检查，一旦匹配立即选择对应考点：
+
+```
+1. 有 but/however/yet/although/instead/while → B2_转折对比
+2. 有 because/so/therefore/since/as a result → B3_因果关系
+3. 有 and/also/both...and/not only...but also → B1_并列一致
+4. 有 depend on/be interested in/make a decision/look forward to → C2_固定搭配
+5. 有 he/she/it/they/this/that 且需要解析指代对象 → A3_代词指代
+6. 有情感态度词 (happy/sad/excited/angry/surprised) → A5_情感态度
+7. 有 first/then/later/finally/before/after 涉及行为顺序 → A4_情节顺序
+8. 有原词/同义词在其他位置复现 → A2_复现与照应
+9. 以上都没有，需理解上下文推断 → A1_上下文语义推断
+10. 纯词汇辨析，无其他特征 → D1_常规词义辨析
+```
+
+## 16种考点分类体系（含真实例句）
 
 ### A. 语篇理解类 (P1-核心能力)
 
 **A1_上下文语义推断**: 需要理解上下文语义才能确定答案
 - 触发: 空本身单靠选项看不出来，必须靠上下文补充信息
 - 信号: 空前有铺垫，空后有解释
+- 例句:
+  - The room was dark, so he had to ___ slowly to avoid bumping into things. (walk/move)
+  - She looked at the price tag and put it back. It was too ___. (expensive)
 
 **A2_复现与照应**: 文中其他位置出现了相同/近义词
 - 触发: 文中有明显重复、同义替换、近义呼应
 - 信号: 原词复现，同义词复现，主题链词汇
+- 例句:
+  - Tom wanted to be a doctor. His dream was to help sick people. So he studied hard to become a ___. (doctor - 原词复现)
+  - The weather was terrible. The bad ___ continued for three days. (weather - 原词复现)
 
 **A3_代词指代**: 需要理解代词指代的对象
 - 触发: 空附近出现代词，代词的指向会影响意思判断
 - 信号: he/she/it/they, this/that/these/those
+- 例句:
+  - Tom called his father. **He** needed some ___. (He = Tom, 需判断是Tom需要)
+  - The dog wagged **its** tail when **it** saw the food. (it = the dog)
 
 **A4_情节/行为顺序**: 涉及故事发展或行为先后顺序
 - 触发: 文章是叙事文，人物动作存在前后链条
 - 信号: first/then/later/finally, before/after
+- 例句:
+  - **First** she washed the dishes, **then** she ___ the floor. (swept/cleaned - 行为顺序)
+  - He woke up late. **So** he ___ breakfast and ran to school. (skipped/missed - 因果+顺序)
 
 **A5_情感态度**: 涉及人物情感、态度、心理变化
 - 触发: 选项多为形容词、副词、情绪类动词
 - 信号: happy/excited/surprised/sad/angry
+- 例句:
+  - She passed the exam! She was so ___ that she jumped up and down. (happy/excited)
+  - When he heard the bad news, he felt very ___. (sad/upset)
 
 ### B. 逻辑关系类 (P1-核心能力)
 
 **B1_并列一致**: 前后内容语义一致、方向一致
 - 信号: and, also, as well, both...and, not only...but also
+- 例句:
+  - She is smart **and** ___. She always gets good grades and helps others. (kind - 并列正面特质)
+  - He likes reading **and** ___ to music in his free time. (listening - 并列爱好)
 
 **B2_转折对比**: 前后语义相反或预期相反
 - 信号: but, however, yet, although, instead, while
+- 例句:
+  - She wanted to go, **but** she was too ___. (tired/busy - 转折)
+  - The weather was bad. **However**, we still had ___. (fun - 转折对比)
 
 **B3_因果关系**: 前因后果或前果后因
 - 信号: because, so, therefore, since, as a result
+- 例句:
+  - He was late **because** he ___ the bus. (missed - 因果)
+  - She studied hard, **so** she ___ the exam. (passed - 因果)
 
 **B4_其他逻辑关系**: 递进、让步、条件、举例、总结等
 - 信号: even if, unless, in fact, for example, in short
+- 例句:
+  - **Even if** it rains, we will still ___ the game. (play/watch - 让步)
+  - He has many hobbies. **For example**, he likes ___. (swimming/reading - 举例)
 
 ### C. 句法语法类 (P2-结构分析)
 
 **C1_词性与句子成分**: 需要分析句子成分确定词性
 - 信号: 冠词后→名词，系动词后→形容词，情态动词后→动词原形
+- 例句:
+  - She is a ___. She works in a hospital. (doctor/nurse - 冠词后名词)
+  - The movie was very ___. I almost fell asleep. (boring - 系动词后形容词)
 
 **C2_固定搭配**: 动词短语、介词短语、习惯表达
-- 信号: depend on, be interested in, make a decision
+- 信号: depend on, be interested in, make a decision, look forward to
+- 例句:
+  - Success **depends on** hard ___. (work - depend on + 名词)
+  - I am **interested in** ___ new languages. (learning - be interested in + doing)
 
 **C3_语法形式限制**: 时态、语态、非谓语动词形式
 - 信号: 时间状语，主语单复数，be done/doing/to do
+- 例句:
+  - The book was ___ by a famous writer. (written - 被动语态)
+  - She enjoys ___ music in her free time. (listening to - enjoy + doing)
 
 ### D. 词汇选项类 (P3-词汇知识)
 
 **D1_常规词义辨析**: 近义词辨析，需要根据语境选最合适的
 - 信号: say/tell/speak/talk, look/see/watch/notice
+- 例句:
+  - Please ___ me the truth. (say/tell/speak/talk → tell)
+  - He ___ at the picture carefully. (looked/saw/watched/noticed → looked)
 
 **D2_熟词僻义**: 常见词的非常见含义
 - 信号: run a company, head north, tie for first place
 - **重要**: D2 也必须生成 word_analysis，提供正确答案词的英英定义（柯林斯风格），帮助学生理解僻义
+- 例句:
+  - He **runs** a small ___. (company/business - run = 经营，非"跑")
+  - They **tied** for first ___. (place - tie = 平局，非"系")
 
 ### E. 常识主题类 (P3-背景知识)
 
 **E1_生活常识/场景常识**: 日常生活、文化背景知识
 - 信号: 医院、学校、车站、比赛等固定场景
+- 例句:
+  - In a library, you should keep ___. (quiet - 场景常识)
+  - When you see a red traffic light, you must ___. (stop - 生活常识)
 
 **E2_主题主旨与人物共情**: 理解文章主旨、人物心理
 - 信号: 成长、亲情、挫折、鼓励、帮助等主题
+- 例句:
+  - Her mother always ___ her when she was sad. (comforted/encouraged - 亲情主题)
+  - After many failures, he finally ___. (succeeded - 成长主题)
 
 ## 判断流程（语义→逻辑→结构→词项）
 
@@ -630,18 +699,14 @@ class ClozeAnalyzerV2:
 
 5. **E类（常识主题）通常作为辅助考点**: 除非纯粹依靠常识判断
 
-### A1 选择必要条件（必须同时满足）
+### A1 选择积极条件（满足其一即可选择）
 
-A1 "上下文语义推断" 只能在以下情况选择：
-- ✅ 空本身单靠选项看不出来，必须靠上下文补充信息
-- ✅ 文中没有明确的逻辑关系词（but, so, because 等）
-- ✅ 没有固定搭配特征（动词+介词等）
-- ✅ 没有代词指代需要解析（否则选 A3）
-- ✅ 没有情感态度词（否则选 A5）
-- ✅ 没有时态/语态等语法限制（否则选 C3）
-- ✅ 不是单纯的词汇辨析（否则选 D1）
+A1 "上下文语义推断" 在以下情况选择：
+- ✅ 空格前后有铺垫信息，需要综合理解才能判断
+- ✅ 选项是普通词汇，无特殊搭配/逻辑关系特征
+- ✅ 必须跨句理解才能确定答案（不止看空格所在句子）
 
-**如果不确定，请选择更具体的考点类型，不要用 A1 作为兜底。**
+**注意**: 如果发现逻辑关系词、固定搭配特征、代词指代等，请选择更具体的考点类型。
 
 ### 多标签规则（教学严谨性）
 
@@ -660,9 +725,35 @@ A1 "上下文语义推断" 只能在以下情况选择：
 - 每个干扰选项都应该有排除理由
 - 排除理由应基于考点特征（如：词义不符、搭配错误、逻辑矛盾等）
 
+## 置信度输出
+
+在 JSON 中必须包含置信度字段，- confidence: "high" / "medium" / "low"
+- confidence_reason: 为什么是这个置信度（如"明确存在转折词however"）
+
+**置信度判断标准：**
+- high: 有明确的信号词/语法特征，符合决策树规则
+- medium: 需要一定推理，但有合理依据
+- low: 模糊情况，需要人工复核
+
+## word_analysis 分场景规则
+
+**必填场景**（必须生成 word_analysis）：
+- A类（语篇理解）: 需要理解词汇在上下文中的含义
+- D类（词汇选项）: 核心是词汇辨析
+- E类（常识主题）: 涉及主题相关词汇
+
+**可选场景**（如涉及词汇辨析则生成，否则可省略）：
+- B类（逻辑关系）: 如区分 but/however/therefore 的词义差异
+- C类（句法语法）: 如涉及词汇形式变化（如 doing/done/to do）
+
+**省略示例**: 如果是 B2 转折对比，选项是 but/however/yet，主要考察逻辑关系而非词义，可省略 word_analysis
+**生成示例**: 如果是 B3 因果关系，选项是 because/since/for，需要区分这些词的细微差别，则生成 word_analysis
+
 ## 输出格式（严格JSON）
 
 {{
+    "confidence": "high",
+    "confidence_reason": "明确存在转折词however",
     "primary_point": {{
         "code": "考点编码 (如 A1, B2, C2, D1)",
         "name": "考点名称",
@@ -729,9 +820,7 @@ A1 "上下文语义推断" 只能在以下情况选择：
         "textbook_source": "课本出处",
         "context_meaning": "当前语境中的含义"
     }}
-}}
-
-**重要：word_analysis 对所有 16 种考点类型都是必填的。必须首先列出正确答案 "{correct_word}" 的分析（包含 definition 和 dimensions），然后列出三个干扰词的分析。所有四个选项都必须包含。这样教师可以在讲义中展示 4 个选项词的区别，帮助学生理解为什么选正确答案、为什么不选其他选项。"""
+}}"""
 
 
     TEXTBOOK_SECTION_TEMPLATE = """## 课本释义参照（用于熟词僻义判断 D2）
@@ -903,7 +992,10 @@ A1 "上下文语义推断" 只能在以下情况选择：
                 translation=data.get("translation"),
                 explanation=data.get("explanation"),
                 confusion_words=data.get("confusion_words", []),
-                tips=data.get("tips")
+                tips=data.get("tips"),
+                # === 置信度字段 ===
+                confidence=data.get("confidence", "medium"),
+                confidence_reason=data.get("confidence_reason", "")
             )
 
             # === word_analysis 对所有考点类型都是必填的（柯林斯词典表格）===
