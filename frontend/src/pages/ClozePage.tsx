@@ -24,15 +24,9 @@ import type { ColumnsType } from 'antd/es/table'
 
 import { getClozeList, getClozeFilters, deleteCloze, batchDeleteClozes } from '@/services/clozeService'
 import type { ClozePassage, ClozeFiltersResponse, ClozeFilter } from '@/types'
+import { CATEGORY_COLORS, POINT_TYPE_BY_CODE } from '@/types'
 import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
 import { ClozeHandoutView } from '@/components/clozeHandout/ClozeHandoutView'
-
-const POINT_TYPE_COLORS: Record<string, string> = {
-  '固定搭配': 'green',
-  '词义辨析': 'orange',
-  '熟词僻义': 'purple',
-  '词汇': 'blue',
-}
 
 // 次要列（抽屉打开时隐藏）
 const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'topic', 'word_count', 'point_distribution']
@@ -240,18 +234,26 @@ export function ClozePage() {
         if (!record.points?.length) return '-'
         const dist: Record<string, number> = {}
         record.points.forEach(p => {
-          if (p.point_type) {
-            dist[p.point_type] = (dist[p.point_type] || 0) + 1
+          // V2: 使用 primary_point_code 字段（字符串），V1: 兼容 point_type
+          const code = (p as any).primary_point_code || p.point_type
+          if (code) {
+            dist[code] = (dist[code] || 0) + 1
           }
         })
         if (Object.keys(dist).length === 0) return '-'
         return (
           <Space wrap size={[4, 4]}>
-            {Object.entries(dist).map(([type, count]) => (
-              <Tag key={type} color={POINT_TYPE_COLORS[type] || 'default'}>
-                {type} ({count})
+            {Object.entries(dist).map(([code, count]) => {
+            // 根据编码首字母获取大类颜色
+            const category = code[0] || 'A'
+            const color = CATEGORY_COLORS[category] || 'default'
+            const displayName = POINT_TYPE_BY_CODE[code]?.name || code
+            return (
+              <Tag key={code} color={color}>
+                {code} {displayName} ({count})
               </Tag>
-            ))}
+            )
+          })}
           </Space>
         )
       },

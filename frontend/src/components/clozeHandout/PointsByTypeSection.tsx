@@ -9,11 +9,11 @@
  * V2 更新：
  * - 支持按 16 种考点编码分组（A1-E2）
  * - 使用 PointTag 组件显示考点标签
- * - 按大类顺序展示（A → B → C → D → E）
+ * - 只展示有数据的考点类型
  */
 import { Typography, Divider, Tag, Table } from 'antd'
 import type { PointsByType, PointWordData } from '@/types'
-import { CATEGORY_COLORS, CATEGORY_NAMES } from '@/types'
+import { CATEGORY_COLORS, CATEGORY_NAMES, ALL_POINT_TYPES, POINT_TYPE_BY_CODE } from '@/types'
 import { PointTag } from '@/components/cloze/PointTag'
 
 const { Title, Text } = Typography
@@ -32,23 +32,17 @@ interface PointsByTypeSectionProps {
 // ============================================================================
 
 export function PointsByTypeSection({ pointsByType, edition }: PointsByTypeSectionProps) {
-  // 获取所有考点编码并排序
-  const pointCodes = Object.keys(pointsByType).sort((a, b) => {
-    // 按大类 (A-E) 和数字排序
-    const categoryOrder = (c: string) => c.charCodeAt(0)
-    const numOrder = (c: string) => parseInt(c.slice(1)) || 0
-    const catA = categoryOrder(a), catB = categoryOrder(b)
-    if (catA !== catB) return catA - catB
-    return numOrder(a) - numOrder(b)
-  })
+  // 使用完整的 16 种考点类型列表（按顺序）
+  const allPointCodes = ALL_POINT_TYPES.map(pt => pt.code)
 
-  // 判断是否有任何考点
-  const hasAnyPoints = pointCodes.some(code => {
+  // 获取有数据的考点编码
+  const codesWithData = allPointCodes.filter(code => {
     const group = pointsByType[code]
     return group && group.points && group.points.length > 0
   })
 
-  if (!hasAnyPoints) {
+  // 判断是否有任何考点数据
+  if (codesWithData.length === 0) {
     return (
       <section className="handout-page part-page">
         <Title level={3}>三、考点分类</Title>
@@ -58,29 +52,25 @@ export function PointsByTypeSection({ pointsByType, edition }: PointsByTypeSecti
     )
   }
 
-  // 追踪是否是第一个区块（显示"三、考点分类"标题）
-  let isFirstSection = true
-
   return (
     <>
-      {pointCodes.map(code => {
+      {/* 考点详细展示页（只展示有数据的类型） */}
+      {codesWithData.map((code, idx) => {
         const group = pointsByType[code]
-        if (!group || !group.points || group.points.length === 0) return null
+        const typeDef = POINT_TYPE_BY_CODE[code]
 
-        const section = (
+        return (
           <PointCodeSection
             key={code}
             code={code}
-            name={group.name}
-            category={group.category}
-            categoryName={group.category_name}
+            name={group?.name || typeDef?.name || code}
+            category={group?.category || code[0]}
+            categoryName={group?.category_name || typeDef?.categoryName || CATEGORY_NAMES[code[0]]}
             points={group.points}
             edition={edition}
-            showMainTitle={isFirstSection}
+            showMainTitle={idx === 0}
           />
         )
-        isFirstSection = false
-        return section
       })}
     </>
   )

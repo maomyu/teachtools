@@ -132,6 +132,8 @@ class ClozePointResponse(ClozePointBase):
     id: int
     sentence: Optional[str] = None
     point_verified: bool = False
+    primary_point_code: Optional[str] = None  # V2 主考点编码 (A1-E2)
+    rejection_points: List[RejectionPointBase] = []  # 排错点列表
 
     class Config:
         from_attributes = True

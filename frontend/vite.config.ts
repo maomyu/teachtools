@@ -13,6 +13,7 @@ export default defineConfig({
   server: {
     port: 5157,
     proxy: {
+      // 统一代理所有 /api 请求到后端
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,

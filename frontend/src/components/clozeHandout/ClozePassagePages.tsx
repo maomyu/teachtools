@@ -8,8 +8,8 @@
  *
  * V2 更新：使用 CATEGORY_COLORS 替代旧的 POINT_TYPE_COLORS
  */
-import { Typography, Divider, Tag, Space } from 'antd'
-import type { ClozeHandoutPassage } from '@/types'
+import { Typography, Divider, Tag, Space, Table } from 'antd'
+import type { ClozeHandoutPassage, ClozePoint } from '@/types'
 import { CATEGORY_COLORS, LEGACY_TO_NEW_CODE } from '@/types'
 
 const { Title, Text } = Typography
@@ -212,6 +212,11 @@ export function ClozePassagePages({ passage, edition, index, total }: ClozePassa
           </div>
         </section>
       )}
+
+      {/* 详细解析页（仅教师版） */}
+      {edition === 'teacher' && points && points.length > 0 && (
+        <ClozeExplanationPages points={points} sourceText={sourceText} />
+      )}
     </>
   )
 }
@@ -253,4 +258,198 @@ function ClozeContent({ content, points }: ClozeContentProps) {
       })}
     </div>
   )
+}
+
+// ============================================================================
+//  子组件：教师版详细解析页
+// ============================================================================
+
+interface ClozeExplanationPagesProps {
+  points: ClozePoint[]
+  sourceText: string
+}
+
+function ClozeExplanationPages({ points, sourceText }: ClozeExplanationPagesProps) {
+  // 每页显示 1 个解析
+  const ITEMS_PER_PAGE = 1
+  const pages: ClozePoint[][] = []
+  for (let i = 0; i < points.length; i += ITEMS_PER_PAGE) {
+    pages.push(points.slice(i, i + ITEMS_PER_PAGE))
+  }
+
+  return (
+    <>
+      {pages.map((pagePoints, pageIdx) => (
+        <section key={`explanation-${pageIdx}`} className="handout-page part-page">
+          {pageIdx === 0 ? (
+            <>
+              <Title level={3}>答案解析</Title>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary">{sourceText}</Text>
+              </div>
+              <Divider style={{ margin: '12px 0' }} />
+            </>
+          ) : (
+            <>
+              <Title level={4}>答案解析（续 {pageIdx + 1}）</Title>
+              <Divider style={{ margin: '12px 0' }} />
+            </>
+          )}
+
+          {pagePoints.map((point, idx) => (
+            <PointExplanationCard
+              key={point.id || idx}
+              point={point}
+            />
+          ))}
+        </section>
+      ))}
+    </>
+  )
+}
+
+// ============================================================================
+//  单个考点解析卡片
+// ============================================================================
+
+interface PointExplanationCardProps {
+  point: ClozePoint
+}
+
+function PointExplanationCard({ point }: PointExplanationCardProps) {
+  const correctWord = point.correct_word || point.correct_answer || '-'
+
+  // 构建选项数据：选项词 + 排除理由
+  const optionData = buildOptionData(point, correctWord)
+
+  return (
+    <div style={{
+      marginBottom: 16,
+      padding: 12,
+      border: '1px solid #e8e8e8',
+      borderRadius: 4,
+      background: '#fafafa'
+    }}>
+      {/* 标题行：题号 + 正确答案 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <Tag color="blue" style={{ fontSize: '12pt', padding: '2px 8px' }}>
+          {point.blank_number}.
+        </Tag>
+        <Text strong style={{ fontSize: '13pt' }}>{correctWord}</Text>
+      </div>
+
+      {/* 1. 选项表格：选项词 + 排除理由 */}
+      <Table
+        dataSource={optionData}
+        size="small"
+        pagination={false}
+        bordered
+        tableLayout="fixed"
+        style={{ width: '100%', marginBottom: 12 }}
+        columns={[
+          {
+            title: '选项',
+            dataIndex: 'option',
+            key: 'option',
+            width: 60,
+            align: 'center',
+            render: (opt: string) => <Text strong>{opt}</Text>
+          },
+          {
+            title: '选项词',
+            dataIndex: 'word',
+            key: 'word',
+            width: 80,
+            align: 'center',
+            render: (word: string, record: OptionRow) => (
+              <Text type={record.isCorrect ? 'success' : undefined} strong={record.isCorrect}>
+                {word}
+              </Text>
+            )
+          },
+          {
+            title: '排除理由',
+            dataIndex: 'rejection_reason',
+            key: 'rejection_reason',
+            render: (reason: string, record: OptionRow) => (
+              <Text type={record.isCorrect ? 'success' : 'secondary'} style={{ fontSize: '10pt' }}>
+                {record.isCorrect ? '正确答案' : (reason || '-')}
+              </Text>
+            )
+          }
+        ]}
+      />
+
+      {/* 2. 解析 */}
+      {point.explanation && (
+        <div style={{ marginBottom: 8 }}>
+          <Text type="secondary" style={{ fontSize: '11pt' }}>解析：</Text>
+          <Text style={{ fontSize: '11pt' }}>{point.explanation}</Text>
+        </div>
+      )}
+
+      {/* 3. 解题技巧 */}
+      {point.tips && (
+        <div style={{
+          marginTop: 8,
+          padding: '8px 12px',
+          background: '#e6f7ff',
+          borderRadius: 4,
+          borderLeft: '3px solid #1890ff'
+        }}>
+          <Text type="secondary" style={{ fontSize: '11pt' }}>解题技巧：</Text>
+          <Text style={{ fontSize: '11pt', marginLeft: 4 }}>{point.tips}</Text>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+//  辅助函数：构建选项数据（选项词 + 排除理由）
+// ============================================================================
+
+interface OptionRow {
+  key: string
+  option: string          // A/B/C/D
+  word: string            // 选项词
+  rejection_reason: string // 排除理由
+  isCorrect: boolean      // 是否正确答案
+}
+
+function buildOptionData(point: ClozePoint, correctWord: string): OptionRow[] {
+  const options = point.options || {}
+  const wordAnalysis = point.word_analysis || {}
+  const rejectionPoints = point.rejection_points || []
+
+  // 构建排错点映射：option_word -> explanation + point_code
+  const rejectionMap = new Map<string, string>()
+  rejectionPoints.forEach(rp => {
+    const reason = rp.explanation
+      ? `${rp.point_code ? `[${rp.point_code}] ` : ''}${rp.explanation}`
+      : rp.point_code || ''
+    rejectionMap.set(rp.option_word, reason)
+  })
+
+  const optionKeys = ['A', 'B', 'C', 'D'] as const
+
+  return optionKeys.map(opt => {
+    const word = options[opt] || '-'
+    const isCorrect = word === correctWord
+
+    // 优先从 rejection_points 获取，否则从 word_analysis 获取
+    let rejectionReason = rejectionMap.get(word) || ''
+    if (!rejectionReason && wordAnalysis) {
+      const analysis = wordAnalysis[word] as { rejection_reason?: string } | undefined
+      rejectionReason = analysis?.rejection_reason || ''
+    }
+
+    return {
+      key: opt,
+      option: opt,
+      word,
+      rejection_reason: rejectionReason,
+      isCorrect
+    }
+  })
 }

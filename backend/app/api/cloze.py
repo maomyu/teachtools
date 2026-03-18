@@ -238,11 +238,13 @@ async def list_cloze(
     # 构建响应
     items = []
     for p in passages:
-        # 统计考点分布
+        # 统计考点分布 (V2: 使用 primary_point_code， V1: 兼容 point_type)
         point_dist = {}
         for point in p.points:
-            if point.point_type:
-                point_dist[point.point_type] = point_dist.get(point.point_type, 0) + 1
+            # V2 优先使用 primary_point_code
+            code = point.primary_point_code or point.point_type
+            if code:
+                point_dist[code] = point_dist.get(code, 0) + 1
 
         source = None
         if p.paper:
@@ -277,6 +279,7 @@ async def list_cloze(
                 confusion_words=json.loads(pt.confusion_words) if pt.confusion_words else None,
                 sentence=pt.sentence,
                 point_verified=pt.point_verified if hasattr(pt, 'point_verified') else False,
+                primary_point_code=pt.primary_point_code if hasattr(pt, 'primary_point_code') else None,
                 # 固定搭配
                 phrase=pt.phrase if hasattr(pt, 'phrase') else None,
                 similar_phrases=json.loads(pt.similar_phrases) if hasattr(pt, 'similar_phrases') and pt.similar_phrases else None,
@@ -1406,6 +1409,23 @@ async def _get_cloze_passages_with_points(db: AsyncSession, grade: str, topic: s
         # 构建考点列表
         points_list = []
         for pt in p.points:
+            # 查询排错点（仅教师版）
+            rejection_points_data = []
+            if edition == 'teacher':
+                rp_query = select(ClozeRejectionPoint).where(
+                    ClozeRejectionPoint.cloze_point_id == pt.id
+                )
+                rp_result = await db.execute(rp_query)
+                rejection_points_records = rp_result.scalars().all()
+                rejection_points_data = [
+                    {
+                        "option_word": rp.option_word,
+                        "point_code": rp.point_code,
+                        "explanation": rp.explanation
+                    }
+                    for rp in rejection_points_records
+                ]
+
             point_data = ClozePointResponse(
                 id=pt.id,
                 blank_number=pt.blank_number,
@@ -1427,7 +1447,8 @@ async def _get_cloze_passages_with_points(db: AsyncSession, grade: str, topic: s
                 context_meaning=pt.context_meaning if hasattr(pt, 'context_meaning') else None,
                 similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words and edition == 'teacher' else None,
                 is_rare_meaning=pt.is_rare_meaning if hasattr(pt, 'is_rare_meaning') else False,
-                tips=pt.tips if hasattr(pt, 'tips') and edition == 'teacher' else None
+                tips=pt.tips if hasattr(pt, 'tips') and edition == 'teacher' else None,
+                rejection_points=rejection_points_data
             )
             points_list.append(point_data)
 

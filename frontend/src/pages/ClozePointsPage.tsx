@@ -1,19 +1,21 @@
 /**
  * 考点汇总页面
  *
- * [INPUT]: 依赖 antd 组件、@/services/clozeService、@/types
+ * [INPUT]: 依赖 antd 组件、@/services/clozeService、@/types、react-router-dom
  * [OUTPUT]: 对外提供 ClozePointsPage 组件
  * [POS]: frontend/src/pages 的考点汇总页面
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  *
  * 功能：
- * - 按考点类型筛选（v1: 固定搭配/词义辨析/熟词僻义，v2: 16种考点）
- * - 按大类筛选（A-E）
+ * - 级联筛选器（大类 A-E → 具体考点 A1-E2）
+ * - 快捷筛选标签（P1核心/高频等）
+ * - URL 参数持久化（筛选条件可分享）
  * - 按年级、关键词搜索
  * - 展示考点词/短语、释义、出现次数
  * - 例句列表（含出处链接，可跳转到原文）
  */
 import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Table,
   Select,
@@ -24,12 +26,13 @@ import {
   Input,
   Button,
   Typography,
+  Cascader,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import { getPointList, getClozeFilters, getPointTypesByCategory } from '@/services/clozeService'
 import type { PointSummary, PointOccurrence, ClozeFiltersResponse, PointType, PointTypeByCategoryResponse } from '@/types'
-import { CATEGORY_COLORS } from '@/types'
+import { CATEGORY_COLORS, ALL_POINT_TYPES, POINT_TYPE_BY_CODE } from '@/types'
 import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
 
 const { Text } = Typography
@@ -60,21 +63,56 @@ const POINT_TYPE_COLORS_V1: Record<string, string> = {
   '其他': 'default',
 }
 
-// v1 考点类型选项（向后兼容）
-const POINT_TYPE_OPTIONS_V1 = [
-  { value: '固定搭配', label: '固定搭配' },
-  { value: '词义辨析', label: '词义辨析' },
-  { value: '熟词僻义', label: '熟词僻义' },
+// ============================================================================
+//  级联筛选器数据结构
+// ============================================================================
+
+/** 级联选择器选项：大类 → 具体考点 */
+const POINT_CASCADER_OPTIONS = [
+  {
+    value: 'A',
+    label: 'A 语篇理解类',
+    children: ALL_POINT_TYPES
+      .filter(pt => pt.category === 'A')
+      .map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })),
+  },
+  {
+    value: 'B',
+    label: 'B 逻辑关系类',
+    children: ALL_POINT_TYPES
+      .filter(pt => pt.category === 'B')
+      .map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })),
+  },
+  {
+    value: 'C',
+    label: 'C 句法语法类',
+    children: ALL_POINT_TYPES
+      .filter(pt => pt.category === 'C')
+      .map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })),
+  },
+  {
+    value: 'D',
+    label: 'D 词汇选项类',
+    children: ALL_POINT_TYPES
+      .filter(pt => pt.category === 'D')
+      .map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })),
+  },
+  {
+    value: 'E',
+    label: 'E 常识主题类',
+    children: ALL_POINT_TYPES
+      .filter(pt => pt.category === 'E')
+      .map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })),
+  },
 ]
 
-// v2 大类选项
-const CATEGORY_OPTIONS = [
-  { value: 'A', label: 'A - 语篇理解类' },
-  { value: 'B', label: 'B - 逻辑关系类' },
-  { value: 'C', label: 'C - 句法语法类' },
-  { value: 'D', label: 'D - 词汇选项类' },
-  { value: 'E', label: 'E - 常识主题类' },
-]
+/** 快捷筛选标签配置 */
+const QUICK_FILTER_TAGS = [
+  { key: 'P1', label: 'P1 核心考点', category: undefined, pointType: undefined, priority: 1 },
+  { key: 'A', label: '语篇理解', category: 'A', pointType: undefined, priority: undefined },
+  { key: 'B', label: '逻辑关系', category: 'B', pointType: undefined, priority: undefined },
+  { key: 'D', label: '词汇选项', category: 'D', pointType: undefined, priority: undefined },
+] as const
 
 // 获取考点颜色（兼容新旧格式）
 const getPointColor = (pointType: string, primaryPoint?: PointType): string => {
@@ -92,10 +130,15 @@ const getPointLabel = (pointType: string, primaryPoint?: PointType): string => {
   if (primaryPoint?.code) {
     return POINT_CODE_TO_SHORT_NAME[primaryPoint.code] || primaryPoint.name || primaryPoint.code
   }
-  // v2: point_type 格式为 "D1 常规词义辨析"，提取编码
+  // v2: point_type 格式为 "D1 常规词义辨析"， 提取编码
   if (pointType && pointType.match(/^[A-E]\d\s/)) {
     const code = pointType.split(' ')[0]  // 提取 "D1"
     return POINT_CODE_TO_SHORT_NAME[code] || pointType
+  }
+  // v2: point_type 本身就是编码格式 (如 "A1", "B2")
+  if (pointType && pointType.match(/^[A-E]\d$/)) {
+    const def = POINT_TYPE_BY_CODE[pointType]
+    return def ? `${pointType} ${def.name}` : POINT_CODE_TO_SHORT_NAME[pointType] || pointType
   }
   // v1: 使用旧类型（固定搭配/词义辨析/熟词僻义）
   return pointType
@@ -109,7 +152,21 @@ const SECONDARY_COLUMN_KEYS = ['definition', 'occurrences', 'source']
 // ============================================================================
 
 export function ClozePointsPage() {
-  // 状态管理
+  // =========================================================================
+  //  URL 参数持久化
+  // =========================================================================
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // 从 URL 读取初始值
+  const urlCategory = searchParams.get('cat') || undefined
+  const urlPointType = searchParams.get('type') || undefined
+  const urlPriority = searchParams.get('priority') ? Number(searchParams.get('priority')) : undefined
+  const urlGrade = searchParams.get('grade') || undefined
+  const urlKeyword = searchParams.get('q') || ''
+
+  // =========================================================================
+  //  状态管理
+  // =========================================================================
   const [loading, setLoading] = useState(false)
   const [pointsList, setPointsList] = useState<PointSummary[]>([])
   const [total, setTotal] = useState(0)
@@ -123,16 +180,29 @@ export function ClozePointsPage() {
     semesters: [],
   })
 
-  // 筛选条件
-  const [pointType, setPointType] = useState<string | undefined>()
-  const [category, setCategory] = useState<string | undefined>() // v2 大类筛选
-  const [priority, setPriority] = useState<number | undefined>() // 优先级筛选
-  const [grade, setGrade] = useState<string | undefined>()
-  const [keyword, setKeyword] = useState<string>('')
-  const [searchKeyword, setSearchKeyword] = useState<string>('')
+  // 筛选条件（从 URL 初始化）
+  const [category, setCategory] = useState<string | undefined>(urlCategory)
+  const [pointType, setPointType] = useState<string | undefined>(urlPointType)
+  const [priority, setPriority] = useState<number | undefined>(urlPriority)
+  const [grade, setGrade] = useState<string | undefined>(urlGrade)
+  const [keyword, setKeyword] = useState<string>(urlKeyword)
+  const [searchKeyword, setSearchKeyword] = useState<string>(urlKeyword)
 
-  // v2 考点类型数据（按大类分组）- TODO: 未来用于考点类型筛选
+  // v2 考点类型数据（按大类分组）- 预留用于未来扩展
   const [_pointTypesByCategory, setPointTypesByCategory] = useState<PointTypeByCategoryResponse>({} as PointTypeByCategoryResponse)
+
+  // =========================================================================
+  //  URL 同步
+  // =========================================================================
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (category) params.set('cat', category)
+    if (pointType) params.set('type', pointType)
+    if (priority) params.set('priority', String(priority))
+    if (grade) params.set('grade', grade)
+    if (searchKeyword) params.set('q', searchKeyword)
+    setSearchParams(params, { replace: true })
+  }, [category, pointType, priority, grade, searchKeyword, setSearchParams])
 
   // 分页
   const [page, setPage] = useState(1)
@@ -152,7 +222,7 @@ export function ClozePointsPage() {
   // 加载考点列表
   useEffect(() => {
     loadPointsList()
-  }, [pointType, category, grade, searchKeyword, page, size])
+  }, [pointType, grade, searchKeyword, page, size])
 
   const loadFilters = async () => {
     try {
@@ -176,7 +246,8 @@ export function ClozePointsPage() {
     setLoading(true)
     try {
       const response = await getPointList({
-        point_type: pointType,
+        point_type: pointType || undefined,
+        category: !pointType ? category : undefined, // 大类筛选
         grade,
         keyword: searchKeyword || undefined,
         page,
@@ -331,60 +402,109 @@ export function ClozePointsPage() {
 
       {/* 筛选器 */}
       <Card style={{ marginBottom: 16, flexShrink: 0 }}>
-        <Space wrap>
-          {/* v2 大类筛选 */}
-          <Select
-            placeholder="选择大类 (A-E)"
-            allowClear
-            style={{ width: 160 }}
-            value={category}
-            onChange={(val) => {
-              setCategory(val)
-              setPointType(undefined) // 切换大类时清空具体类型
-            }}
-            options={CATEGORY_OPTIONS}
-          />
-          {/* 优先级筛选 */}
-          <Select
-            placeholder="优先级"
-            allowClear
-            style={{ width: 120 }}
-            value={priority}
-            onChange={setPriority}
-            options={[
-              { value: 1, label: 'P1 核心考点' },
-              { value: 2, label: 'P2 重要考点' },
-              { value: 3, label: 'P3 一般考点' },
-            ]}
-          />
-          {/* v2/v1 具体考点类型筛选 */}
-          <Select
-            placeholder="考点类型"
-            allowClear
-            style={{ width: 140 }}
-            value={pointType}
-            onChange={setPointType}
-            options={POINT_TYPE_OPTIONS_V1}
-          />
-          <Select
-            placeholder="选择年级"
-            allowClear
-            style={{ width: 120 }}
-            value={grade}
-            onChange={setGrade}
-            options={filters.grades.map(g => ({ value: g, label: g }))}
-          />
-          <Input.Search
-            placeholder="搜索考点词..."
-            allowClear
-            style={{ width: 200 }}
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            onSearch={handleSearch}
-          />
-          <Button type="primary" onClick={handleSearch}>
-            搜索
-          </Button>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {/* 快捷筛选标签 */}
+          <Space wrap>
+            {QUICK_FILTER_TAGS.map(tag => {
+              const isActive = tag.priority !== undefined
+                ? priority === tag.priority
+                : tag.category !== undefined
+                  ? category === tag.category && !pointType
+                  : false
+              return (
+                <Tag
+                  key={tag.key}
+                  color={isActive ? 'blue' : 'default'}
+                  style={{ cursor: 'pointer', padding: '2px 8px' }}
+                  onClick={() => {
+                    if (tag.priority !== undefined) {
+                      // P1 核心考点：设置优先级，清除其他筛选
+                      setPriority(isActive ? undefined : tag.priority)
+                      setCategory(undefined)
+                      setPointType(undefined)
+                    } else if (tag.category !== undefined) {
+                      // 大类标签：设置大类，清除具体考点
+                      setCategory(isActive ? undefined : tag.category)
+                      setPointType(undefined)
+                      setPriority(undefined)
+                    }
+                    setPage(1)
+                  }}
+                >
+                  {tag.label}
+                </Tag>
+              )
+            })}
+          </Space>
+
+          {/* 详细筛选器 */}
+          <Space wrap>
+            {/* 级联筛选器：大类 → 具体考点 */}
+            <Cascader
+              placeholder="考点类型（大类/具体）"
+              allowClear
+              showSearch
+              style={{ width: 220 }}
+              value={pointType ? [pointType[0], pointType] : (category ? [category] : undefined)}
+              options={POINT_CASCADER_OPTIONS}
+              onChange={(value: (string | number)[]) => {
+                if (!value || value.length === 0) {
+                  // 清空
+                  setCategory(undefined)
+                  setPointType(undefined)
+                } else if (value.length === 1) {
+                  // 只选了大类
+                  setCategory(value[0] as string)
+                  setPointType(undefined)
+                } else {
+                  // 选了具体考点
+                  setPointType(value[1] as string)
+                  setCategory(value[0] as string)
+                }
+                setPage(1)
+              }}
+              changeOnSelect
+              expandTrigger="hover"
+            />
+            {/* 优先级筛选 */}
+            <Select
+              placeholder="优先级"
+              allowClear
+              style={{ width: 120 }}
+              value={priority}
+              onChange={(val) => {
+                setPriority(val)
+                setPage(1)
+              }}
+              options={[
+                { value: 1, label: 'P1 核心考点' },
+                { value: 2, label: 'P2 重要考点' },
+                { value: 3, label: 'P3 一般考点' },
+              ]}
+            />
+            <Select
+              placeholder="选择年级"
+              allowClear
+              style={{ width: 120 }}
+              value={grade}
+              onChange={(val) => {
+                setGrade(val)
+                setPage(1)
+              }}
+              options={filters.grades.map(g => ({ value: g, label: g }))}
+            />
+            <Input.Search
+              placeholder="搜索考点词..."
+              allowClear
+              style={{ width: 200 }}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onSearch={handleSearch}
+            />
+            <Button type="primary" onClick={handleSearch}>
+              搜索
+            </Button>
+          </Space>
         </Space>
       </Card>
 

@@ -314,6 +314,53 @@ export const LEGACY_TO_NEW_CODE: Record<string, string> = {
   '熟词僻义': 'D2',
 }
 
+// ============================================================================
+//  V2 考点分类系统（5大类16个考点）
+// ============================================================================
+
+/** 考点类型完整定义 */
+export interface PointTypeDefinition {
+  code: string           // A1, B2, etc.
+  category: string       // A, B, C, D, E
+  categoryName: string   // 语篇理解类, 逻辑关系类, etc.
+  name: string           // 上下文语义推断, 转折对比, etc.
+  priority: number       // 1, 2, 3 (P1-核心, P2-重要, P3-一般)
+  description?: string   // 详细定义
+}
+
+/** 所有 16 种考点类型的完整定义（按优先级和编码排序） */
+export const ALL_POINT_TYPES: PointTypeDefinition[] = [
+  // A. 语篇理解类 (P1-核心)
+  { code: 'A1', category: 'A', categoryName: '语篇理解类', name: '上下文语义推断', priority: 1, description: '根据空前空后及前后句推断空格应表达的大致语义' },
+  { code: 'A2', category: 'A', categoryName: '语篇理解类', name: '复现与照应', priority: 1, description: '前文或后文出现与答案意思相同、相近、相反或同一主题链上的词' },
+  { code: 'A3', category: 'A', categoryName: '语篇理解类', name: '代词指代', priority: 1, description: '通过代词回指确定人物、事物或信息对象' },
+  { code: 'A4', category: 'A', categoryName: '语篇理解类', name: '情节/行为顺序', priority: 1, description: '根据故事发展顺序、动作先后顺序判断哪个词最合理' },
+  { code: 'A5', category: 'A', categoryName: '语篇理解类', name: '情感态度', priority: 1, description: '根据人物心情、作者评价、语境色彩判断褒贬方向' },
+  // B. 逻辑关系类 (P1-核心)
+  { code: 'B1', category: 'B', categoryName: '逻辑关系类', name: '并列一致', priority: 1, description: '前后内容语义一致、方向一致、性质相近' },
+  { code: 'B2', category: 'B', categoryName: '逻辑关系类', name: '转折对比', priority: 1, description: '前后语义相反或预期相反' },
+  { code: 'B3', category: 'B', categoryName: '逻辑关系类', name: '因果关系', priority: 1, description: '前因后果或前果后因' },
+  { code: 'B4', category: 'B', categoryName: '逻辑关系类', name: '其他逻辑关系', priority: 1, description: '递进、让步、条件、举例、总结等' },
+  // C. 句法语法类 (P2-重要)
+  { code: 'C1', category: 'C', categoryName: '句法语法类', name: '词性与句子成分', priority: 2, description: '根据句法位置判断所需词类' },
+  { code: 'C2', category: 'C', categoryName: '句法语法类', name: '固定搭配', priority: 2, description: '某些词必须和特定介词、名词、动词或句型一起使用' },
+  { code: 'C3', category: 'C', categoryName: '句法语法类', name: '语法形式限制', priority: 2, description: '由时态、语态、主谓一致、非谓语等形式规则限制' },
+  // D. 词汇选项类 (P3-一般)
+  { code: 'D1', category: 'D', categoryName: '词汇选项类', name: '常规词义辨析', priority: 3, description: '几个选项词性相同、意思相近，需要根据语境精细区分' },
+  { code: 'D2', category: 'D', categoryName: '词汇选项类', name: '熟词僻义', priority: 3, description: '常见词在特定语境中使用非常见义项' },
+  // E. 常识主题类 (P3-一般)
+  { code: 'E1', category: 'E', categoryName: '常识主题类', name: '生活常识/场景常识', priority: 3, description: '根据现实世界常识判断哪个选项合理' },
+  { code: 'E2', category: 'E', categoryName: '常识主题类', name: '主题主旨与人物共情', priority: 3, description: '从全文主题和人物心理出发理解作者真正想表达的意思' },
+]
+
+/** 按编码快速查找考点类型定义 */
+export const POINT_TYPE_BY_CODE: Record<string, PointTypeDefinition> = Object.fromEntries(
+  ALL_POINT_TYPES.map(pt => [pt.code, pt])
+)
+
+/** 所有考点编码列表（按顺序） */
+export const ALL_POINT_CODES = ALL_POINT_TYPES.map(pt => pt.code)
+
 /** 新编码到旧类型的映射 */
 export const NEW_CODE_TO_LEGACY: Record<string, string> = {
   'C2': '固定搭配',
@@ -359,6 +406,9 @@ export interface ClozePoint {
   similar_words?: Array<{word: string; textbook: string; rare: string}>
   // 通用
   tips?: string
+  // V2 新增
+  primary_point_code?: string  // V2 主考点编码 (A1-E2)
+  rejection_points?: RejectionPoint[]  // 排错点
 }
 
 // 完形词汇

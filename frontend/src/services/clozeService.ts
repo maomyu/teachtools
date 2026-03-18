@@ -38,6 +38,7 @@ export async function getCloze(id: number): Promise<ClozeDetailNewResponse> {
  */
 export async function getPointList(params: {
   point_type?: string
+  category?: string  // 大类筛选 (A/B/C/D/E)
   grade?: string
   keyword?: string
   page?: number
