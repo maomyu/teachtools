@@ -199,13 +199,14 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
   const optionWords = wordAnalysis ? Object.keys(wordAnalysis) : [point.word]
   const dictionarySource = point.dictionary_source || point.occurrences?.[0]?.analysis?.dictionary_source
 
-  // V5: 动态提取维度列名
+  // V5: 动态提取维度列名（排除 rejection_reason，该字段应只在 rejection_points 中显示）
   const dimensionKeys: string[] = []
   optionWords.forEach(word => {
     const dims = wordAnalysis?.[word]?.dimensions
     if (dims) {
       Object.keys(dims).forEach(key => {
-        if (!dimensionKeys.includes(key)) {
+        // 过滤掉 rejection_reason，这是排错点的专用字段，不应作为通用维度列
+        if (!dimensionKeys.includes(key) && key !== 'rejection_reason') {
           dimensionKeys.push(key)
         }
       })
@@ -228,7 +229,11 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
       {/* V5 动态维度表格 */}
       {optionWords.length > 1 ? (
         <Table
-          dataSource={optionWords.map(word => ({ key: word, word, ...wordAnalysis?.[word] }))}
+          dataSource={optionWords.map(word => {
+            // 过滤掉 rejection_reason 字段（应只在 rejection_points 中）
+            const { rejection_reason: _, ...rest } = wordAnalysis?.[word] || {}
+            return { key: word, word, ...rest }
+          })}
           size="small"
           pagination={false}
           bordered
@@ -320,13 +325,14 @@ function WordAnalysisCard({ point, index, pointCode, pointName }: { point: Point
   const analysis = point.word_analysis || {}
   const optionWords = Object.keys(analysis)
 
-  // V5: 动态提取维度列名
+  // V5: 动态提取维度列名（排除 rejection_reason，该字段应只在 rejection_points 中显示）
   const dimensionKeys: string[] = []
   optionWords.forEach(word => {
     const dims = analysis[word]?.dimensions
     if (dims) {
       Object.keys(dims).forEach(key => {
-        if (!dimensionKeys.includes(key)) {
+        // 过滤掉 rejection_reason，这是排错点的专用字段，不应作为通用维度列
+        if (!dimensionKeys.includes(key) && key !== 'rejection_reason') {
           dimensionKeys.push(key)
         }
       })
@@ -346,7 +352,11 @@ function WordAnalysisCard({ point, index, pointCode, pointName }: { point: Point
       {/* V5 动态维度表格 */}
       {optionWords.length > 0 && (
         <Table
-          dataSource={optionWords.map(word => ({ key: word, word, ...analysis[word] }))}
+          dataSource={optionWords.map(word => {
+            // 过滤掉 rejection_reason 字段（应只在 rejection_points 中）
+            const { rejection_reason: _, ...rest } = analysis[word] || {}
+            return { key: word, word, ...rest }
+          })}
           size="small"
           pagination={false}
           bordered

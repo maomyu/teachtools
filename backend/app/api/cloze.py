@@ -1456,11 +1456,18 @@ async def _get_points_by_type(db: AsyncSession, grade: str, topic: str):
 
         # 初始化单词分组
         if word not in grouped[point_code]["words"]:
+            # 过滤 word_analysis 中的 rejection_reason（应只在 rejection_points 中）
+            raw_word_analysis = json.loads(point.word_analysis) if point.word_analysis else None
+            if raw_word_analysis:
+                for w in raw_word_analysis:
+                    if isinstance(raw_word_analysis[w], dict):
+                        raw_word_analysis[w].pop("rejection_reason", None)
+
             grouped[point_code]["words"][word] = {
                 "word": word,
                 "frequency": 0,
                 "definition": point.translation,
-                "word_analysis": json.loads(point.word_analysis) if point.word_analysis else None,
+                "word_analysis": raw_word_analysis,
                 "dictionary_source": point.dictionary_source,
                 "phrase": point.phrase,
                 "similar_phrases": json.loads(point.similar_phrases) if point.similar_phrases else None,
@@ -1476,13 +1483,21 @@ async def _get_points_by_type(db: AsyncSession, grade: str, topic: str):
 
         # 添加出现记录
         source = f"{paper.year}{paper.region}{paper.grade}{paper.exam_type or ''}·完形"
+
+        # 过滤 word_analysis 中的 rejection_reason 字段（应只在 rejection_points 中）
+        analysis_word_analysis = json.loads(point.word_analysis) if point.word_analysis else None
+        if analysis_word_analysis:
+            for w in analysis_word_analysis:
+                if isinstance(analysis_word_analysis[w], dict):
+                    analysis_word_analysis[w].pop("rejection_reason", None)
+
         analysis = PointAnalysis(
             explanation=point.explanation,
             confusion_words=json.loads(point.confusion_words) if point.confusion_words else None,
             tips=point.tips if hasattr(point, 'tips') else None,
             phrase=point.phrase,
             similar_phrases=json.loads(point.similar_phrases) if point.similar_phrases else None,
-            word_analysis=json.loads(point.word_analysis) if point.word_analysis else None,
+            word_analysis=analysis_word_analysis,
             dictionary_source=point.dictionary_source,
             textbook_meaning=point.textbook_meaning,
             textbook_source=point.textbook_source,
@@ -1572,7 +1587,8 @@ async def _get_cloze_passages_with_points(db: AsyncSession, grade: str, topic: s
                     {
                         "option_word": rp.option_word,
                         "point_code": rp.point_code,
-                        "explanation": rp.explanation
+                        "explanation": rp.explanation,
+                        "rejection_reason": rp.rejection_reason  # 添加 rejection_reason
                     }
                     for rp in rejection_points_records
                 ]

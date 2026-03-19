@@ -313,8 +313,7 @@ low:    信号模糊，多考点竞争，建议人工复核
         "干扰词A": {
             "definition": "中文释义",
             "collins_frequency": "柯林斯词频★级",
-            "dimensions": { ... },
-            "rejection_reason": "排除理由（词义层面展开，与rejection_points互补）"
+            "dimensions": { ... }
         },
         "干扰词B": { ... },
         "干扰词C": { ... }

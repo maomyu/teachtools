@@ -437,12 +437,8 @@ function buildOptionData(point: ClozePoint, correctWord: string): OptionRow[] {
     const word = options[opt] || '-'
     const isCorrect = word === correctWord
 
-    // 优先从 rejection_points 获取，否则从 word_analysis 获取
-    let rejectionReason = rejectionMap.get(word) || ''
-    if (!rejectionReason && wordAnalysis) {
-      const analysis = wordAnalysis[word] as { rejection_reason?: string } | undefined
-      rejectionReason = analysis?.rejection_reason || ''
-    }
+    // 从 rejection_points 获取排除理由
+    const rejectionReason = rejectionMap.get(word) || ''
 
     return {
       key: opt,

@@ -40,7 +40,7 @@ class PointAnalysisResult:
     similar_phrases: Optional[List[str]] = None  # 相似短语列表
 
     # 词义辨析专用
-    word_analysis: Optional[Dict] = None  # 三维度分析 {word: {definition, dimensions, rejection_reason}}
+    word_analysis: Optional[Dict] = None  # 三维度分析 {word: {definition, dimensions}}
     dictionary_source: Optional[str] = None  # 词典来源 (柯林斯词典)
 
     # 熟词僻义专用
@@ -164,8 +164,7 @@ class ClozeAnalyzer:
                 "使用对象": "中文描述",
                 "使用场景": "中文描述",
                 "正负态度": "中文描述"
-            }},
-            "rejection_reason": "排除理由"
+            }}
         }},
         "干扰词2": {{
             "definition": "中文释义",
@@ -173,8 +172,7 @@ class ClozeAnalyzer:
                 "使用对象": "中文描述",
                 "使用场景": "中文描述",
                 "正负态度": "中文描述"
-            }},
-            "rejection_reason": "..."
+            }}
         }},
         "干扰词3": {{
             "definition": "中文释义",
@@ -182,8 +180,7 @@ class ClozeAnalyzer:
                 "使用对象": "中文描述",
                 "使用场景": "中文描述",
                 "正负态度": "中文描述"
-            }},
-            "rejection_reason": "..."
+            }}
         }}
     }},
     "confusion_words": [
@@ -821,8 +818,7 @@ A1 "上下文语义推断" 在以下情况选择：
                 "使用对象": "中文描述",
                 "使用场景": "中文描述",
                 "正负态度": "中文描述"
-            }},
-            "rejection_reason": "排除理由"
+            }}
         }},
         "干扰词B": {{
             "definition": "中文释义",
@@ -830,8 +826,7 @@ A1 "上下文语义推断" 在以下情况选择：
                 "使用对象": "中文描述",
                 "使用场景": "中文描述",
                 "正负态度": "中文描述"
-            }},
-            "rejection_reason": "..."
+            }}
         }},
         "干扰词C": {{
             "definition": "中文释义",
@@ -839,8 +834,7 @@ A1 "上下文语义推断" 在以下情况选择：
                 "使用对象": "中文描述",
                 "使用场景": "中文描述",
                 "正负态度": "中文描述"
-            }},
-            "rejection_reason": "..."
+            }}
         }}
     }},
     "dictionary_source": "柯林斯词典",
@@ -1257,8 +1251,7 @@ class PointAnalysisResultV5:
     #   word: {
     #     definition: str,
     #     collins_frequency: str,  # ★新增：柯林斯词频★级
-    #     dimensions: Dict,  # 根据词性动态切换
-    #     rejection_reason: str  # 仅干扰词
+    #     dimensions: Dict  # 根据词性动态切换
     #   }
     # }
     dictionary_source: Optional[str] = None
@@ -1607,8 +1600,7 @@ low:    信号模糊，多考点竞争，建议人工复核
         "干扰词A": {{
             "definition": "中文释义",
             "collins_frequency": "柯林斯词频★级",
-            "dimensions": {{ ... }},
-            "rejection_reason": "排除理由（词义层面展开，与rejection_points互补）"
+            "dimensions": {{ ... }}
         }},
         "干扰词B": {{ ... }},
         "干扰词C": {{ ... }}

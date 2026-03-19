@@ -396,7 +396,6 @@ export interface ClozePoint {
     definition: string
     collins_frequency?: string  // V5: 柯林斯词频
     dimensions?: Record<string, string>  // V5: 动态维度
-    rejection_reason?: string
   }>
   dictionary_source?: string
   // 熟词僻义
@@ -485,7 +484,6 @@ export interface ClozePointNew {
     definition: string
     collins_frequency?: string  // V5: 柯林斯词频★级
     dimensions?: Record<string, string>  // V5: 动态维度（根据词性切换）
-    rejection_reason?: string
   }>
   dictionary_source?: string
 
@@ -608,7 +606,6 @@ export interface PointAnalysis {
     definition: string
     collins_frequency?: string  // V5: 柯林斯词频★级
     dimensions?: Record<string, string>  // V5: 动态维度
-    rejection_reason?: string
   }>
   dictionary_source?: string
 
@@ -780,7 +777,6 @@ export interface WordAnalysisPoint {
     definition: string
     collins_frequency?: string  // V5: 柯林斯词频
     dimensions?: Record<string, string>  // V5: 动态维度
-    rejection_reason?: string
   }>
   dictionary_source?: string
   occurrences: PointOccurrence[]
@@ -816,7 +812,6 @@ export interface PointWordData {
     definition: string
     collins_frequency?: string  // V5: 柯林斯词频
     dimensions?: Record<string, string>  // V5: 动态维度
-    rejection_reason?: string
   }>
   dictionary_source?: string
   // 固定搭配字段
