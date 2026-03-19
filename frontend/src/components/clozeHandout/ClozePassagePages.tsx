@@ -422,13 +422,16 @@ function buildOptionData(point: ClozePoint, correctWord: string): OptionRow[] {
   const wordAnalysis = point.word_analysis || {}
   const rejectionPoints = point.rejection_points || []
 
-  // 构建排错点映射：option_word -> explanation + point_code
+  // 构建排错点映射：option_word -> rejection_reason + rejection_code
+  // 优先使用 V5 字段，回退到旧字段
   const rejectionMap = new Map<string, string>()
   rejectionPoints.forEach(rp => {
-    const reason = rp.explanation
-      ? `${rp.point_code ? `[${rp.point_code}] ` : ''}${rp.explanation}`
-      : rp.point_code || ''
-    rejectionMap.set(rp.option_word, reason)
+    const code = rp.rejection_code || rp.point_code || ''
+    const reason = rp.rejection_reason || rp.explanation || ''
+    const displayReason = reason
+      ? `${code ? `[${code}] ` : ''}${reason}`
+      : code
+    rejectionMap.set(rp.option_word, displayReason)
   })
 
   const optionKeys = ['A', 'B', 'C', 'D'] as const

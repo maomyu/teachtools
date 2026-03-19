@@ -575,15 +575,20 @@ async def upload_paper_with_progress(
                                             )
                                             db.add(sec_point)
 
-                                    # 保存排错点（V2 多标签）
+                                    # 保存排错点（V5 字段：rejection_code / rejection_reason）
                                     if analysis_result.rejection_points:
                                         for rp in analysis_result.rejection_points:
-                                            point_code = rp.get("code") or rp.get("point_code") or "D1"
+                                            # 优先取 rejection_code，fallback 到 code/point_code
+                                            rejection_code = rp.get("rejection_code") or rp.get("code") or rp.get("point_code") or "D1"
+                                            # 优先取 rejection_reason，fallback 到 explanation
+                                            rejection_reason = rp.get("rejection_reason") or rp.get("explanation") or ""
                                             rej_point = ClozeRejectionPoint(
                                                 cloze_point_id=point.id,
                                                 option_word=rp.get("option_word"),
-                                                point_code=point_code,
-                                                explanation=rp.get("explanation")
+                                                point_code=rejection_code,
+                                                rejection_code=rejection_code,
+                                                explanation=rejection_reason,
+                                                rejection_reason=rejection_reason
                                             )
                                             db.add(rej_point)
 

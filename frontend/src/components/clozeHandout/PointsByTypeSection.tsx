@@ -198,19 +198,29 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
   const optionWords = wordAnalysis ? Object.keys(wordAnalysis) : [point.word]
   const dictionarySource = point.dictionary_source || point.occurrences?.[0]?.analysis?.dictionary_source
 
-  // V5: 动态提取维度列名（排除 rejection_reason，该字段应只在 rejection_points 中显示）
+  // C2 固定搭配只显示的维度
+  const C2_ONLY_DIMENSIONS = ['固定搭配', '搭配含义', '使用场景']
+  // 所有类型都不显示的维度
+  const HIDDEN_DIMENSIONS = ['rejection_reason', '与其他选项核心差异']
+
+  // V5: 动态提取维度列名
   const dimensionKeys: string[] = []
   optionWords.forEach(word => {
     const dims = wordAnalysis?.[word]?.dimensions
     if (dims) {
       Object.keys(dims).forEach(key => {
-        // 过滤掉 rejection_reason，这是排错点的专用字段，不应作为通用维度列
-        if (!dimensionKeys.includes(key) && key !== 'rejection_reason') {
+        // 过滤掉隐藏维度
+        if (!dimensionKeys.includes(key) && !HIDDEN_DIMENSIONS.includes(key)) {
           dimensionKeys.push(key)
         }
       })
     }
   })
+
+  // 对于 C2 固定搭配，只保留专用维度
+  const finalDimensionKeys = pointCode === 'C2'
+    ? dimensionKeys.filter(k => C2_ONLY_DIMENSIONS.includes(k))
+    : dimensionKeys
 
   return (
     <div style={{ marginBottom: 20, padding: 12, border: '1px solid #d9d9d9', borderRadius: 4 }}>
@@ -253,8 +263,8 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
               width: 130,
               render: (def: string) => <div className="dimension-cell">{def || '-'}</div>
             },
-            // V5: 动态维度列
-            ...dimensionKeys.map(dimKey => ({
+            // V5: 动态维度列（已过滤隐藏维度，C2 只显示专用维度）
+            ...finalDimensionKeys.map(dimKey => ({
               title: dimKey,
               key: dimKey,
               width: 80,

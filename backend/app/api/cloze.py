@@ -527,7 +527,9 @@ async def _build_point_v2_response(
         rejection_points.append(RejectionPointBase(
             option_word=rp.option_word,
             point_code=rp.point_code,
-            explanation=rp.explanation
+            explanation=rp.explanation,
+            rejection_code=rp.rejection_code,
+            rejection_reason=rp.rejection_reason
         ))
 
     # 4. 确定旧类型（向后兼容）
@@ -1474,7 +1476,8 @@ async def _get_cloze_passages_with_points(db: AsyncSession, grade: str, topic: s
                         "option_word": rp.option_word,
                         "point_code": rp.point_code,
                         "explanation": rp.explanation,
-                        "rejection_reason": rp.rejection_reason  # 添加 rejection_reason
+                        "rejection_code": rp.rejection_code,
+                        "rejection_reason": rp.rejection_reason
                     }
                     for rp in rejection_points_records
                 ]

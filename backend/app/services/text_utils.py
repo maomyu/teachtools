@@ -129,7 +129,7 @@ async def normalize_with_ai(content: str, expected_count: int) -> str:
 
 注意：只返回 JSON，不要有其他内容。"""
 
-        response = await qwen.chat(prompt)
+        response = qwen.chat(prompt)
 
         # 尝试解析 JSON
         # 处理可能的 markdown 代码块

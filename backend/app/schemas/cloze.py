@@ -61,8 +61,12 @@ class SecondaryPointBase(BaseModel):
 class RejectionPointBase(BaseModel):
     """排错点"""
     option_word: str             # 被排除的选项词
-    point_code: str              # 排错依据编码
-    explanation: Optional[str] = None  # 排除理由
+    # V2 旧字段（兼容）
+    point_code: Optional[str] = None
+    explanation: Optional[str] = None
+    # V5 新字段
+    rejection_code: Optional[str] = None   # 排错依据编码
+    rejection_reason: Optional[str] = None # 排除原因
 
     class Config:
         from_attributes = True

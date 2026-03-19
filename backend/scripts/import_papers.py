@@ -277,27 +277,41 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                         session.add(cloze_point)
                         await session.flush()  # 获取 cloze_point.id
 
-                        # 保存辅助考点（V2 多标签）
+                        # 保存辅助考点（V5 字段重命名）
                         if analysis.success and analysis.secondary_points:
                             from app.models.cloze import ClozeSecondaryPoint
                             for idx, sp in enumerate(analysis.secondary_points):
+                                # point_code 有 NOT NULL 约束，必须填充
+                                code = sp.get("code") or sp.get("point_code") or "D1"
                                 sec_point = ClozeSecondaryPoint(
                                     cloze_point_id=cloze_point.id,
-                                    point_code=sp.get("point_code"),
+                                    point_code=code,
+                                    weight=sp.get("weight", "auxiliary"),
                                     explanation=sp.get("explanation"),
                                     sort_order=idx
                                 )
                                 session.add(sec_point)
 
-                        # 保存排错点（V2 多标签）
+                        # 保存排错点（V5 字段：rejection_code / rejection_reason）
                         if analysis.success and analysis.rejection_points:
                             from app.models.cloze import ClozeRejectionPoint
                             for rp in analysis.rejection_points:
+                                code = rp.get("rejection_code") or rp.get("code") or "D1"
+                                # 优先取 rejection_reason，fallback 到 explanation（与 cloze.py API 保持一致）
+                                reason = rp.get("rejection_reason") or rp.get("explanation") or ""
+
+                                # 验证日志：当 rejection_reason 为空时打印警告
+                                if not reason:
+                                    print(f"    ⚠ 排错点 {rp.get('option_word')} 缺少 rejection_reason")
+
                                 rej_point = ClozeRejectionPoint(
                                     cloze_point_id=cloze_point.id,
                                     option_word=rp.get("option_word"),
-                                    point_code=rp.get("point_code"),
-                                    explanation=rp.get("explanation")
+                                    # point_code 有 NOT NULL 约束，必须填充
+                                    point_code=code,
+                                    rejection_code=code,
+                                    explanation=reason,
+                                    rejection_reason=reason
                                 )
                                 session.add(rej_point)
                         result["cloze_points"] += 1

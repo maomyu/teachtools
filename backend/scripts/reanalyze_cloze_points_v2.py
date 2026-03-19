@@ -167,14 +167,18 @@ analysis.confusion_words, ensure_ascii=False)
                             )
                             session.add(sec_point)
 
-                    # 添加新的排错点
+                    # 添加新的排错点（V5 字段）
                     if analysis.rejection_points:
                         for rp in analysis.rejection_points:
+                            rejection_code = rp.get("rejection_code") or rp.get("code") or rp.get("point_code") or "D1"
+                            rejection_reason = rp.get("rejection_reason") or rp.get("explanation") or ""
                             rej_point = ClozeRejectionPoint(
                                 cloze_point_id=point.id,
                                 option_word=rp.get("option_word"),
-                                point_code=rp.get("point_code"),
-                                explanation=rp.get("explanation")
+                                point_code=rejection_code,
+                                rejection_code=rejection_code,
+                                explanation=rejection_reason,
+                                rejection_reason=rejection_reason
                             )
                             session.add(rej_point)
 

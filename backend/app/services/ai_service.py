@@ -243,3 +243,28 @@ class QwenService:
         except Exception as e:
             print(f"作文模板生成失败: {e}")
             return {}
+
+    def chat(self, prompt: str) -> str:
+        """
+        通用对话接口 - 直接发送prompt获取回复
+
+        Args:
+            prompt: 完整的提示词
+
+        Returns:
+            AI回复的文本内容
+        """
+        try:
+            response = Generation.call(
+                model=self.model,
+                prompt=prompt,
+                result_format='message'
+            )
+
+            if response.status_code == 200:
+                return response.output.choices[0].message.content
+            return ""
+
+        except Exception as e:
+            print(f"AI chat调用失败: {e}")
+            return ""

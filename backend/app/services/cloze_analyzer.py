@@ -490,6 +490,7 @@ low:    信号模糊，多考点竞争，建议人工复核
 - ❌ 不得输出confusion_words字段（已合并到word_analysis）
 - ❌ 不得在is_rare_meaning=true时省略rare_meaning_info任何子字段
 - ❌ 不得用「感觉顺」或「语感」作为explanation理由
+- ❌ 不得省略任何干扰项的rejection_points，每个干扰项必须有rejection_code和rejection_reason
 """
 
     TEXTBOOK_SECTION_TEMPLATE = """## 课本释义参照（用于熟词僻义判断 D2）
@@ -656,10 +657,22 @@ low:    信号模糊，多考点竞争，建议人工复核
             # 4. 处理 rejection_points（字段重命名）
             rejection_points = []
             for rp in data.get("rejection_points", []):
+                option_word = rp.get("option_word", "")
+                code = rp.get("rejection_code", rp.get("code", ""))
+                reason = rp.get("rejection_reason", rp.get("explanation", ""))
+
+
+                # 验证日志： 当 rejection_reason 为空时记录警告
+                if option_word and not reason:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"排错点 {option_word} 缺少 rejection_reason")
+
+
                 rejection_points.append({
-                    "option_word": rp.get("option_word", ""),
-                    "rejection_code": rp.get("rejection_code", rp.get("code", "")),  # 兼容旧字段
-                    "rejection_reason": rp.get("rejection_reason", rp.get("explanation", ""))  # 兼容旧字段
+                    "option_word": option_word,
+                    "rejection_code": code,
+                    "rejection_reason": reason
                 })
 
             # 5. 处理 word_analysis

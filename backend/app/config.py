@@ -30,7 +30,7 @@ class Settings:
     PROCESSED_DIR: Path = Path(os.getenv("PROCESSED_DIR", "./data/processed"))
     RAW_PAPERS_DIR: Path = Path(os.getenv(
         "RAW_PAPERS_DIR",
-        str(BASE_DIR / "2022-2025北京市各区各学校试题汇总")
+        str(BASE_DIR / "02-北京2020-2025中考" / "北京2020-2025中考")
     ))
 
     # 日志
