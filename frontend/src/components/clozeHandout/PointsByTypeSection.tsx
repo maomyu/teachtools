@@ -199,6 +199,19 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
   const optionWords = wordAnalysis ? Object.keys(wordAnalysis) : [point.word]
   const dictionarySource = point.dictionary_source || point.occurrences?.[0]?.analysis?.dictionary_source
 
+  // V5: 动态提取维度列名
+  const dimensionKeys: string[] = []
+  optionWords.forEach(word => {
+    const dims = wordAnalysis?.[word]?.dimensions
+    if (dims) {
+      Object.keys(dims).forEach(key => {
+        if (!dimensionKeys.includes(key)) {
+          dimensionKeys.push(key)
+        }
+      })
+    }
+  })
+
   return (
     <div style={{ marginBottom: 20, padding: 12, border: '1px solid #d9d9d9', borderRadius: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -212,7 +225,7 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
         )}
       </div>
 
-      {/* 柯林斯词典表格 - 展示选项词、释义、三维度（使用对象、使用场景、正负态度） */}
+      {/* V5 动态维度表格 */}
       {optionWords.length > 1 ? (
         <Table
           dataSource={optionWords.map(word => ({ key: word, word, ...wordAnalysis?.[word] }))}
@@ -227,7 +240,7 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
               dataIndex: 'word',
               key: 'word',
               width: 60,
-              render: (word: string) => <Text>{word}</Text>  // 不高亮正确答案
+              render: (word: string) => <Text>{word}</Text>
             },
             {
               title: '释义',
@@ -236,35 +249,18 @@ function GenericPointCard({ point, index, pointCode, pointName }: { point: Point
               width: 130,
               render: (def: string) => <div className="dimension-cell">{def || '-'}</div>
             },
-            {
-              title: '使用对象',
-              key: 'user',
-              width: 85,
-              render: (_: unknown, record: { dimensions?: { 使用对象: string } }) => (
-                <div className="dimension-cell">{record.dimensions?.使用对象 || '-'}</div>
+            // V5: 动态维度列
+            ...dimensionKeys.map(dimKey => ({
+              title: dimKey,
+              key: dimKey,
+              width: 80,
+              render: (_: unknown, record: { dimensions?: Record<string, string> }) => (
+                <div className="dimension-cell">{record.dimensions?.[dimKey] || '-'}</div>
               )
-            },
-            {
-              title: '使用场景',
-              key: 'scene',
-              width: 85,
-              render: (_: unknown, record: { dimensions?: { 使用场景: string } }) => (
-                <div className="dimension-cell">{record.dimensions?.使用场景 || '-'}</div>
-              )
-            },
-            {
-              title: '正负态度',
-              key: 'attitude',
-              width: 50,
-              render: (_: unknown, record: { dimensions?: { 正负态度: string } }) => (
-                <div className="dimension-cell">{record.dimensions?.正负态度 || '-'}</div>
-              )
-            }
-            // 不展示排除理由、例句 - 这些放在文章后面的答案解析中
+            }))
           ]}
         />
       ) : (
-        // 没有 word_analysis 时的回退展示 - 也不显示正确答案词
         <div>
           <Text type="secondary">暂无选项词分析数据</Text>
         </div>
@@ -319,10 +315,23 @@ function WordAnalysisStyleSection(props: BaseSectionProps) {
   )
 }
 
-// 词义辨析卡片
-function WordAnalysisCard({ point, edition, index, pointCode, pointName }: { point: PointWordData; edition: string; index: number; pointCode?: string; pointName?: string }) {
+// 词义辨析卡片（V5 动态维度）
+function WordAnalysisCard({ point, index, pointCode, pointName }: { point: PointWordData; edition: string; index: number; pointCode?: string; pointName?: string }) {
   const analysis = point.word_analysis || {}
   const optionWords = Object.keys(analysis)
+
+  // V5: 动态提取维度列名
+  const dimensionKeys: string[] = []
+  optionWords.forEach(word => {
+    const dims = analysis[word]?.dimensions
+    if (dims) {
+      Object.keys(dims).forEach(key => {
+        if (!dimensionKeys.includes(key)) {
+          dimensionKeys.push(key)
+        }
+      })
+    }
+  })
 
   return (
     <div style={{ marginBottom: 24 }}>
@@ -334,7 +343,7 @@ function WordAnalysisCard({ point, edition, index, pointCode, pointName }: { poi
         {/* 不显示正确答案词和出现次数，避免剧透 */}
       </div>
 
-      {/* 三维度表格 - 不展示排除理由和例句（剧透答案） */}
+      {/* V5 动态维度表格 */}
       {optionWords.length > 0 && (
         <Table
           dataSource={optionWords.map(word => ({ key: word, word, ...analysis[word] }))}
@@ -349,7 +358,7 @@ function WordAnalysisCard({ point, edition, index, pointCode, pointName }: { poi
               dataIndex: 'word',
               key: 'word',
               width: 60,
-              render: (word: string) => <Text>{word}</Text>  // 不高亮正确答案，避免剧透
+              render: (word: string) => <Text>{word}</Text>
             },
             {
               title: '释义',
@@ -358,31 +367,15 @@ function WordAnalysisCard({ point, edition, index, pointCode, pointName }: { poi
               width: 130,
               render: (def: string) => <div className="dimension-cell">{def || '-'}</div>
             },
-            {
-              title: '使用对象',
-              key: 'user',
-              width: 85,
-              render: (_: unknown, record: { dimensions?: { 使用对象: string } }) => (
-                <div className="dimension-cell">{record.dimensions?.使用对象 || '-'}</div>
+            // V5: 动态维度列
+            ...dimensionKeys.map(dimKey => ({
+              title: dimKey,
+              key: dimKey,
+              width: 80,
+              render: (_: unknown, record: { dimensions?: Record<string, string> }) => (
+                <div className="dimension-cell">{record.dimensions?.[dimKey] || '-'}</div>
               )
-            },
-            {
-              title: '使用场景',
-              key: 'scene',
-              width: 85,
-              render: (_: unknown, record: { dimensions?: { 使用场景: string } }) => (
-                <div className="dimension-cell">{record.dimensions?.使用场景 || '-'}</div>
-              )
-            },
-            {
-              title: '正负态度',
-              key: 'attitude',
-              width: 50,
-              render: (_: unknown, record: { dimensions?: { 正负态度: string } }) => (
-                <div className="dimension-cell">{record.dimensions?.正负态度 || '-'}</div>
-              )
-            }
-            // 不展示排除理由、例句 - 这些放在文章后面的答案解析中
+            }))
           ]}
         />
       )}
@@ -395,7 +388,7 @@ function WordAnalysisCard({ point, edition, index, pointCode, pointName }: { poi
 // ============================================================================
 
 function FixedPhraseStyleSection(props: BaseSectionProps) {
-  const { code, name, points, edition, showMainTitle, color, totalPoints } = props
+  const { code, name, points, showMainTitle, color, totalPoints } = props
   // 每页最多 6 个
   const MAX_PER_PAGE = 6
   const pages: PointWordData[][] = []

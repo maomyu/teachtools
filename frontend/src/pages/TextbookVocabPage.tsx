@@ -4,7 +4,7 @@
  * 提供课本单词的浏览、搜索、增删改查功能
  * 用于熟词僻义判断的参照基准
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Card,
   Table,
@@ -21,7 +21,6 @@ import {
   Form,
   Popconfirm,
   Statistic,
-  Divider,
 } from 'antd'
 import {
   SearchOutlined,
@@ -43,7 +42,7 @@ import {
 } from '@/services/textbookService'
 import type { TextbookVocab, TextbookVocabStats, TextbookVocabCreate } from '@/services/textbookService'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 const { Search } = Input
 
 // 出版社选项

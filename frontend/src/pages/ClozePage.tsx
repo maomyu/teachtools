@@ -18,18 +18,31 @@ import {
   Radio,
   Button,
   Popconfirm,
+  Cascader,
 } from 'antd'
 import { UnorderedListOutlined, BookOutlined, DeleteOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import { getClozeList, getClozeFilters, deleteCloze, batchDeleteClozes } from '@/services/clozeService'
 import type { ClozePassage, ClozeFiltersResponse, ClozeFilter } from '@/types'
-import { CATEGORY_COLORS, POINT_TYPE_BY_CODE } from '@/types'
+import { CATEGORY_COLORS, POINT_TYPE_BY_CODE, ALL_POINT_TYPES } from '@/types'
 import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
 import { ClozeHandoutView } from '@/components/clozeHandout/ClozeHandoutView'
 
 // 次要列（抽屉打开时隐藏）
 const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'topic', 'word_count', 'point_distribution']
+
+// ============================================================================
+//  考点类型级联筛选器
+// ============================================================================
+
+const POINT_CASCADER_OPTIONS = [
+  { value: 'A', label: 'A 语篇理解类', children: ALL_POINT_TYPES.filter(pt => pt.category === 'A').map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })) },
+  { value: 'B', label: 'B 逻辑关系类', children: ALL_POINT_TYPES.filter(pt => pt.category === 'B').map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })) },
+  { value: 'C', label: 'C 句法语法类', children: ALL_POINT_TYPES.filter(pt => pt.category === 'C').map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })) },
+  { value: 'D', label: 'D 词汇选项类', children: ALL_POINT_TYPES.filter(pt => pt.category === 'D').map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })) },
+  { value: 'E', label: 'E 常识主题类', children: ALL_POINT_TYPES.filter(pt => pt.category === 'E').map(pt => ({ value: pt.code, label: `${pt.code} ${pt.name}` })) },
+]
 
 export function ClozePage() {
   // ============================================================================
@@ -54,6 +67,7 @@ export function ClozePage() {
 
   const [grade, setGrade] = useState<string | undefined>()
   const [topic, setTopic] = useState<string | undefined>()
+  const [category, setCategory] = useState<string | undefined>()
   const [pointType, setPointType] = useState<string | undefined>()
   const [examType, setExamType] = useState<string | undefined>()
   const [semester, setSemester] = useState<string | undefined>()
@@ -80,7 +94,7 @@ export function ClozePage() {
 
   useEffect(() => {
     loadClozeList()
-  }, [grade, topic, pointType, examType, semester, region, year, page, size])
+  }, [grade, topic, pointType, category, examType, semester, region, year, page, size])
 
   const loadFilters = async () => {
     try {
@@ -98,6 +112,7 @@ export function ClozePage() {
         grade,
         topic,
         point_type: pointType,
+        category,
         exam_type: examType,
         semester,
         region,
@@ -392,13 +407,28 @@ export function ClozePage() {
                 (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
             />
-            <Select
-              placeholder="考点类型"
+            <Cascader
+              placeholder="考点类型（大类/具体）"
               allowClear
-              style={{ width: 120 }}
-              value={pointType}
-              onChange={setPointType}
-              options={filters.point_types.map(t => ({ value: t, label: t }))}
+              showSearch
+              style={{ width: 200 }}
+              value={pointType ? [pointType[0], pointType] : (category ? [category] : undefined)}
+              options={POINT_CASCADER_OPTIONS}
+              onChange={(value: (string | number)[]) => {
+                if (!value || value.length === 0) {
+                  setCategory(undefined)
+                  setPointType(undefined)
+                } else if (value.length === 1) {
+                  setCategory(value[0] as string)
+                  setPointType(undefined)
+                } else {
+                  setCategory(value[0] as string)
+                  setPointType(value[1] as string)
+                }
+                setPage(1)
+              }}
+              changeOnSelect
+              expandTrigger="hover"
             />
           </Space>
 

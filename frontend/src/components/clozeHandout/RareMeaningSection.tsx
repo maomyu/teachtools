@@ -55,7 +55,7 @@ interface RareMeaningItemProps {
 }
 
 function RareMeaningItem({ point, edition, index }: RareMeaningItemProps) {
-  const { word, frequency, textbook_meaning, textbook_source, context_meaning, similar_words, occurrences } = point
+  const { word, frequency, textbook_meaning, textbook_source, context_meaning, similar_words } = point
 
   return (
     <div className="rare-meaning-item" style={{ padding: '16px 0', borderBottom: '1px solid #f0f0f0' }}>

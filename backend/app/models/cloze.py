@@ -82,6 +82,11 @@ class ClozePoint(Base):
     primary_point_code = Column(String(20))  # 主考点编码: A1, B2, C2, D1, E1, etc.
     legacy_point_type = Column(String(50))   # 兼容旧类型: 固定搭配/词义辨析/熟词僻义
 
+    # === V5 新增字段 ===
+    confidence = Column(String(20), default="medium")  # high / medium / low
+    confidence_reason = Column(Text)  # 置信度依据
+    rare_meaning_info = Column(Text)  # JSON: {common_meaning, context_meaning, textbook_source}
+
     # === 旧考点分类（保留兼容） ===
     point_type = Column(String(50))  # 固定搭配, 词义辨析, 熟词僻义 (不再有CHECK约束)
     point_detail = Column(Text)  # 考点详解
@@ -131,12 +136,16 @@ class ClozeSecondaryPoint(Base):
     """辅助考点关联表
 
     每个空格可以有多个辅助考点，用于补充说明
+
+    V5 新增：
+    - weight: auxiliary (辅助) / co-primary (联合主考点，A5+D1融合场景)
     """
     __tablename__ = "cloze_secondary_points"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     cloze_point_id = Column(Integer, ForeignKey("cloze_points.id"), nullable=False)
     point_code = Column(String(20), nullable=False)  # 考点编码: A1, B2, etc.
+    weight = Column(String(20), default="auxiliary")  # V5: auxiliary / co-primary
     explanation = Column(Text)  # 该辅助考点的解析
     sort_order = Column(Integer, default=0)  # 排序
 
@@ -144,24 +153,30 @@ class ClozeSecondaryPoint(Base):
     cloze_point = relationship("ClozePoint", back_populates="secondary_points")
 
     def __repr__(self):
-        return f"<ClozeSecondaryPoint(point_code={self.point_code})>"
+        return f"<ClozeSecondaryPoint(point_code={self.point_code}, weight={self.weight})>"
 
 
 class ClozeRejectionPoint(Base):
     """排错点关联表
 
     记录每个干扰选项的排除依据
+
+    V5 新增：
+    - rejection_code: 排错依据编码 (替代 point_code)
+    - rejection_reason: 排除原因 (替代 explanation)
     """
     __tablename__ = "cloze_rejection_points"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     cloze_point_id = Column(Integer, ForeignKey("cloze_points.id"), nullable=False)
     option_word = Column(String(255), nullable=False)  # 被排除的选项词
-    point_code = Column(String(20), nullable=False)  # 排错依据编码
-    explanation = Column(Text)  # 为什么排除
+    point_code = Column(String(20))  # 排错依据编码 (V2 兼容字段)
+    rejection_code = Column(String(20))  # V5: 排错依据编码
+    explanation = Column(Text)  # V2 兼容字段
+    rejection_reason = Column(Text)  # V5: 排除原因
 
     # 关系
     cloze_point = relationship("ClozePoint", back_populates="rejection_points")
 
     def __repr__(self):
-        return f"<ClozeRejectionPoint(option={self.option_word}, reason={self.point_code})>"
+        return f"<ClozeRejectionPoint(option={self.option_word}, code={self.rejection_code or self.point_code})>"

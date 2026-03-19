@@ -12,7 +12,6 @@ import {
   Typography,
   Spin,
   Empty,
-  Space,
   Button,
 } from 'antd'
 
@@ -20,7 +19,7 @@ import { searchVocabulary } from '@/services/vocabularyService'
 import type { Vocabulary, VocabularyOccurrence } from '@/types'
 import { OccurrenceCard } from './OccurrenceCard'
 
-const { Text, Paragraph } = Typography
+const { Text } = Typography
 
 /** 筛选条件类型 */
 export interface VocabularyFilters {

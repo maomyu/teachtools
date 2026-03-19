@@ -93,7 +93,7 @@ export interface PointTagGroupProps {
 //  辅助组件
 // ============================================================================
 
-/** 辅助考点标签（带解析说明） */
+/** 辅助考点标签（带解析说明，V5 支持 co-primary） */
 function SecondaryPointTag({
   point,
   size,
@@ -106,10 +106,14 @@ function SecondaryPointTag({
   onClick?: () => void
 }) {
   const displayName = getPointDisplayName(point.point_code)
+  const isCoPrimary = point.weight === 'co-primary'
 
   const tooltipContent = (
     <div>
-      <div><strong>{displayName}</strong></div>
+      <div>
+        <strong>{displayName}</strong>
+        {isCoPrimary && <span style={{ color: '#fa8c16', marginLeft: 4 }}>（联合主考点）</span>}
+      </div>
       {point.explanation && (
         <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 2 }}>
           {point.explanation}
@@ -118,14 +122,26 @@ function SecondaryPointTag({
     </div>
   )
 
+  // V5: co-primary 使用金色虚线边框
+  const tagStyle = isCoPrimary
+    ? {
+        fontSize: size === 'l' ? 11 : size === 'xs' ? 9 : 10,
+        background: '#fffbe6',
+        borderColor: '#ffc53d',
+        borderStyle: 'dashed' as const,
+        color: '#d48806',
+      }
+    : { fontSize: size === 'l' ? 11 : size === 'xs' ? 9 : 10 }
+
   return (
     <Tooltip title={tooltipContent} mouseEnterDelay={0.3}>
       <Tag
-        className={styles.secondaryTag}
-        style={{ fontSize: size === 'l' ? 11 : size === 'xs' ? 9 : 10 }}
+        className={isCoPrimary ? '' : styles.secondaryTag}
+        style={tagStyle}
         onClick={onClick}
       >
         {displayName}
+        {isCoPrimary && <span style={{ marginLeft: 2 }}>⚡</span>}
       </Tag>
     </Tooltip>
   )

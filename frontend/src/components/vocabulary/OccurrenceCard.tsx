@@ -6,7 +6,7 @@
  * [POS]: frontend/src/components/vocabulary 的例句卡片
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { Tag, Typography, Space } from 'antd'
+import { Typography } from 'antd'
 
 import type { VocabularyOccurrence } from '@/types'
 

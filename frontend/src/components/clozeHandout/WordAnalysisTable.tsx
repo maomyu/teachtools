@@ -55,7 +55,7 @@ interface WordAnalysisItemProps {
 }
 
 function WordAnalysisItem({ point, edition, index }: WordAnalysisItemProps) {
-  const { word, frequency, definition, word_analysis, dictionary_source, occurrences } = point
+  const { word, frequency, definition, word_analysis, dictionary_source } = point
 
   // 如果没有 word_analysis，显示简单格式
   if (!word_analysis || Object.keys(word_analysis).length === 0) {

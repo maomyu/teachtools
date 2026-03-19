@@ -133,12 +133,13 @@ export function ClozeDetailContent({
   //  文本处理
   // ============================================================================
 
-  // 分割原文 - 支持统一的 (数字) 格式
+  // 分割原文 - 支持双格式: (数字) 和 __ 数字 __
   const contentParts = useMemo(() => {
     if (!cloze?.content) return []
 
-    // 匹配 (数字) 格式的空格标记
-    const BLANK_REGEX = /\((\d+)\)/g
+    // 匹配两种格式: (数字) 或 __ 数字 __
+    // 捕获组1: (数字) 格式，捕获组2: __ 数字 __ 格式
+    const BLANK_REGEX = /(?:\((\d+)\))|(?:__\s*(\d+)\s*__)/g
     const result: (string | number)[] = []
     let lastIndex = 0
     let match
@@ -148,8 +149,9 @@ export function ClozeDetailContent({
       if (match.index > lastIndex) {
         result.push(cloze.content.slice(lastIndex, match.index))
       }
-      // 添加空格编号
-      result.push(parseInt(match[1]))
+      // 添加空格编号（从两个捕获组中取值）
+      const blankNum = parseInt(match[1] || match[2])
+      result.push(blankNum)
       lastIndex = match.index + match[0].length
     }
 
@@ -197,11 +199,18 @@ export function ClozeDetailContent({
   //  滚动定位
   // ============================================================================
 
-  // 滚动到空格位置
-  const scrollToBlank = useCallback((blankNumber: number) => {
+  // 滚动到空格位置 - 支持重试机制
+  const scrollToBlank = useCallback((blankNumber: number, attempts = 0) => {
     const element = blankRefs.current.get(blankNumber)
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      console.log(`[scrollToBlank] 成功定位到空格 ${blankNumber}`)
+    } else if (attempts < 5) {
+      // 元素尚未渲染，延迟重试
+      console.log(`[scrollToBlank] 空格 ${blankNumber} 元素未找到，重试 ${attempts + 1}/5`)
+      setTimeout(() => scrollToBlank(blankNumber, attempts + 1), 100)
+    } else {
+      console.warn(`[scrollToBlank] 定位失败: 空格 ${blankNumber} 不存在，当前可用的空格:`, Array.from(blankRefs.current.keys()))
     }
   }, [])
 
@@ -437,8 +446,21 @@ export function ClozeDetailContent({
               </div>
             )}
 
-            {/* 词义辨析专用内容 - 三维度分析表格 (v1: 词义辨析, v2: D1) */}
-            {(pointType === '词义辨析' || primaryPoint?.code === 'D1') && (point as any).word_analysis && (
+            {/* 词义辨析专用内容 - V5 动态维度分析表格 (v1: 词义辨析, v2: D1) */}
+            {(pointType === '词义辨析' || primaryPoint?.code === 'D1') && (point as any).word_analysis && (() => {
+              // 动态提取维度列名
+              const analysisEntries = Object.entries((point as any).word_analysis)
+              const dimensionKeys: string[] = []
+              analysisEntries.forEach(([, data]: [string, any]) => {
+                if (data.dimensions) {
+                  Object.keys(data.dimensions).forEach(key => {
+                    if (!dimensionKeys.includes(key)) {
+                      dimensionKeys.push(key)
+                    }
+                  })
+                }
+              })
+              return (
               <div style={{ marginTop: 8 }}>
                 {(point as any).dictionary_source && (
                   <Text type="secondary" style={{ fontSize: 12, marginBottom: 6, display: 'block' }}>
@@ -451,13 +473,13 @@ export function ClozeDetailContent({
                       <tr style={{ background: '#f5f5f5' }}>
                         <th style={{ padding: '5px 8px', border: '1px solid #e8e8e8', whiteSpace: 'nowrap' }}>单词</th>
                         <th style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>释义</th>
-                        <th style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>使用对象</th>
-                        <th style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>使用场景</th>
-                        <th style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>正负态度</th>
+                        {dimensionKeys.map(key => (
+                          <th key={key} style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>{key}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {Object.entries((point as any).word_analysis).map(([word, data]: [string, any]) => (
+                      {analysisEntries.map(([word, data]: [string, any]) => (
                         <tr key={word} style={{ background: word === point.correct_word ? '#e6f7ff' : 'white' }}>
                           <td style={{ padding: '5px 8px', border: '1px solid #e8e8e8', whiteSpace: 'nowrap' }}>
                             <Text strong={word === point.correct_word}>{word}</Text>
@@ -465,22 +487,19 @@ export function ClozeDetailContent({
                           <td style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>
                             <Text type="secondary" style={{ fontSize: 11 }}>{data.definition}</Text>
                           </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>
-                            {data.dimensions?.使用对象 || '-'}
-                          </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>
-                            {data.dimensions?.使用场景 || '-'}
-                          </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>
-                            {data.dimensions?.正负态度 || '-'}
-                          </td>
+                          {dimensionKeys.map(key => (
+                            <td key={key} style={{ padding: '5px 8px', border: '1px solid #e8e8e8' }}>
+                              {data.dimensions?.[key] || '-'}
+                            </td>
+                          ))}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </div>
-            )}
+              )
+            })()}
 
             {/* 熟词僻义专用内容 (v1: 熟词僻义, v2: D2) */}
             {(pointType === '熟词僻义' || primaryPoint?.code === 'D2') && (point as any).textbook_meaning && (

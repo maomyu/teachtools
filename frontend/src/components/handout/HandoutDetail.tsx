@@ -270,7 +270,7 @@ interface PassageContentProps {
   index: number
 }
 
-function PassageContent({ passage, edition, index }: PassageContentProps) {
+function PassageContent({ passage, edition, index: _index }: PassageContentProps) {
   const sourceText = passage.source
     ? `${passage.source.year} ${passage.source.region} ${passage.source.exam_type}`
     : '来源未知'

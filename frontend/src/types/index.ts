@@ -250,6 +250,7 @@ export interface PointType {
 /** 辅助考点 */
 export interface SecondaryPoint {
   point_code: string
+  weight?: 'auxiliary' | 'co-primary'  // V5: auxiliary (辅助) / co-primary (联合主考点)
   explanation?: string
 }
 
@@ -257,7 +258,9 @@ export interface SecondaryPoint {
 export interface RejectionPoint {
   option_word: string
   point_code: string
-  explanation?: string
+  rejection_code?: string  // V5: 排错依据编码
+  rejection_reason?: string  // V5: 排除原因
+  explanation?: string  // V2 兼容
 }
 
 /** 考点类型列表响应 */
@@ -388,14 +391,11 @@ export interface ClozePoint {
   // 固定搭配
   phrase?: string
   similar_phrases?: string[]
-  // 词义辨析
+  // 词义辨析（V5 动态维度）
   word_analysis?: Record<string, {
     definition: string
-    dimensions?: {
-      使用对象: string
-      使用场景: string
-      正负态度: string
-    }
+    collins_frequency?: string  // V5: 柯林斯词频
+    dimensions?: Record<string, string>  // V5: 动态维度
     rejection_reason?: string
   }>
   dictionary_source?: string
@@ -462,6 +462,10 @@ export interface ClozePointNew {
   secondary_points: SecondaryPoint[]  // 辅助考点
   rejection_points: RejectionPoint[]  // 排错点
 
+  // === V5 新增字段 ===
+  confidence?: 'high' | 'medium' | 'low'  // 置信度
+  confidence_reason?: string              // 置信度依据
+
   // === 兼容旧系统 ===
   legacy_point_type?: string          // 旧类型: 固定搭配/词义辨析/熟词僻义
   point_type?: string                 // 保留兼容
@@ -476,20 +480,23 @@ export interface ClozePointNew {
   phrase?: string
   similar_phrases?: string[]
 
-  // 词义辨析专用字段
+  // 词义辨析专用字段（V5 动态维度）
   word_analysis?: Record<string, {
     definition: string
-    dimensions?: {
-      使用对象: string
-      使用场景: string
-      正负态度: string
-    }
+    collins_frequency?: string  // V5: 柯林斯词频★级
+    dimensions?: Record<string, string>  // V5: 动态维度（根据词性切换）
     rejection_reason?: string
   }>
   dictionary_source?: string
 
-  // 熟词僻义专用字段（作为附加标签）
-  is_rare_meaning?: boolean  // 是否包含熟词僻义
+  // 熟词僻义专用字段（V5 结构化）
+  is_rare_meaning?: boolean
+  rare_meaning_info?: {
+    common_meaning: string    // 常见义
+    context_meaning: string   // 语境义
+    textbook_source?: string  // 课本出处
+  }
+  // 兼容旧字段
   textbook_meaning?: string
   textbook_source?: string
   context_meaning?: string
@@ -596,14 +603,11 @@ export interface PointAnalysis {
   phrase?: string
   similar_phrases?: string[]
 
-  // 词义辨析专用
+  // 词义辨析专用（V5 动态维度）
   word_analysis?: Record<string, {
     definition: string
-    dimensions?: {
-      使用对象: string
-      使用场景: string
-      正负态度: string
-    }
+    collins_frequency?: string  // V5: 柯林斯词频★级
+    dimensions?: Record<string, string>  // V5: 动态维度
     rejection_reason?: string
   }>
   dictionary_source?: string
@@ -650,6 +654,7 @@ export interface ClozeFilter {
   grade?: string
   topic?: string
   point_type?: string
+  category?: string  // 大类筛选 (A/B/C/D/E)
   exam_type?: string
   semester?: string
   region?: string
@@ -766,18 +771,15 @@ export interface ClozeTopicStats {
   recent_years: number[]
 }
 
-// 词义辨析考点（聚合后）
+// 词义辨析考点（聚合后，V5 动态维度）
 export interface WordAnalysisPoint {
   word: string
   frequency: number
   definition?: string
   word_analysis?: Record<string, {
     definition: string
-    dimensions?: {
-      使用对象: string
-      使用场景: string
-      正负态度: string
-    }
+    collins_frequency?: string  // V5: 柯林斯词频
+    dimensions?: Record<string, string>  // V5: 动态维度
     rejection_reason?: string
   }>
   dictionary_source?: string
@@ -804,7 +806,7 @@ export interface RareMeaningPoint {
   occurrences: PointOccurrence[]
 }
 
-// V2 考点词数据（整合所有类型的字段）
+// V2 考点词数据（整合所有类型的字段，V5 动态维度）
 export interface PointWordData {
   word: string
   frequency: number
@@ -812,11 +814,8 @@ export interface PointWordData {
   // 词义辨析字段
   word_analysis?: Record<string, {
     definition: string
-    dimensions?: {
-      使用对象: string
-      使用场景: string
-      正负态度: string
-    }
+    collins_frequency?: string  // V5: 柯林斯词频
+    dimensions?: Record<string, string>  // V5: 动态维度
     rejection_reason?: string
   }>
   dictionary_source?: string

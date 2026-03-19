@@ -55,7 +55,7 @@ interface FixedPhraseItemProps {
 }
 
 function FixedPhraseItem({ point, edition, index }: FixedPhraseItemProps) {
-  const { word, frequency, phrase, similar_phrases, occurrences } = point
+  const { word, frequency, phrase, similar_phrases } = point
 
   return (
     <div className="phrase-item" style={{ padding: '12px 0', borderBottom: '1px dashed #e8e8e8' }}>

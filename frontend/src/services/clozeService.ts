@@ -37,8 +37,9 @@ export async function getCloze(id: number): Promise<ClozeDetailNewResponse> {
  * 获取考点汇总
  */
 export async function getPointList(params: {
-  point_type?: string
   category?: string  // 大类筛选 (A/B/C/D/E)
+  point_code?: string  // 具体考点编码 (A1/B2/C2等) - V5格式
+  priority?: number  // 优先级筛选 (1/2/3)
   grade?: string
   keyword?: string
   page?: number
@@ -79,6 +80,14 @@ export async function updatePointAnalysis(
  */
 export async function deleteCloze(id: number): Promise<{ message: string; cloze_id: number }> {
   const response = await api.delete(`/cloze/${id}`)
+  return response.data
+}
+
+/**
+ * V5 分析单个空格
+ */
+export async function analyzeBlankV5(blankId: number): Promise<any> {
+  const response = await api.post(`/cloze/blanks/${blankId}/analyze-v5`)
   return response.data
 }
 

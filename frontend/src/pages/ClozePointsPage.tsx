@@ -222,7 +222,7 @@ export function ClozePointsPage() {
   // 加载考点列表
   useEffect(() => {
     loadPointsList()
-  }, [pointType, grade, searchKeyword, page, size])
+  }, [category, pointType, priority, grade, searchKeyword, page, size])
 
   const loadFilters = async () => {
     try {
@@ -246,8 +246,9 @@ export function ClozePointsPage() {
     setLoading(true)
     try {
       const response = await getPointList({
-        point_type: pointType || undefined,
-        category: !pointType ? category : undefined, // 大类筛选
+        category: category || undefined, // 大类筛选 (A/B/C/D/E)
+        point_code: pointType || undefined, // 子分类筛选 (A1/B2等)
+        priority: priority || undefined,
         grade,
         keyword: searchKeyword || undefined,
         page,
