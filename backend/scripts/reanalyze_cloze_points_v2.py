@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-批量重新分析完形填空考点（使用 V2 分析器 - 16种考点 + 多标签）
+批量重新分析完形填空考点（使用 V5 分析器 - 全信号扫描 + 动态维度）
 
 用法:
     python scripts/reanalyze_cloze_points_v2.py [--limit N] [--dry-run]
@@ -22,7 +22,7 @@ from app.models.cloze import (
     PointTypeDefinition,
 )
 from app.models.cloze import ClozeSecondaryPoint, ClozeRejectionPoint
-from app.services.cloze_analyzer import ClozeAnalyzerV2
+from app.services.cloze_analyzer import ClozeAnalyzerV5
 
 
 from app.services.cloze_analyzer import NEW_CODE_TO_LEGACY
@@ -63,7 +63,7 @@ async def reanalyze_points(limit: int = None, dry_run: bool = False):
         updated = 0
         failed = 0
 
-        cloze_analyzer = ClozeAnalyzerV2()
+        cloze_analyzer = ClozeAnalyzerV5()
 
         for passage in passages:
             print(f"\n处理文章 ID={passage.id}...")

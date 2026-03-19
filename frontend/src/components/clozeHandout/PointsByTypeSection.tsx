@@ -103,18 +103,17 @@ function PointCodeSection({
   const totalPoints = points.length
 
   // 根据考点类型选择展示方式
-  // C2 (固定搭配) 使用 FixedPhraseSection 风格
+  // C2 (固定搭配) 使用通用组件，和其他考点一样显示 4 个选项词
   // D1 (词义辨析) 使用 WordAnalysisTable 风格
   // D2 (熟词僻义) 使用 RareMeaningSection 风格
   // 其他使用通用表格
 
-  if (code === 'C2') {
-    return <FixedPhraseStyleSection {...{ code, name, category, points, edition, showMainTitle, color, totalPoints }} />
-  } else if (code === 'D1') {
+  if (code === 'D1') {
     return <WordAnalysisStyleSection {...{ code, name, category, points, edition, showMainTitle, color, totalPoints }} />
   } else if (code === 'D2') {
     return <RareMeaningStyleSection {...{ code, name, category, points, edition, showMainTitle, color, totalPoints }} />
   } else {
+    // C2 固定搭配和其他考点类型统一使用通用组件，显示 4 个选项词
     return <GenericPointSection {...{ code, name, category, categoryName, points, edition, showMainTitle, color, totalPoints }} />
   }
 }

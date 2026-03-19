@@ -39,7 +39,7 @@ from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser
 from app.services.topic_classifier import TopicClassifier
 from app.services.vocab_extractor import VocabExtractor
-from app.services.cloze_analyzer import ClozeAnalyzer, ClozeAnalyzerV2, NEW_CODE_TO_LEGACY
+from app.services.cloze_analyzer import ClozeAnalyzerV5, NEW_CODE_TO_LEGACY
 
 router = APIRouter()
 
@@ -474,7 +474,7 @@ async def upload_paper_with_progress(
                     yield emit()
 
                     try:
-                        analyzer = ClozeAnalyzerV2()  # 使用 V2 分析器（16种考点 + 多标签）
+                        analyzer = ClozeAnalyzerV5()  # 使用 V5 分析器（全信号扫描 + 动态维度）
                         analyzed_count = 0
 
                         # 获取刚创建的空格列表

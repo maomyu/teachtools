@@ -23,7 +23,7 @@ from app.models.topic import Topic
 from app.models.cloze import ClozePassage, ClozePoint
 from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser
-from app.services.cloze_analyzer import ClozeAnalyzerV2
+from app.services.cloze_analyzer import ClozeAnalyzerV5
 from app.services.topic_classifier import TopicClassifier
 from app.services.text_utils import normalize_cloze_blanks
 
@@ -200,8 +200,8 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                     except Exception as e:
                         print(f"  ⚠ 完形主题分类失败: {e}")
 
-                    # 初始化考点分析器 (V2 - 16种考点 + 多标签)
-                    cloze_analyzer = ClozeAnalyzerV2()
+                    # 初始化考点分析器 (V5 - 全信号扫描 + 动态维度)
+                    cloze_analyzer = ClozeAnalyzerV5()
 
                     # 遍历每个空格，分析考点并保存
                     for blank in blanks:
