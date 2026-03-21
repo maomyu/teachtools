@@ -215,8 +215,163 @@ class WritingService:
         }
 
     # =========================================================================
-    #                              范文生成
+    #                              范文生成（v4 精英版）
     # =========================================================================
+
+    def _build_sample_prompt(
+        self,
+        content: str,
+        requirements: str,
+        word_limit: str,
+        template_content: str = ""
+    ) -> str:
+        """构建范文生成 Prompt（v4 精英版 - 只生成最优范文）"""
+        template_hint = f"\n参考模板：\n{template_content}\n" if template_content else ""
+
+        return f"""你是北京中考英语教研专家。请根据以下作文题目生成一篇**高质量范文**。
+
+## 作文题目
+{content}
+
+## 写作要求
+{requirements}
+
+## 字数要求
+{word_limit}（必须达到或接近上限，不要写得太短）
+{template_hint}
+## 高质量范文写作方法论
+
+### 核心原则：展示而非告知
+- 不要说 "I am happy" → 要说 "A big smile spread across my face"
+- 不要说 "It was beautiful" → 要说具体细节（颜色、形状、声音等）
+- 不要说 "I learned a lot" → 要说具体学到了什么（用1-2句话展开）
+
+### ⭐ 内容拓展三步法（必须使用）
+
+**每个要点都必须拓展，不能只写一句话！**
+
+**步骤1：陈述（Statement）** - 用一句话表达核心观点
+**步骤2：解释（Explanation）** - 用1-2句话解释为什么
+**步骤3：举例/细节（Example/Detail）** - 用1-2句话给出具体例子
+
+**应用文拓展示例**：
+> 原句：I suggest we should have more books.
+>
+> 拓展后：I suggest we should have more English books in our library. This is because many students want to improve their reading skills but cannot find suitable materials. For example, graded readers and English magazines would be very helpful for beginners.
+
+**记叙文拓展示例**：
+> 原句：I went to the museum.
+>
+> 拓展后：Last Saturday, I went to the Science Museum with my classmates. We were all excited because it was our first school trip after the pandemic. The museum was huge, with hundreds of interesting exhibits about space and technology.
+
+### 内容拓展技巧
+
+**应用文拓展技巧**：
+
+1. **理由+结果**
+   - 原句：I want to join the club.
+   - 拓展：I want to join the club because I am interested in environmental protection. If I become a member, I can help organize activities to make our school greener.
+
+2. **观点+建议**
+   - 原句：We should improve the library.
+   - 拓展：In my opinion, the school library needs some improvements. First, we could buy more English books. Second, it would be better to extend the opening hours so students can study there after school.
+
+3. **感谢+具体帮助**
+   - 原句：Thank you for your help.
+   - 拓展：I would like to express my sincere gratitude for your help. Your advice on my English pronunciation was very useful. Thanks to you, I feel more confident when speaking English now.
+
+**记叙文拓展技巧**：
+
+1. **动作+感受**
+   - 原句：I went to the park.
+   - 拓展：Last Sunday, I went to the park near my home. The weather was perfect, with warm sunshine and a gentle breeze. I felt relaxed as soon as I stepped into the park.
+
+2. **细节描写（五感法）**
+   - 原句：The food was good.
+   - 拓展：The food at the restaurant was amazing. I could smell the delicious aroma as soon as I walked in. The dumplings were hot and juicy, and they tasted just like my grandmother's cooking.
+
+3. **对话+心理活动**
+   - 原句：My teacher praised me.
+   - 拓展：When I handed in my homework, my teacher looked at it carefully and smiled. "Excellent work!" she said. Hearing those words, I felt a sense of achievement and decided to work even harder.
+
+4. **对比+转变**
+   - 原句：I was nervous at first.
+   - 拓展：At first, I was so nervous that my hands were shaking. However, after taking a deep breath, I calmed down and started to speak. To my surprise, the words just flowed naturally.
+
+### 语言提升三步法
+
+**步骤1：词汇升级**
+- 基础词 → 高级词（但必须符合语境）
+- 例：good → excellent（形容人） / beneficial（形容事）
+- 例：help → assist（正式） / support（支持）
+- 例：think → believe / consider
+- 例：want → desire / hope to
+
+**步骤2：句式丰富**
+- 简单句 → 并列句 → 复合句
+- 必须使用的句型：
+  • 定语从句：..., which/who...
+  • 状语从句：When/If/Because..., ...
+  • 非谓语：Doing..., / To do..., / ..., doing...
+
+**步骤3：衔接自然**
+- 段落之间用过渡词
+- 句子之间有逻辑关系
+- 常用：However, Therefore, Besides, In addition, What's more, Furthermore
+
+### 结构模板（根据文体选择）
+
+**应用文（书信/邮件）**：
+```
+开头（20-30词）：Dear + 写信目的（1-2句展开）
+主体（60-80词）：
+  - First of all, [要点1]. [解释]. [细节].
+  - Besides, [要点2]. [解释]. [结果].
+  - What's more, [要点3]. [解释].
+结尾（20-30词）：I hope [期待]. I would appreciate it if [请求]. Looking forward to [回复]. Yours sincerely, Li Hua
+```
+
+**记叙文**：
+```
+开头（25-35词）：Last [时间], I [事件背景]... I felt [心情] because [原因].
+主体（70-100词）：
+  - First, [动作1]. [细节描写]. [感受].
+  - Then, [动作2]. [转折/惊喜].
+  - Finally, [动作3]. [高潮时刻]. At that moment, I felt [感受].
+结尾（20-30词）：This experience taught me that [感悟]. I will always remember [细节].
+```
+
+### 量化检查清单（写完后自查）
+
+| 维度 | 要求 | 你的文章达标了吗？ |
+|------|------|-------------------|
+| 字数 | 达到或接近上限 | ☐ |
+| 内容 | 每个要点都有拓展（陈述+解释+举例） | ☐ |
+| 词汇 | 至少5个高级词汇 | ☐ |
+| 句式 | 至少2个复杂句型 | ☐ |
+| 衔接 | 至少3个过渡词 | ☐ |
+| 语法 | 0错误 | ☐ |
+
+## 输出要求
+
+1. 直接输出范文，不要解释
+2. **字数必须达到或接近 {word_limit}，不要写得太短！**
+3. **每个要点都必须用三步法拓展（陈述→解释→举例）**
+4. 语言自然流畅，不要生硬堆砌高级词汇
+5. 确保涵盖所有题目要求"""
+
+    # 保留旧方法名作为别名（向后兼容）
+    def _build_tier1_prompt(self, *args, **kwargs):
+        """已废弃：使用 _build_sample_prompt 代替"""
+        return self._build_sample_prompt(*args, **kwargs)
+
+    def _build_tier2_prompt(self, *args, **kwargs):
+        """已废弃：使用 _build_sample_prompt 代替"""
+        return self._build_sample_prompt(*args, **kwargs)
+
+    def _build_tier3_prompt(self, *args, **kwargs):
+        """已废弃：使用 _build_sample_prompt 代替"""
+        return self._build_sample_prompt(*args, **kwargs)
 
     async def generate_sample(
         self,
@@ -225,17 +380,17 @@ class WritingService:
         score_level: str = "一档"
     ) -> WritingSample:
         """
-        生成范文
+        生成范文（v4 精英版 - 只生成最优范文）
 
         Args:
             task_id: 作文 ID
-            template_id: 模板 ID（可选）
-            score_level: 档次（一档/二档/三档）
+            template_id: 模板 ID（可选，不传则自动获取或创建）
+            score_level: 档次（v4 已废弃，保留参数用于兼容）
 
         Returns:
             WritingSample
         """
-        # 获取作文
+        # 获取写作任务
         result = await self.db.execute(
             select(WritingTask).where(WritingTask.id == task_id)
         )
@@ -244,72 +399,54 @@ class WritingService:
         if not task:
             raise ValueError(f"作文不存在: {task_id}")
 
-        # 获取模板（如果有）
-        template = None
+        # 获取或创建模板
+        template_content = ""
+        actual_template_id = template_id
+
         if template_id:
-            result = await self.db.execute(
+            # 使用指定的模板
+            template_result = await self.db.execute(
                 select(WritingTemplate).where(WritingTemplate.id == template_id)
             )
-            template = result.scalar_one_or_none()
+            template = template_result.scalar_one_or_none()
+            if template:
+                template_content = template.template_content or ""
+        else:
+            # 根据文体类型获取或创建模板
+            writing_type = task.writing_type or "应用文"
+            application_type = task.application_type
+            template = await self.get_or_create_template(writing_type, application_type)
+            if template:
+                actual_template_id = template.id
+                template_content = template.template_content or ""
 
-        # 构建提示词
-        content = task.task_content
-        requirements = task.requirements or ""
-        word_limit = task.word_limit or "80-100词"
+        # 构建统一的高质量 Prompt（忽略 score_level 参数）
+        prompt = self._build_sample_prompt(
+            content=task.task_content,
+            requirements=task.requirements or "",
+            word_limit=task.word_limit or "80-100词",
+            template_content=template_content
+        )
 
-        template_hint = ""
-        if template:
-            template_hint = f"""
-参考模板：
-{template.template_content}
-"""
+        # 调用 AI 生成
+        result_text = self.ai_service.chat(prompt)
 
-        prompt = f"""
-你是一位北京中考英语教研专家，请根据以下作文题目生成一篇{score_level}范文。
+        if not result_text:
+            raise ValueError("AI 生成范文失败：返回内容为空")
 
-作文题目：
-{content}
+        # 保存范文
+        sample = WritingSample(
+            task_id=task_id,
+            template_id=actual_template_id,
+            sample_type="AI生成",
+            sample_content=result_text,
+            score_level="优质范文"  # 统一标记
+        )
+        self.db.add(sample)
+        await self.db.commit()
+        await self.db.refresh(sample)
 
-要求：
-{requirements}
-
-字数要求：{word_limit}
-{template_hint}
-
-请生成一篇符合中考英语{score_level}作文评分标准的范文。
-要求：
-1. 语言地道、语法正确
-2. 结构清晰、逻辑连贯
-3. 使用高级词汇和句型
-4. 符合字数要求
-
-直接输出范文内容，不要其他解释。
-"""
-
-        try:
-            sample_content = self.ai_service.chat(prompt)
-
-            if not sample_content or len(sample_content.strip()) < 30:
-                raise ValueError("AI 生成的范文内容太短")
-
-            # 保存范文
-            sample = WritingSample(
-                task_id=task_id,
-                template_id=template_id,
-                sample_content=sample_content.strip(),
-                sample_type="AI生成",
-                score_level=score_level
-            )
-            self.db.add(sample)
-            await self.db.commit()
-            await self.db.refresh(sample)
-
-            logger.info(f"范文生成成功: task_id={task_id}, score_level={score_level}")
-            return sample
-
-        except Exception as e:
-            logger.error(f"范文生成失败: {e}")
-            raise
+        return sample
 
     async def batch_generate_samples(
         self,
@@ -369,14 +506,14 @@ class WritingService:
         application_type: Optional[str] = None
     ) -> WritingTemplate:
         """
-        获取或创建模板
+        获取或创建模板（增强版）
 
         Args:
             writing_type: 文体类型
             application_type: 应用文子类型
 
         Returns:
-            WritingTemplate
+            WritingTemplate（包含句型库、词汇表等）
         """
         # 查找现有模板
         query = select(WritingTemplate).where(
@@ -391,7 +528,7 @@ class WritingService:
         if template:
             return template
 
-        # 生成新模板
+        # 生成新模板（增强版，包含句型库、词汇表等）
         template_data = self.ai_service.generate_writing_template(writing_type, application_type)
 
         template = WritingTemplate(
@@ -399,8 +536,15 @@ class WritingService:
             application_type=application_type,
             template_name=template_data.get("template_name", f"{writing_type}模板"),
             template_content=template_data.get("template_content", ""),
-            tips="\n".join(template_data.get("tips", [])),
-            structure=template_data.get("structure", "")
+            tips=template_data.get("tips", ""),
+            structure=template_data.get("structure", ""),
+            # === 新增专业要素字段 ===
+            opening_sentences=template_data.get("opening_sentences"),
+            closing_sentences=template_data.get("closing_sentences"),
+            transition_words=template_data.get("transition_words"),
+            advanced_vocabulary=template_data.get("advanced_vocabulary"),
+            grammar_points=template_data.get("grammar_points"),
+            scoring_criteria=template_data.get("scoring_criteria")
         )
 
         self.db.add(template)

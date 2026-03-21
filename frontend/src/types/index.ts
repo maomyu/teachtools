@@ -927,6 +927,13 @@ export interface WritingTemplate {
   template_content: string
   tips?: string
   structure?: string
+  // === 新增专业要素字段 ===
+  opening_sentences?: string    // 开头句型（JSON数组）
+  closing_sentences?: string    // 结尾句型（JSON数组）
+  transition_words?: string     // 过渡词汇（JSON数组）
+  advanced_vocabulary?: string  // 高级词汇替换（JSON数组）
+  grammar_points?: string       // 语法要点（JSON数组）
+  scoring_criteria?: string     // 评分标准提示（JSON）
   created_at: string
 }
 
@@ -938,6 +945,11 @@ export interface WritingSample {
   sample_content: string
   sample_type: 'AI生成' | '人工编写' | '真题范文'
   score_level?: string  // 一档/二档/三档
+  // === 新增评估字段 ===
+  word_count?: number         // 实际字数
+  highlights?: string         // 亮点表达（JSON数组）
+  grammar_analysis?: string   // 语法分析（JSON）
+  issues?: string             // 存在问题（JSON数组，用于三档文）
   created_at: string
 }
 

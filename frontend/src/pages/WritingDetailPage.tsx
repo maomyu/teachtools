@@ -22,15 +22,22 @@ import {
   Divider,
   Tooltip,
   Popconfirm,
+  Row,
+  Col,
+  List,
+  Alert,
 } from 'antd'
 import {
   ArrowLeftOutlined,
-  RobotOutlined,
   FileTextOutlined,
   FilePdfOutlined,
   BulbOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  CopyOutlined,
+  ThunderboltOutlined,
+  BookOutlined,
+  RiseOutlined,
 } from '@ant-design/icons'
 
 import {
@@ -76,7 +83,7 @@ export function WritingDetailPage() {
     if (!id) return
     setGenerating(true)
     try {
-      await generateSample(parseInt(id), { score_level: '一档' })
+      await generateSample(parseInt(id))
       message.success('范文生成成功')
       loadDetail()
     } catch (error) {
@@ -165,6 +172,7 @@ export function WritingDetailPage() {
         <Card>
           <Space wrap>
             <Button
+              type="primary"
               icon={<FileTextOutlined />}
               loading={generating}
               onClick={handleGenerateSample}
@@ -192,7 +200,7 @@ export function WritingDetailPage() {
     )
   }
 
-  // 渲染模板
+  // 渲染模板（增强版 - 包含句型库、词汇表等）
   const renderTemplates = () => {
     if (!detail?.templates?.length) {
       return (
@@ -207,52 +215,177 @@ export function WritingDetailPage() {
       )
     }
 
+    // 解析 JSON 字段的辅助函数
+    const parseJsonField = (field: string | undefined): any[] => {
+      if (!field) return []
+      try {
+        return JSON.parse(field)
+      } catch {
+        return []
+      }
+    }
+
+    // 复制到剪贴板
+    const copyToClipboard = (text: string) => {
+      navigator.clipboard.writeText(text)
+      message.success('已复制到剪贴板')
+    }
+
     return (
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        {detail.templates.map((template: WritingTemplate) => (
-          <Card
-            key={template.id}
-            title={
-              <Space>
-                <BulbOutlined />
-                {template.template_name}
-              </Space>
-            }
-            extra={
-              template.application_type && (
-                <Tag color="blue">{template.application_type}</Tag>
-              )
-            }
-          >
-            {template.structure && (
-              <>
-                <Title level={5}>文章结构</Title>
-                <Paragraph style={{ whiteSpace: 'pre-wrap' }}>
-                  {template.structure}
+        {detail.templates.map((template: WritingTemplate) => {
+          const openingSentences = parseJsonField(template.opening_sentences)
+          const closingSentences = parseJsonField(template.closing_sentences)
+          const transitionWords = parseJsonField(template.transition_words)
+          const advancedVocabulary = parseJsonField(template.advanced_vocabulary)
+          const grammarPoints = parseJsonField(template.grammar_points)
+
+          return (
+            <Space direction="vertical" size="middle" style={{ width: '100%' }} key={template.id}>
+              {/* 文章结构 */}
+              {template.structure && (
+                <Card title={<><BulbOutlined /> 文章结构</>} size="small">
+                  <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+                    {template.structure}
+                  </Paragraph>
+                </Card>
+              )}
+
+              {/* 模板内容 */}
+              <Card title={<><FileTextOutlined /> 模板内容</>} size="small">
+                <Paragraph
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    backgroundColor: '#f5f5f5',
+                    padding: 16,
+                    borderRadius: 8,
+                    margin: 0,
+                  }}
+                >
+                  {template.template_content}
                 </Paragraph>
-              </>
-            )}
-            <Title level={5}>模板内容</Title>
-            <Paragraph
-              style={{
-                whiteSpace: 'pre-wrap',
-                backgroundColor: '#f5f5f5',
-                padding: 16,
-                borderRadius: 8,
-              }}
-            >
-              {template.template_content}
-            </Paragraph>
-            {template.tips && (
-              <>
-                <Title level={5}>写作技巧</Title>
-                <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap' }}>
-                  {template.tips}
-                </Paragraph>
-              </>
-            )}
-          </Card>
-        ))}
+              </Card>
+
+              {/* 句型库 - 开头和结尾 */}
+              {(openingSentences.length > 0 || closingSentences.length > 0) && (
+                <Row gutter={16}>
+                  {openingSentences.length > 0 && (
+                    <Col span={12}>
+                      <Card
+                        title={<><ThunderboltOutlined /> 开头句型</>}
+                        size="small"
+                        extra={<Tag color="blue">{openingSentences.length}句</Tag>}
+                      >
+                        <List
+                          size="small"
+                          dataSource={openingSentences}
+                          renderItem={(item: string) => (
+                            <List.Item
+                              actions={[
+                                <Tooltip title="复制" key="copy">
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<CopyOutlined />}
+                                    onClick={() => copyToClipboard(item)}
+                                  />
+                                </Tooltip>
+                              ]}
+                            >
+                              <Text>{item}</Text>
+                            </List.Item>
+                          )}
+                        />
+                      </Card>
+                    </Col>
+                  )}
+                  {closingSentences.length > 0 && (
+                    <Col span={12}>
+                      <Card
+                        title={<><CheckCircleOutlined /> 结尾句型</>}
+                        size="small"
+                        extra={<Tag color="green">{closingSentences.length}句</Tag>}
+                      >
+                        <List
+                          size="small"
+                          dataSource={closingSentences}
+                          renderItem={(item: string) => (
+                            <List.Item
+                              actions={[
+                                <Tooltip title="复制" key="copy">
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<CopyOutlined />}
+                                    onClick={() => copyToClipboard(item)}
+                                  />
+                                </Tooltip>
+                              ]}
+                            >
+                              <Text>{item}</Text>
+                            </List.Item>
+                          )}
+                        />
+                      </Card>
+                    </Col>
+                  )}
+                </Row>
+              )}
+
+              {/* 过渡词汇 */}
+              {transitionWords.length > 0 && (
+                <Card title={<><RiseOutlined /> 过渡词汇</>} size="small">
+                  <Space wrap>
+                    {transitionWords.map((item: string, idx: number) => (
+                      <Tag key={idx} color="purple" style={{ margin: 4 }}>
+                        {item}
+                      </Tag>
+                    ))}
+                  </Space>
+                </Card>
+              )}
+
+              {/* 高级词汇替换 */}
+              {advancedVocabulary.length > 0 && (
+                <Card title={<><BookOutlined /> 高级词汇替换</>} size="small">
+                  <Space wrap>
+                    {advancedVocabulary.map((item: { word: string; basic: string }, idx: number) => (
+                      <Tag key={idx} color="orange" style={{ margin: 4 }}>
+                        {item.basic} → {item.word}
+                      </Tag>
+                    ))}
+                  </Space>
+                </Card>
+              )}
+
+              {/* 语法要点 */}
+              {grammarPoints.length > 0 && (
+                <Card title="语法要点" size="small">
+                  <List
+                    size="small"
+                    dataSource={grammarPoints}
+                    renderItem={(item: string) => (
+                      <List.Item>
+                        <Text>• {item}</Text>
+                      </List.Item>
+                    )}
+                  />
+                </Card>
+              )}
+
+              {/* 写作技巧 */}
+              {template.tips && (
+                <Alert
+                  type="info"
+                  message="写作技巧"
+                  description={
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{template.tips}</div>
+                  }
+                />
+              )}
+            </Space>
+          )
+        })}
       </Space>
     )
   }

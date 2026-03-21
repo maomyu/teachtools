@@ -98,6 +98,14 @@ class WritingTemplate(Base):
     tips = Column(Text)  # 写作技巧
     structure = Column(Text)  # 结构说明
 
+    # === 新增专业要素字段 ===
+    opening_sentences = Column(Text)    # 开头句型（JSON数组）
+    closing_sentences = Column(Text)    # 结尾句型（JSON数组）
+    transition_words = Column(Text)     # 过渡词汇（JSON数组）
+    advanced_vocabulary = Column(Text)  # 高级词汇替换（JSON数组）
+    grammar_points = Column(Text)       # 语法要点（JSON数组）
+    scoring_criteria = Column(Text)     # 评分标准提示（JSON）
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # 关系
@@ -118,6 +126,12 @@ class WritingSample(Base):
     sample_content = Column(Text, nullable=False)
     sample_type = Column(String(20))  # AI生成, 人工编写, 真题范文
     score_level = Column(String(20))  # 档次：一档、二档等
+
+    # === 新增评估字段 ===
+    word_count = Column(Integer)          # 实际字数
+    highlights = Column(Text)             # 亮点表达（JSON数组）
+    grammar_analysis = Column(Text)       # 语法分析（JSON）
+    issues = Column(Text)                 # 存在问题（JSON数组，用于三档文）
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -7,6 +7,7 @@ import os
 import re
 import json
 import asyncio
+import logging
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -39,10 +40,12 @@ from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse
 from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser, WritingExtractResult
 from app.services.topic_classifier import TopicClassifier
+from app.services.writing_topic_classifier import WritingTopicClassifier
 from app.services.vocab_extractor import VocabExtractor
 from app.services.cloze_analyzer import ClozeAnalyzerV5, NEW_CODE_TO_LEGACY
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -480,7 +483,22 @@ async def upload_paper_with_progress(
                     writing_result = await llm_parser.extract_writing(fileid)
 
                     if writing_result.success and writing_result.content:
-                        # 创建作文题目记录（包含文体类型）
+                        # ===== 新增：话题提取 =====
+                        primary_topic = None
+                        try:
+                            topic_classifier = WritingTopicClassifier()
+                            # 使用同步方法（在线程池中运行避免阻塞）
+                            topic_result = await asyncio.to_thread(
+                                topic_classifier.classify_sync,
+                                content=writing_result.content,
+                                requirements=writing_result.requirements or ""
+                            )
+                            if topic_result.success:
+                                primary_topic = topic_result.primary_topic
+                        except Exception as topic_error:
+                            logger.warning(f"话题提取失败（不影响导入）: {topic_error}")
+
+                        # 创建作文题目记录（包含文体类型和话题）
                         writing_task = WritingTask(
                             paper_id=paper.id,
                             task_content=writing_result.content,
@@ -488,6 +506,7 @@ async def upload_paper_with_progress(
                             word_limit=writing_result.word_limit,
                             writing_type=writing_result.writing_type,
                             application_type=writing_result.application_type,
+                            primary_topic=primary_topic,  # 新增
                             grade=metadata.get("grade"),
                             semester=metadata.get("semester"),
                             exam_type=metadata.get("exam_type")
@@ -499,7 +518,8 @@ async def upload_paper_with_progress(
                         type_info = writing_result.writing_type
                         if writing_result.application_type:
                             type_info += f"({writing_result.application_type})"
-                        reporter.complete_step("writing_extract", f"已提取: {type_info}")
+                        topic_info = f" | 话题: {primary_topic}" if primary_topic else ""
+                        reporter.complete_step("writing_extract", f"已提取: {type_info}{topic_info}")
                     else:
                         reporter.skip_step("writing_extract", writing_result.error or "未找到作文题目")
                 except Exception as e:
