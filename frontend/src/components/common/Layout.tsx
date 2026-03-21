@@ -17,6 +17,7 @@ import {
   EditOutlined,
   BookOutlined,
   DatabaseOutlined,
+  FormOutlined,
 } from '@ant-design/icons'
 
 const { Header, Sider, Content } = AntLayout
@@ -47,6 +48,11 @@ const menuItems = [
     key: '/cloze/points',
     icon: <EditOutlined />,
     label: '考点汇总',
+  },
+  {
+    key: '/writing',
+    icon: <FormOutlined />,
+    label: '作文汇编',
   },
   {
     key: '/vocabulary',

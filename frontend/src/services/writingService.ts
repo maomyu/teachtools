@@ -1,0 +1,154 @@
+/**
+ * 作文模块 API 服务
+ *
+ * [INPUT]: 依赖 api 服务、类型定义
+ * [OUTPUT]: 对外提供作文相关的 API 调用函数
+ * [POS]: frontend/src/services 的作文服务
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+import api from './api'
+import type {
+  WritingTask,
+  WritingTaskListResponse,
+  WritingTaskDetail,
+  WritingFilter,
+  WritingFiltersResponse,
+  WritingTypeDetectResponse,
+  BatchGenerateResponse,
+  WritingTemplate,
+  WritingSample,
+} from '@/types'
+
+
+// ==============================================================================
+//                              筛选项
+// ==============================================================================
+
+/**
+ * 获取作文筛选项
+ */
+export async function getWritingFilters(): Promise<WritingFiltersResponse> {
+  const response = await api.get<WritingFiltersResponse>('/writings/filters')
+  return response.data
+}
+
+
+// ==============================================================================
+//                              列表查询
+// ==============================================================================
+
+/**
+ * 获取作文列表
+ */
+export async function getWritings(params: WritingFilter): Promise<WritingTaskListResponse> {
+  const response = await api.get<WritingTaskListResponse>('/writings', { params })
+  return response.data
+}
+
+/**
+ * 获取作文详情
+ */
+export async function getWritingDetail(id: number): Promise<WritingTaskDetail> {
+  const response = await api.get<WritingTaskDetail>(`/writings/${id}`)
+  return response.data
+}
+
+
+// ==============================================================================
+//                              文体识别
+// ==============================================================================
+
+/**
+ * 智能文体识别
+ */
+export async function detectWritingType(id: number): Promise<WritingTypeDetectResponse> {
+  const response = await api.post<WritingTypeDetectResponse>(`/writings/${id}/detect-type`)
+  return response.data
+}
+
+
+// ==============================================================================
+//                              范文生成
+// ==============================================================================
+
+export interface SampleGenerateRequest {
+  template_id?: number
+  score_level?: string  // 一档/二档/三档
+}
+
+/**
+ * 生成单篇范文
+ */
+export async function generateSample(
+  taskId: number,
+  request: SampleGenerateRequest = {}
+): Promise<WritingSample> {
+  const response = await api.post<WritingSample>(
+    `/writings/${taskId}/generate-sample`,
+    request
+  )
+  return response.data
+}
+
+export interface BatchGenerateRequest {
+  task_ids: number[]
+  score_level?: string
+}
+
+/**
+ * 批量生成范文
+ */
+export async function batchGenerateSamples(
+  request: BatchGenerateRequest
+): Promise<BatchGenerateResponse> {
+  const response = await api.post<BatchGenerateResponse>('/writings/batch-generate', request)
+  return response.data
+}
+
+
+// ==============================================================================
+//                              删除
+// ==============================================================================
+
+/**
+ * 删除作文
+ */
+export async function deleteWriting(id: number): Promise<{ message: string }> {
+  const response = await api.delete(`/writings/${id}`)
+  return response.data
+}
+
+export interface BatchDeleteRequest {
+  task_ids: number[]
+}
+
+/**
+ * 批量删除作文
+ */
+export async function batchDeleteWritings(
+  request: BatchDeleteRequest
+): Promise<{ message: string }> {
+  const response = await api.post('/writings/batch-delete', request)
+  return response.data
+}
+
+
+// ==============================================================================
+//                              模板
+// ==============================================================================
+
+/**
+ * 获取模板
+ */
+export async function getTemplate(
+  writingType: string,
+  applicationType?: string
+): Promise<WritingTemplate> {
+  const response = await api.get<WritingTemplate>('/writings/template', {
+    params: {
+      writing_type: writingType,
+      application_type: applicationType,
+    },
+  })
+  return response.data
+}

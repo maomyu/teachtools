@@ -24,6 +24,19 @@ class LLMParseResult:
     raw_response: str = None
 
 
+@dataclass
+class WritingExtractResult:
+    """作文提取结果"""
+    success: bool
+    content: str = ""                  # 作文题目完整内容
+    requirements: str = ""             # 具体要求
+    word_limit: str = ""               # 字数限制
+    writing_type: str = "其他"         # 应用文/记叙文/其他
+    application_type: str = ""         # 应用文子类型
+    error: str = ""
+    raw_response: str = ""
+
+
 class LLMDocumentParser:
     """基于LLM的文档解析器"""
 
@@ -158,6 +171,53 @@ class LLMDocumentParser:
 如果无法找到C篇或D篇，passages数组中可以只包含找到的文章。如果完全找不到，passages为空数组。
 如果找不到某篇文章的题目，questions数组可以为空。
 如果找不到完形填空，cloze.found设为false，其他字段可省略。"""
+
+    EXTRACT_WRITING_PROMPT = """你是一个英语试卷解析专家。请分析这份英语试卷文档，提取作文题目信息。
+
+## 需要提取的信息
+
+### 作文题目
+- found: 是否找到作文题目（true/false）
+- content: 作文题目的完整内容（包括题目描述、情景设置等）
+- requirements: 具体写作要求（如字数、格式等）
+- word_limit: 字数限制（如"80-100词"、"不少于60词"等）
+
+### 文体类型识别
+- writing_type: 文体类型，必须从以下三个选项中选择一个：
+  - "应用文"：书信、通知、邀请、邮件、回复、活动介绍、请假条、感谢信等
+  - "记叙文"：讲述经历、描述事件、讲故事等
+  - "其他"：无法归类或以上两者都不符合的
+
+- application_type: 仅当 writing_type 为"应用文"时填写，具体子类型如：
+  - 书信、通知、邀请函、电子邮件、回复信、活动介绍、日记、便条等
+  - 如果不是应用文，此字段留空
+
+## 注意事项
+1. 仔细识别作文题目的完整内容，包括所有背景信息和要求
+2. 文体类型必须准确分类，根据题目要求判断
+3. 如果找不到作文题目，将 found 设为 false
+
+## 输出格式
+
+请严格按照以下JSON格式输出，不要添加任何其他文字：
+
+```json
+{
+    "found": true,
+    "content": "假设你是李华，你的英国笔友Tom对中国传统文化很感兴趣...",
+    "requirements": "1. 词数80-100；2. 可适当增加细节...",
+    "word_limit": "80-100词",
+    "writing_type": "应用文",
+    "application_type": "书信"
+}
+```
+
+如果未找到作文题目：
+```json
+{
+    "found": false
+}
+```"""
 
     def __init__(self):
         self.api_key = settings.DASHSCOPE_API_KEY
@@ -347,6 +407,109 @@ class LLMDocumentParser:
             return LLMParseResult(
                 success=False,
                 error=str(e)
+            )
+
+    async def extract_writing(self, fileid: str) -> "WritingExtractResult":
+        """
+        使用 LLM 提取作文题目信息
+
+        Args:
+            fileid: 已上传到 DashScope 的文件 ID
+
+        Returns:
+            WritingExtractResult: 结构化提取结果
+        """
+        try:
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
+                {"role": "system", "content": f"fileid://{fileid}"},
+                {"role": "user", "content": self.EXTRACT_WRITING_PROMPT}
+            ]
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                headers = {
+                    'Authorization': f'Bearer {self.api_key}',
+                    'Content-Type': 'application/json'
+                }
+
+                payload = {
+                    "model": "qwen-long",
+                    "messages": messages,
+                    "temperature": 0.1,
+                    "max_tokens": 2000
+                }
+
+                response = await client.post(
+                    self.API_URL,
+                    headers=headers,
+                    json=payload
+                )
+
+                if response.status_code != 200:
+                    return WritingExtractResult(
+                        success=False,
+                        error=f"API调用失败: {response.status_code}"
+                    )
+
+                result = response.json()
+                content = result['choices'][0]['message']['content']
+
+                return self._parse_writing_response(content)
+
+        except Exception as e:
+            return WritingExtractResult(
+                success=False,
+                error=str(e)
+            )
+
+    def _parse_writing_response(self, content: str) -> "WritingExtractResult":
+        """解析作文提取响应"""
+        try:
+            # 提取 JSON
+            json_str = content
+            if '```json' in content:
+                start = content.find('```json') + 7
+                end = content.find('```', start)
+                json_str = content[start:end].strip()
+            elif '```' in content:
+                start = content.find('```') + 3
+                end = content.find('```', start)
+                json_str = content[start:end].strip()
+
+            data = json.loads(json_str)
+
+            # 验证是否找到作文
+            if not data.get('found', True):
+                return WritingExtractResult(
+                    success=False,
+                    error="未找到作文题目"
+                )
+
+            # 验证并规范化 writing_type
+            writing_type = data.get('writing_type', '其他')
+            if writing_type not in ('应用文', '记叙文', '其他'):
+                writing_type = '其他'
+
+            # application_type 仅在应用文时有效
+            application_type = data.get('application_type')
+            if writing_type != '应用文':
+                application_type = None
+            elif application_type == 'null' or application_type == '':
+                application_type = None
+
+            return WritingExtractResult(
+                success=True,
+                content=data.get('content', ''),
+                requirements=data.get('requirements', ''),
+                word_limit=data.get('word_limit', ''),
+                writing_type=writing_type,
+                application_type=application_type
+            )
+
+        except json.JSONDecodeError as e:
+            return WritingExtractResult(
+                success=False,
+                error=f"JSON解析失败: {str(e)}"
             )
 
 

@@ -1,0 +1,408 @@
+/**
+ * 作文详情页
+ *
+ * [INPUT]: 依赖 antd 组件、@/services/writingService、@/types
+ * [OUTPUT]: 对外提供 WritingDetailPage 组件
+ * [POS]: frontend/src/pages 的作文详情页面
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import {
+  Card,
+  Descriptions,
+  Tag,
+  Button,
+  Space,
+  Typography,
+  message,
+  Tabs,
+  Spin,
+  Empty,
+  Divider,
+  Tooltip,
+  Popconfirm,
+} from 'antd'
+import {
+  ArrowLeftOutlined,
+  RobotOutlined,
+  FileTextOutlined,
+  FilePdfOutlined,
+  BulbOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons'
+
+import {
+  getWritingDetail,
+  generateSample,
+} from '@/services/writingService'
+import type { WritingTaskDetail, WritingTemplate, WritingSample } from '@/types'
+
+const { Title, Paragraph, Text } = Typography
+
+export function WritingDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+
+  const [loading, setLoading] = useState(false)
+  const [detail, setDetail] = useState<WritingTaskDetail | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [activeTab, setActiveTab] = useState('task')
+
+  // 加载详情
+  useEffect(() => {
+    if (id) {
+      loadDetail()
+    }
+  }, [id])
+
+  const loadDetail = async () => {
+    if (!id) return
+    setLoading(true)
+    try {
+      const response = await getWritingDetail(parseInt(id))
+      setDetail(response)
+    } catch (error) {
+      message.error('加载作文详情失败')
+      console.error(error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 生成范文
+  const handleGenerateSample = async () => {
+    if (!id) return
+    setGenerating(true)
+    try {
+      await generateSample(parseInt(id), { score_level: '一档' })
+      message.success('范文生成成功')
+      loadDetail()
+    } catch (error) {
+      message.error('范文生成失败')
+      console.error(error)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  // 导出 PDF（待实现）
+  const handleExportPdf = () => {
+    message.info('PDF 导出功能开发中...')
+  }
+
+  // 文体类型颜色
+  const getWritingTypeColor = (type: string) => {
+    switch (type) {
+      case '应用文':
+        return 'blue'
+      case '记叙文':
+        return 'green'
+      default:
+        return 'default'
+    }
+  }
+
+  // 渲染题目内容
+  const renderTaskContent = () => {
+    if (!detail) return null
+
+    return (
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        {/* 基本信息 */}
+        <Card>
+          <Descriptions column={3} bordered size="small">
+            <Descriptions.Item label="年级">
+              <Tag color="blue">{detail.grade || '未设置'}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="学期">
+              <Tag color="cyan">{detail.semester || '未设置'}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="考试类型">
+              <Tag color="purple">{detail.exam_type || '未设置'}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="文体">
+              {detail.writing_type ? (
+                <Space>
+                  <Tag color={getWritingTypeColor(detail.writing_type)}>
+                    {detail.writing_type}
+                  </Tag>
+                  {detail.application_type && (
+                    <Text type="secondary">({detail.application_type})</Text>
+                  )}
+                </Space>
+              ) : (
+                <Tag>未识别</Tag>
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="话题">
+              {detail.primary_topic || '未分类'}
+            </Descriptions.Item>
+            <Descriptions.Item label="字数要求">
+              {detail.word_limit || '未设置'}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+
+        {/* 题目内容 */}
+        <Card title={<><FileTextOutlined /> 题目内容</>}>
+          <Paragraph style={{ whiteSpace: 'pre-wrap', fontSize: 16 }}>
+            {detail.task_content}
+          </Paragraph>
+          {detail.requirements && (
+            <>
+              <Divider />
+              <Title level={5}>写作要求</Title>
+              <Paragraph style={{ whiteSpace: 'pre-wrap' }}>
+                {detail.requirements}
+              </Paragraph>
+            </>
+          )}
+        </Card>
+
+        {/* 操作区 */}
+        <Card>
+          <Space wrap>
+            <Button
+              icon={<FileTextOutlined />}
+              loading={generating}
+              onClick={handleGenerateSample}
+            >
+              生成范文
+            </Button>
+            <Button
+              icon={<FilePdfOutlined />}
+              onClick={handleExportPdf}
+              disabled={!detail.templates?.length && !detail.samples?.length}
+            >
+              导出讲义 PDF
+            </Button>
+            <Popconfirm
+              title="确定删除这篇作文吗？"
+              onConfirm={() => navigate('/writing')}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button danger>删除作文</Button>
+            </Popconfirm>
+          </Space>
+        </Card>
+      </Space>
+    )
+  }
+
+  // 渲染模板
+  const renderTemplates = () => {
+    if (!detail?.templates?.length) {
+      return (
+        <Empty
+          description="暂无模板"
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        >
+          <Button type="primary" onClick={handleGenerateSample}>
+            生成模板和范文
+          </Button>
+        </Empty>
+      )
+    }
+
+    return (
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        {detail.templates.map((template: WritingTemplate) => (
+          <Card
+            key={template.id}
+            title={
+              <Space>
+                <BulbOutlined />
+                {template.template_name}
+              </Space>
+            }
+            extra={
+              template.application_type && (
+                <Tag color="blue">{template.application_type}</Tag>
+              )
+            }
+          >
+            {template.structure && (
+              <>
+                <Title level={5}>文章结构</Title>
+                <Paragraph style={{ whiteSpace: 'pre-wrap' }}>
+                  {template.structure}
+                </Paragraph>
+              </>
+            )}
+            <Title level={5}>模板内容</Title>
+            <Paragraph
+              style={{
+                whiteSpace: 'pre-wrap',
+                backgroundColor: '#f5f5f5',
+                padding: 16,
+                borderRadius: 8,
+              }}
+            >
+              {template.template_content}
+            </Paragraph>
+            {template.tips && (
+              <>
+                <Title level={5}>写作技巧</Title>
+                <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap' }}>
+                  {template.tips}
+                </Paragraph>
+              </>
+            )}
+          </Card>
+        ))}
+      </Space>
+    )
+  }
+
+  // 渲染范文
+  const renderSamples = () => {
+    if (!detail?.samples?.length) {
+      return (
+        <Empty
+          description="暂无范文"
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        >
+          <Button type="primary" onClick={handleGenerateSample}>
+            生成范文
+          </Button>
+        </Empty>
+      )
+    }
+
+    return (
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        {detail.samples.map((sample: WritingSample, index: number) => (
+          <Card
+            key={sample.id}
+            title={
+              <Space>
+                <FileTextOutlined />
+                范文 {index + 1}
+              </Space>
+            }
+            extra={
+              <Space>
+                {sample.score_level && (
+                  <Tag color="gold">{sample.score_level}</Tag>
+                )}
+                <Tag>{sample.sample_type}</Tag>
+              </Space>
+            }
+          >
+            <Paragraph
+              style={{
+                whiteSpace: 'pre-wrap',
+                fontSize: 15,
+                lineHeight: 1.8,
+              }}
+            >
+              {sample.sample_content}
+            </Paragraph>
+            <Divider />
+            <Space split={<Divider type="vertical" />}>
+              <Text type="secondary">
+                <ClockCircleOutlined /> {new Date(sample.created_at).toLocaleString()}
+              </Text>
+            </Space>
+          </Card>
+        ))}
+      </Space>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
+        <Spin size="large" tip="加载中..." />
+      </div>
+    )
+  }
+
+  if (!detail) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Empty description="作文不存在" />
+        <Button onClick={() => navigate('/writing')}>返回列表</Button>
+      </div>
+    )
+  }
+
+  const tabItems = [
+    {
+      key: 'task',
+      label: '题目详情',
+      children: renderTaskContent(),
+    },
+    {
+      key: 'template',
+      label: (
+        <Space>
+          <BulbOutlined />
+          模板
+          {detail.templates?.length > 0 && (
+            <Tag color="blue">{detail.templates.length}</Tag>
+          )}
+        </Space>
+      ),
+      children: renderTemplates(),
+    },
+    {
+      key: 'sample',
+      label: (
+        <Space>
+          <FileTextOutlined />
+          范文
+          {detail.samples?.length > 0 && (
+            <Tag color="green">{detail.samples.length}</Tag>
+          )}
+        </Space>
+      ),
+      children: renderSamples(),
+    },
+  ]
+
+  return (
+    <div style={{ padding: 24 }}>
+      {/* 顶部导航 */}
+      <div style={{ marginBottom: 16 }}>
+        <Button
+          type="text"
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate('/writing')}
+        >
+          返回列表
+        </Button>
+      </div>
+
+      {/* 标题区 */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Title level={3} style={{ margin: 0 }}>
+            {detail.source?.grade || ''} {detail.source?.exam_type || ''} 作文
+            {detail.primary_topic && (
+              <Text type="secondary" style={{ marginLeft: 12, fontSize: 14 }}>
+                · {detail.primary_topic}
+              </Text>
+            )}
+          </Title>
+          {detail.writing_type && (
+            <Tag color={getWritingTypeColor(detail.writing_type)} style={{ fontSize: 14 }}>
+              {detail.writing_type}
+            </Tag>
+          )}
+        </div>
+      </Card>
+
+      {/* 内容区 */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={tabItems}
+        size="large"
+      />
+    </div>
+  )
+}

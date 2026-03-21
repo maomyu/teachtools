@@ -1,5 +1,10 @@
 """
 作文模型
+
+[INPUT]: 依赖 SQLAlchemy Base、ExamPaper
+[OUTPUT]: 对外提供 WritingTask、WritingTemplate、WritingSample、WritingMaterial 模型
+[POS]: backend/app/models 的作文相关数据模型
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, CheckConstraint
@@ -7,6 +12,21 @@ from sqlalchemy.orm import relationship
 
 from app.database import Base
 
+
+# ==============================================================================
+#                              CONSTANTS
+# ==============================================================================
+
+GRADE_OPTIONS = ('初一', '初二', '初三')
+SEMESTER_OPTIONS = ('上学期', '下学期')
+EXAM_TYPE_OPTIONS = ('期中', '期末', '一模', '中考', '其他')
+WRITING_TYPE_OPTIONS = ('应用文', '记叙文', '其他')
+SAMPLE_TYPE_OPTIONS = ('AI生成', '人工编写', '真题范文')
+
+
+# ==============================================================================
+#                              WRITING TASK
+# ==============================================================================
 
 class WritingTask(Base):
     """作文题目表"""
@@ -20,6 +40,13 @@ class WritingTask(Base):
     word_limit = Column(String(50))
     points_value = Column(String(20))  # 分值
 
+    # ─────────────────────────────────────────────────────────────────────────
+    #                              分类字段
+    # ─────────────────────────────────────────────────────────────────────────
+    grade = Column(String(10))       # 初一/初二/初三（从试卷元数据继承）
+    semester = Column(String(10))    # 上学期/下学期
+    exam_type = Column(String(20))   # 期中/期末/一模/中考/其他
+
     # 文体分类
     writing_type = Column(String(50))  # 应用文, 记叙文, 其他
     application_type = Column(String(50))  # 应用文子类：书信、通知、邀请等
@@ -30,19 +57,33 @@ class WritingTask(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # 关系
+    # ─────────────────────────────────────────────────────────────────────────
+    #                              关系
+    # ─────────────────────────────────────────────────────────────────────────
     paper = relationship("ExamPaper")
     samples = relationship("WritingSample", back_populates="task", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint(
-            "writing_type IN ('应用文', '记叙文', '其他')",
+            f"writing_type IN {WRITING_TYPE_OPTIONS}",
             name="ck_writing_type"
+        ),
+        CheckConstraint(
+            f"grade IS NULL OR grade IN {GRADE_OPTIONS}",
+            name="ck_grade"
+        ),
+        CheckConstraint(
+            f"semester IS NULL OR semester IN {SEMESTER_OPTIONS}",
+            name="ck_semester"
+        ),
+        CheckConstraint(
+            f"exam_type IS NULL OR exam_type IN {EXAM_TYPE_OPTIONS}",
+            name="ck_exam_type"
         ),
     )
 
     def __repr__(self):
-        return f"<WritingTask(id={self.id}, type={self.writing_type})>"
+        return f"<WritingTask(id={self.id}, grade={self.grade}, type={self.writing_type})>"
 
 
 class WritingTemplate(Base):

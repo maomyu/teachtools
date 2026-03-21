@@ -34,9 +34,10 @@ from app.models.reading import ReadingPassage, Question
 from app.models.vocabulary import Vocabulary, VocabularyPassage
 from app.models.cloze import ClozePassage, ClozePoint, ClozeSecondaryPoint, ClozeRejectionPoint
 from app.models.vocabulary_cloze import VocabularyCloze
+from app.models.writing import WritingTask
 from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse
 from app.services.docx_parser import DocxParser
-from app.services.llm_parser import LLMDocumentParser
+from app.services.llm_parser import LLMDocumentParser, WritingExtractResult
 from app.services.topic_classifier import TopicClassifier
 from app.services.vocab_extractor import VocabExtractor
 from app.services.cloze_analyzer import ClozeAnalyzerV5, NEW_CODE_TO_LEGACY
@@ -79,6 +80,7 @@ PIPELINE_CONFIG = [
     {"id": "save_passages", "name": "保存文章", "description": "保存阅读文章到数据库", "icon": "💾"},
     {"id": "save_questions", "name": "保存题目", "description": "保存阅读题目到数据库", "icon": "❓"},
     {"id": "save_cloze", "name": "保存完形填空", "description": "提取并保存完形文章", "icon": "📝"},
+    {"id": "writing_extract", "name": "作文提取", "description": "从试卷中提取作文题目", "icon": "✍️"},
     {"id": "cloze_analyze", "name": "考点分析", "description": "AI分析四类考点", "icon": "🔬"},
     {"id": "topic_classify", "name": "AI话题分类", "description": "提炼文章主题", "icon": "🎯"},
     {"id": "vocab_extract", "name": "词汇提取", "description": "提取高频词汇", "icon": "📚"},
@@ -233,8 +235,8 @@ async def upload_paper_with_progress(
                         yield emit()
                         # 跳过后续步骤
                         for step_id in ["upload_to_ai", "ai_parse", "save_passages",
-                                       "save_questions", "save_cloze", "cloze_analyze",
-                                       "topic_classify", "vocab_extract"]:
+                                       "save_questions", "save_cloze", "writing_extract",
+                                       "cloze_analyze", "topic_classify", "vocab_extract"]:
                             reporter.skip_step(step_id, "试卷已存在")
                         yield emit()
                         return
@@ -466,6 +468,42 @@ async def upload_paper_with_progress(
                     reporter.complete_step("save_cloze", f"已提取{blanks_created}个空格")
                 else:
                     reporter.skip_step("save_cloze", "未找到完形填空")
+                yield emit()
+
+                # ===== Step: 作文提取 =====
+                reporter.start_step("writing_extract", "✍️ AI 正在提取作文题目...")
+                yield emit()
+
+                writing_created = False
+                try:
+                    # 使用 LLM 提取作文（替代正则表达式）
+                    writing_result = await llm_parser.extract_writing(fileid)
+
+                    if writing_result.success and writing_result.content:
+                        # 创建作文题目记录（包含文体类型）
+                        writing_task = WritingTask(
+                            paper_id=paper.id,
+                            task_content=writing_result.content,
+                            requirements=writing_result.requirements,
+                            word_limit=writing_result.word_limit,
+                            writing_type=writing_result.writing_type,
+                            application_type=writing_result.application_type,
+                            grade=metadata.get("grade"),
+                            semester=metadata.get("semester"),
+                            exam_type=metadata.get("exam_type")
+                        )
+                        db.add(writing_task)
+                        await db.flush()
+
+                        writing_created = True
+                        type_info = writing_result.writing_type
+                        if writing_result.application_type:
+                            type_info += f"({writing_result.application_type})"
+                        reporter.complete_step("writing_extract", f"已提取: {type_info}")
+                    else:
+                        reporter.skip_step("writing_extract", writing_result.error or "未找到作文题目")
+                except Exception as e:
+                    reporter.skip_step("writing_extract", f"跳过: {str(e)}")
                 yield emit()
 
                 # ===== Step 8: 考点分析 =====

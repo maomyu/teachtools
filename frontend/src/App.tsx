@@ -9,6 +9,9 @@ import { ClozePage } from '@/pages/ClozePage'
 import { ClozePointsPage } from '@/pages/ClozePointsPage'
 import { HandoutView } from '@/components/handout/HandoutView'
 import { TextbookVocabPage } from '@/pages/TextbookVocabPage'
+import { WritingPage } from '@/pages/WritingPage'
+import { WritingDetailPage } from '@/pages/WritingDetailPage'
+import { WritingMaterialPage } from '@/pages/WritingMaterialPage'
 
 function App() {
   return (
@@ -24,6 +27,9 @@ function App() {
           <Route path="cloze/points" element={<ClozePointsPage />} />
           <Route path="handout" element={<HandoutView />} />
           <Route path="textbook-vocab" element={<TextbookVocabPage />} />
+          <Route path="writing" element={<WritingPage />} />
+          <Route path="writing/:id" element={<WritingDetailPage />} />
+          <Route path="writing/materials" element={<WritingMaterialPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

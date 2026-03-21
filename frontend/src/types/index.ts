@@ -887,3 +887,209 @@ export interface BatchDeleteResponse {
   deleted_count: number
   paper_deleted: number  // 被删除的试卷数量
 }
+
+// ============================================================================
+//  作文模块类型
+// ============================================================================
+
+/** 作文任务 */
+export interface WritingTask {
+  id: number
+  paper_id: number
+  task_content: string
+  requirements?: string
+  word_limit?: string
+  points_value?: string
+  grade?: string
+  semester?: string
+  exam_type?: string
+  writing_type?: '应用文' | '记叙文' | '其他'
+  application_type?: string  // 书信/通知/邀请/日记/邮件
+  primary_topic?: string
+  topic_verified: boolean
+  source?: SourceInfo
+  created_at: string
+}
+
+/** 作文列表响应 */
+export interface WritingTaskListResponse {
+  total: number
+  items: WritingTask[]
+  grade_counts?: Record<string, number>
+}
+
+/** 作文模板 */
+export interface WritingTemplate {
+  id: number
+  writing_type: string
+  application_type?: string
+  template_name: string
+  template_content: string
+  tips?: string
+  structure?: string
+  created_at: string
+}
+
+/** 作文范文 */
+export interface WritingSample {
+  id: number
+  task_id?: number
+  template_id?: number
+  sample_content: string
+  sample_type: 'AI生成' | '人工编写' | '真题范文'
+  score_level?: string  // 一档/二档/三档
+  created_at: string
+}
+
+/** 作文详情响应 */
+export interface WritingTaskDetail extends WritingTask {
+  templates: WritingTemplate[]
+  samples: WritingSample[]
+}
+
+/** 作文筛选参数 */
+export interface WritingFilter {
+  page?: number
+  size?: number
+  grade?: string
+  semester?: string
+  exam_type?: string
+  writing_type?: string
+  application_type?: string
+  topic?: string
+  search?: string
+}
+
+/** 作文筛选项响应 */
+export interface WritingFiltersResponse {
+  grades: string[]
+  semesters: string[]
+  exam_types: string[]
+  writing_types: string[]
+  application_types: string[]
+  topics: string[]
+}
+
+/** 文体识别响应 */
+export interface WritingTypeDetectResponse {
+  task_id: number
+  writing_type: string
+  application_type?: string
+  confidence: number
+  reasoning?: string
+}
+
+/** 批量生成响应 */
+export interface BatchGenerateResponse {
+  success_count: number
+  fail_count: number
+  results: Array<{
+    task_id: number
+    success: boolean
+    sample_id?: number
+    error?: string
+  }>
+}
+
+// ============================================================================
+//  作文模块类型
+// ============================================================================
+
+/** 作文任务 */
+export interface WritingTask {
+  id: number
+  paper_id: number
+  task_content: string
+  requirements?: string
+  word_limit?: string
+  points_value?: string
+  grade?: string
+  semester?: string
+  exam_type?: string
+  writing_type?: string
+  application_type?: string
+  primary_topic?: string
+  topic_verified: boolean
+  source?: SourceInfo
+  created_at: string
+}
+
+/** 作文列表响应 */
+export interface WritingTaskListResponse {
+  total: number
+  items: WritingTask[]
+  grade_counts?: Record<string, number>
+}
+
+/** 作文模板 */
+export interface WritingTemplate {
+  id: number
+  writing_type: string
+  application_type?: string
+  template_name: string
+  template_content: string
+  tips?: string
+  structure?: string
+  created_at: string
+}
+
+/** 作文范文 */
+export interface WritingSample {
+  id: number
+  task_id?: number
+  template_id?: number
+  sample_content: string
+  sample_type: string
+  score_level?: string
+  created_at: string
+}
+
+/** 作文详情响应 */
+export interface WritingTaskDetail extends WritingTask {
+  templates: WritingTemplate[]
+  samples: WritingSample[]
+}
+
+/** 作文筛选参数 */
+export interface WritingFilter {
+  page?: number
+  size?: number
+  grade?: string
+  semester?: string
+  exam_type?: string
+  writing_type?: string
+  application_type?: string
+  topic?: string
+  search?: string
+}
+
+/** 作文筛选项响应 */
+export interface WritingFiltersResponse {
+  grades: string[]
+  semesters: string[]
+  exam_types: string[]
+  writing_types: string[]
+  application_types: string[]
+  topics: string[]
+}
+
+/** 文体识别响应 */
+export interface WritingTypeDetectResponse {
+  task_id: number
+  writing_type: string
+  application_type?: string
+  confidence: number
+  reasoning?: string
+}
+
+/** 批量生成响应 */
+export interface BatchGenerateResponse {
+  success_count: number
+  fail_count: number
+  results: Array<{
+    task_id: number
+    success: boolean
+    sample_id?: number
+    error?: string
+  }>
+}
