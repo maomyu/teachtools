@@ -225,10 +225,21 @@ class WritingService:
         word_limit: str,
         template_content: str = ""
     ) -> str:
-        """构建范文生成 Prompt（v4 精英版 - 只生成最优范文）"""
+        """构建范文生成 Prompt（v5 增强版 - 强调字数和内容拓展）"""
         template_hint = f"\n参考模板：\n{template_content}\n" if template_content else ""
 
+        # 解析字数上限，确保范文足够长
+        word_upper = "100"
+        if "-" in word_limit:
+            parts = word_limit.replace("词", "").split("-")
+            if len(parts) == 2:
+                word_upper = parts[1].strip()
+
         return f"""你是北京中考英语教研专家。请根据以下作文题目生成一篇**高质量范文**。
+
+## ⚠️ 核心要求（最重要）
+**字数必须达到 {word_upper} 词左右！太短的作文会被扣分！**
+每个要点都必须充分拓展，不能只写一句话！
 
 ## 作文题目
 {content}
@@ -237,7 +248,7 @@ class WritingService:
 {requirements}
 
 ## 字数要求
-{word_limit}（必须达到或接近上限，不要写得太短）
+{word_limit} → **目标字数：{word_upper} 词**
 {template_hint}
 ## 高质量范文写作方法论
 
@@ -323,22 +334,22 @@ class WritingService:
 
 **应用文（书信/邮件）**：
 ```
-开头（20-30词）：Dear + 写信目的（1-2句展开）
-主体（60-80词）：
-  - First of all, [要点1]. [解释]. [细节].
-  - Besides, [要点2]. [解释]. [结果].
-  - What's more, [要点3]. [解释].
-结尾（20-30词）：I hope [期待]. I would appreciate it if [请求]. Looking forward to [回复]. Yours sincerely, Li Hua
+开头（25-35词）：Dear + 写信目的（2-3句展开，说明背景和原因）
+主体（80-100词）：
+  - First of all, [要点1]. [解释为什么]. [具体例子或细节].
+  - Besides, [要点2]. [解释重要性]. [预期的结果或好处].
+  - What's more, [要点3]. [补充说明]. [总结这一点的价值].
+结尾（25-35词）：I hope [期待]. I would appreciate it if [请求]. Looking forward to [回复]. Yours sincerely, Li Hua
 ```
 
 **记叙文**：
 ```
-开头（25-35词）：Last [时间], I [事件背景]... I felt [心情] because [原因].
-主体（70-100词）：
-  - First, [动作1]. [细节描写]. [感受].
-  - Then, [动作2]. [转折/惊喜].
-  - Finally, [动作3]. [高潮时刻]. At that moment, I felt [感受].
-结尾（20-30词）：This experience taught me that [感悟]. I will always remember [细节].
+开头（30-40词）：Last [时间], I [事件背景]... The weather was [天气描述] and I felt [心情] because [原因].
+主体（80-110词）：
+  - First, [动作1]. [详细的细节描写：看到的、听到的、感受到的]. [我的内心感受].
+  - Then, [动作2]. [发生的变化或转折]. [我的惊讶/兴奋/紧张].
+  - Finally, [动作3]. [高潮时刻的描写]. At that moment, I felt [强烈的感受].
+结尾（25-35词）：This experience taught me that [深刻的感悟]. I will always remember [最难忘的细节].
 ```
 
 ### 量化检查清单（写完后自查）
@@ -354,11 +365,13 @@ class WritingService:
 
 ## 输出要求
 
-1. 直接输出范文，不要解释
-2. **字数必须达到或接近 {word_limit}，不要写得太短！**
-3. **每个要点都必须用三步法拓展（陈述→解释→举例）**
-4. 语言自然流畅，不要生硬堆砌高级词汇
-5. 确保涵盖所有题目要求"""
+1. 直接输出范文，不要解释，不要字数统计
+2. **⚠️ 字数必须达到 {word_upper} 词左右！字数不足会被严重扣分！**
+3. **每个要点都必须用三步法拓展（陈述→解释→举例），每个要点至少 20-30 词**
+4. 语言自然流畅，使用高级词汇和复杂句型
+5. 确保涵盖所有题目要求
+6. 应用文必须有完整的开头、主体（3个拓展充分的要点）、结尾
+7. 记叙文必须有详细的情节发展、细节描写和情感表达"""
 
     # 保留旧方法名作为别名（向后兼容）
     def _build_tier1_prompt(self, *args, **kwargs):
