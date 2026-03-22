@@ -66,6 +66,11 @@ class DocxParser:
         r'(\d{4})北京(.+?)(初[一二三])(?:[（(](上|下)[）)])?(期中|期末|一模|二模)英语[（(]?(教师版|学生版|原卷版|解析版)?[）)]?'
     )
 
+    # 官方真题文件名正则 - 如: 精品解析：2022年北京市中考英语真题（解析版）
+    OFFICIAL_EXAM_PATTERN = re.compile(
+        r'(\d{4})年北京市中考英语真题(?:[（(](解析版|原卷版)[）)])?'
+    )
+
     def __init__(self, file_path: str):
         self.file_path = Path(file_path)
         self.doc: Optional[Document] = None
@@ -93,6 +98,21 @@ class DocxParser:
         """从文件名提取元数据"""
         filename = self.file_path.name
 
+        # 先尝试官方真题模式
+        official_match = self.OFFICIAL_EXAM_PATTERN.search(filename)
+        if official_match:
+            version = official_match.group(2) or "原卷版"
+            return {
+                "year": int(official_match.group(1)),
+                "region": "北京",  # 市级中考
+                "school": None,
+                "grade": "初三",  # 中考 = 初三
+                "semester": "下",  # 中考通常在下学期
+                "exam_type": "中考",
+                "version": version
+            }
+
+        # 常规文件名模式
         match = self.FILENAME_PATTERN.search(filename)
         if match:
             # 提取中间部分（可能是区县名或学校名）

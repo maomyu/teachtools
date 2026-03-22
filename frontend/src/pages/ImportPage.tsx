@@ -171,7 +171,9 @@ export function ImportPage() {
   const uploadWithProgress = useCallback(async (file: UploadFile): Promise<ImportResult> => {
     return new Promise((resolve, reject) => {
       const formData = new FormData()
-      formData.append('file', file as any)
+      // 获取原始文件对象
+      const rawFile = file.originFileObj || file
+      formData.append('file', rawFile as any)
 
       const params = new URLSearchParams()
       params.append('force', 'true')  // 总是强制导入
@@ -394,13 +396,20 @@ export function ImportPage() {
           multiple
           accept=".docx"
           fileList={fileList}
-          beforeUpload={(file) => {
+          beforeUpload={(file, _fileList) => {
+            // 批量添加文件
             if (!file.name.endsWith('.docx')) {
-              message.error('只支持 .docx 格式的文件')
+              message.error(`${file.name} 不是 .docx 格式`)
               return false
             }
-            setFileList([...fileList, file as unknown as UploadFile])
-            return false
+            return false  // 阻止自动上传
+          }}
+          onChange={(info) => {
+            // 只保留 .docx 文件
+            const docxFiles = info.fileList.filter(
+              f => f.name.endsWith('.docx') || (f as any).originFileObj?.name?.endsWith('.docx')
+            )
+            setFileList(docxFiles)
           }}
           onRemove={(file) => {
             const index = fileList.indexOf(file)
@@ -414,9 +423,52 @@ export function ImportPage() {
           </p>
           <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
           <p className="ant-upload-hint">
-            支持批量上传 .docx 格式的试卷文件
+            支持批量上传 .docx 格式的试卷文件（可一次选择多个文件）
           </p>
         </Dragger>
+
+        {/* 选择文件夹按钮 */}
+        <div style={{ marginTop: 12, textAlign: 'center' }}>
+          <input
+            type="file"
+            // @ts-ignore - webkitdirectory 是非标准属性
+            webkitdirectory="true"
+            directory=""
+            multiple
+            style={{ display: 'none' }}
+            id="folder-input"
+            onChange={(e) => {
+              const files = e.target.files
+              if (files) {
+                const docxFiles = Array.from(files).filter(f => f.name.endsWith('.docx'))
+                if (docxFiles.length === 0) {
+                  message.warning('所选文件夹中没有 .docx 文件')
+                  return
+                }
+                const newFiles = docxFiles.map(f => ({
+                  uid: `${Date.now()}-${f.name}`,
+                  name: f.name,
+                  status: 'done' as const,
+                  originFileObj: f,
+                })) as UploadFile[]
+                setFileList(prev => [...prev, ...newFiles])
+                message.success(`已添加 ${docxFiles.length} 个 .docx 文件`)
+              }
+              // 重置 input 以便再次选择同一文件夹
+              e.target.value = ''
+            }}
+          />
+          <Button
+            onClick={() => document.getElementById('folder-input')?.click()}
+            icon={<InboxOutlined />}
+            style={{ marginRight: 8 }}
+          >
+            选择文件夹
+          </Button>
+          <Text type="secondary">
+            点击可选择整个文件夹（自动筛选 .docx 文件）
+          </Text>
+        </div>
 
         <div style={{ marginTop: 16, textAlign: 'center' }}>
           <Space direction="vertical" size="middle">
