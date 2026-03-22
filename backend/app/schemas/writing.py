@@ -161,6 +161,8 @@ class SampleResponse(BaseModel):
     sample_content: str
     sample_type: str
     score_level: Optional[str] = None
+    word_count: Optional[int] = None  # 实际字数
+    translation: Optional[str] = None  # 中文翻译
     created_at: datetime
 
 
@@ -213,3 +215,87 @@ class MaterialResponse(BaseModel):
 class MaterialListResponse(BaseModel):
     """素材列表响应"""
     items: List[MaterialResponse]
+
+
+# ==============================================================================
+#                              HANDOUT MODELS
+# ==============================================================================
+
+class WritingHandoutTopicStats(BaseModel):
+    """作文讲义话题统计"""
+    topic: str
+    task_count: int  # 题目数量
+    sample_count: int  # 范文数量
+    recent_years: List[int] = []
+
+
+class WritingFrameworkSection(BaseModel):
+    """写作框架段落"""
+    name: str  # 开头句/背景句/中心句/主体段/结尾句
+    description: str  # 段落说明
+    examples: List[str] = []  # 示例句子
+
+
+class WritingFramework(BaseModel):
+    """写作框架"""
+    writing_type: str  # 应用文/记叙文
+    sections: List[WritingFrameworkSection]
+
+
+class HighFrequencyExpression(BaseModel):
+    """高频表达"""
+    category: str  # 开头句型/结尾句型/过渡词汇/高级词汇
+    items: List[str]
+
+
+class HighlightedSentence(BaseModel):
+    """重点句标注"""
+    sentence: str  # 完整句子
+    highlight_type: str  # 高级词汇/复杂句型/地道表达/过渡词
+    explanation: str  # 亮点说明
+
+
+class HandoutSampleSource(BaseModel):
+    """讲义范文来源"""
+    year: Optional[int] = None
+    region: Optional[str] = None
+    exam_type: Optional[str] = None
+    semester: Optional[str] = None
+
+
+class HandoutSample(BaseModel):
+    """讲义范文"""
+    id: int
+    task_content: str  # 题目
+    sample_content: str  # 范文正文
+    translation: Optional[str] = None  # 中文翻译
+    word_count: Optional[int] = None
+    highlighted_sentences: List[HighlightedSentence] = []  # 重点句标注
+    source: Optional[HandoutSampleSource] = None
+
+
+class WritingHandoutDetailResponse(BaseModel):
+    """作文讲义详情响应（四段式）"""
+    topic: str
+    grade: str
+    edition: str  # teacher/student
+
+    # Part 1: 话题统计
+    part1_topic_stats: WritingHandoutTopicStats
+
+    # Part 2: 写作框架
+    part2_frameworks: List[WritingFramework] = []
+
+    # Part 3: 高频表达
+    part3_expressions: List[HighFrequencyExpression] = []
+
+    # Part 4: 范文展示
+    part4_samples: List[HandoutSample] = []
+
+
+class WritingGradeHandoutResponse(BaseModel):
+    """年级作文讲义响应"""
+    grade: str
+    edition: str  # teacher/student
+    topics: List[WritingHandoutTopicStats] = []  # 话题统计列表
+    content: List[WritingHandoutDetailResponse] = []  # 各话题讲义内容

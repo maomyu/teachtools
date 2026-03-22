@@ -12,6 +12,7 @@ import { TextbookVocabPage } from '@/pages/TextbookVocabPage'
 import { WritingPage } from '@/pages/WritingPage'
 import { WritingDetailPage } from '@/pages/WritingDetailPage'
 import { WritingMaterialPage } from '@/pages/WritingMaterialPage'
+import { WritingHandoutPage } from '@/pages/WritingHandoutPage'
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
           <Route path="handout" element={<HandoutView />} />
           <Route path="textbook-vocab" element={<TextbookVocabPage />} />
           <Route path="writing" element={<WritingPage />} />
+          <Route path="writing/handout" element={<WritingHandoutPage />} />
           <Route path="writing/:id" element={<WritingDetailPage />} />
           <Route path="writing/materials" element={<WritingMaterialPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

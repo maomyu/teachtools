@@ -950,6 +950,7 @@ export interface WritingSample {
   highlights?: string         // 亮点表达（JSON数组）
   grammar_analysis?: string   // 语法分析（JSON）
   issues?: string             // 存在问题（JSON数组，用于三档文）
+  translation?: string        // 中文翻译
   created_at: string
 }
 
@@ -1004,104 +1005,77 @@ export interface BatchGenerateResponse {
 }
 
 // ============================================================================
-//  作文模块类型
+//  作文讲义类型
 // ============================================================================
 
-/** 作文任务 */
-export interface WritingTask {
+/** 作文讲义话题统计 */
+export interface WritingHandoutTopicStats {
+  topic: string
+  task_count: number
+  sample_count: number
+  recent_years: number[]
+}
+
+/** 写作框架段落 */
+export interface WritingFrameworkSection {
+  name: string  // 开头句/背景句/中心句/主体段/结尾句
+  description: string
+  examples: string[]
+}
+
+/** 写作框架 */
+export interface WritingFramework {
+  writing_type: string  // 应用文/记叙文
+  sections: WritingFrameworkSection[]
+}
+
+/** 高频表达 */
+export interface HighFrequencyExpression {
+  category: string  // 开头句型/结尾句型/过渡词汇/高级词汇
+  items: string[]
+}
+
+/** 重点句标注 */
+export interface HighlightedSentence {
+  sentence: string
+  highlight_type: string  // 高级词汇/复杂句型/地道表达/过渡词
+  explanation: string
+}
+
+/** 讲义范文来源 */
+export interface HandoutSampleSource {
+  year?: number
+  region?: string
+  exam_type?: string
+  semester?: string
+}
+
+/** 讲义范文 */
+export interface HandoutSample {
   id: number
-  paper_id: number
   task_content: string
-  requirements?: string
-  word_limit?: string
-  points_value?: string
-  grade?: string
-  semester?: string
-  exam_type?: string
-  writing_type?: string
-  application_type?: string
-  primary_topic?: string
-  topic_verified: boolean
-  source?: SourceInfo
-  created_at: string
-}
-
-/** 作文列表响应 */
-export interface WritingTaskListResponse {
-  total: number
-  items: WritingTask[]
-  grade_counts?: Record<string, number>
-}
-
-/** 作文模板 */
-export interface WritingTemplate {
-  id: number
-  writing_type: string
-  application_type?: string
-  template_name: string
-  template_content: string
-  tips?: string
-  structure?: string
-  created_at: string
-}
-
-/** 作文范文 */
-export interface WritingSample {
-  id: number
-  task_id?: number
-  template_id?: number
   sample_content: string
-  sample_type: string
-  score_level?: string
-  created_at: string
+  translation?: string  // 中文翻译
+  word_count?: number
+  highlighted_sentences: HighlightedSentence[]
+  source?: HandoutSampleSource
 }
 
-/** 作文详情响应 */
-export interface WritingTaskDetail extends WritingTask {
-  templates: WritingTemplate[]
-  samples: WritingSample[]
+/** 作文讲义详情响应（四段式） */
+export interface WritingHandoutDetailResponse {
+  topic: string
+  grade: string
+  edition: string
+  part1_topic_stats: WritingHandoutTopicStats
+  part2_frameworks: WritingFramework[]
+  part3_expressions: HighFrequencyExpression[]
+  part4_samples: HandoutSample[]
 }
 
-/** 作文筛选参数 */
-export interface WritingFilter {
-  page?: number
-  size?: number
-  grade?: string
-  semester?: string
-  exam_type?: string
-  writing_type?: string
-  application_type?: string
-  topic?: string
-  search?: string
-}
-
-/** 作文筛选项响应 */
-export interface WritingFiltersResponse {
-  grades: string[]
-  semesters: string[]
-  exam_types: string[]
-  writing_types: string[]
-  application_types: string[]
-  topics: string[]
-}
-
-/** 文体识别响应 */
-export interface WritingTypeDetectResponse {
-  task_id: number
-  writing_type: string
-  application_type?: string
-  confidence: number
-  reasoning?: string
-}
-
-/** 批量生成响应 */
-export interface BatchGenerateResponse {
-  success_count: number
-  fail_count: number
-  results: Array<{
-    task_id: number
-    success: boolean
-    sample_id?: number
-    error?: string
-  }>
+/** 年级作文讲义响应 */
+export interface WritingGradeHandoutResponse {
+  grade: string
+  edition: string
+  topics: WritingHandoutTopicStats[]
+  content: WritingHandoutDetailResponse[]
 }

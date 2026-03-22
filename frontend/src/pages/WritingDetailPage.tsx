@@ -26,6 +26,7 @@ import {
   Col,
   List,
   Alert,
+  Collapse,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -38,11 +39,14 @@ import {
   ThunderboltOutlined,
   BookOutlined,
   RiseOutlined,
+  DeleteOutlined,
+  TranslationOutlined,
 } from '@ant-design/icons'
 
 import {
   getWritingDetail,
   generateSample,
+  deleteSample,
 } from '@/services/writingService'
 import type { WritingTaskDetail, WritingTemplate, WritingSample } from '@/types'
 
@@ -91,6 +95,19 @@ export function WritingDetailPage() {
       console.error(error)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  // 删除范文
+  const handleDeleteSample = async (sampleId: number) => {
+    if (!id) return
+    try {
+      await deleteSample(parseInt(id), sampleId)
+      message.success('范文已删除')
+      loadDetail()
+    } catch (error) {
+      message.error('删除范文失败')
+      console.error(error)
     }
   }
 
@@ -414,6 +431,9 @@ export function WritingDetailPage() {
               <Space>
                 <FileTextOutlined />
                 范文 {index + 1}
+                {sample.word_count && (
+                  <Tag color="blue">{sample.word_count} 词</Tag>
+                )}
               </Space>
             }
             extra={
@@ -422,6 +442,20 @@ export function WritingDetailPage() {
                   <Tag color="gold">{sample.score_level}</Tag>
                 )}
                 <Tag>{sample.sample_type}</Tag>
+                <Popconfirm
+                  title="确定删除这篇范文吗？"
+                  description="删除后无法恢复"
+                  onConfirm={() => handleDeleteSample(sample.id)}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    size="small"
+                  />
+                </Popconfirm>
               </Space>
             }
           >
@@ -434,6 +468,38 @@ export function WritingDetailPage() {
             >
               {sample.sample_content}
             </Paragraph>
+
+            {/* 中文翻译（可折叠） */}
+            {sample.translation && (
+              <Collapse
+                style={{ marginTop: 16 }}
+                items={[
+                  {
+                    key: 'translation',
+                    label: (
+                      <Space>
+                        <TranslationOutlined />
+                        <span>中文翻译</span>
+                      </Space>
+                    ),
+                    children: (
+                      <Paragraph
+                        style={{
+                          whiteSpace: 'pre-wrap',
+                          fontSize: 14,
+                          lineHeight: 2,
+                          margin: 0,
+                          color: '#666',
+                        }}
+                      >
+                        {sample.translation}
+                      </Paragraph>
+                    ),
+                  },
+                ]}
+              />
+            )}
+
             <Divider />
             <Space split={<Divider type="vertical" />}>
               <Text type="secondary">

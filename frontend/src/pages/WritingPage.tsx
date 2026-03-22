@@ -22,13 +22,15 @@ import {
   Badge,
   Tooltip,
   Progress,
+  Radio,
 } from 'antd'
 import {
-  SearchOutlined,
   EyeOutlined,
   DeleteOutlined,
   RobotOutlined,
   FileTextOutlined,
+  BookOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -40,12 +42,14 @@ import {
   batchGenerateSamples,
 } from '@/services/writingService'
 import type { WritingTask, WritingFiltersResponse } from '@/types'
+import { WritingHandoutView } from '@/components/writingHandout/WritingHandoutView'
 
 const { Title } = Typography
 const { Search } = Input
 
 export function WritingPage() {
   const navigate = useNavigate()
+  const [viewMode, setViewMode] = useState<'list' | 'handout'>('list')
   const [loading, setLoading] = useState(false)
   const [writings, setWritings] = useState<WritingTask[]>([])
   const [total, setTotal] = useState(0)
@@ -201,6 +205,29 @@ export function WritingPage() {
   // 表格列定义
   const columns: ColumnsType<WritingTask> = [
     {
+      title: '年份',
+      key: 'year',
+      width: 80,
+      render: (_, record) => record.source?.year || '-',
+    },
+    {
+      title: '区县',
+      key: 'region',
+      width: 80,
+      render: (_, record) => record.source?.region || '-',
+    },
+    {
+      title: '学校',
+      key: 'school',
+      width: 120,
+      ellipsis: true,
+      render: (_, record) => (
+        <Tooltip title={record.source?.school}>
+          {record.source?.school || '-'}
+        </Tooltip>
+      ),
+    },
+    {
       title: '年级',
       dataIndex: 'grade',
       key: 'grade',
@@ -291,6 +318,29 @@ export function WritingPage() {
 
   return (
     <div style={{ padding: 24 }}>
+      {/* 视图切换器 */}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Radio.Group
+          value={viewMode}
+          onChange={(e) => setViewMode(e.target.value)}
+          buttonStyle="solid"
+        >
+          <Radio.Button value="list">
+            <UnorderedListOutlined /> 列表视图
+          </Radio.Button>
+          <Radio.Button value="handout">
+            <BookOutlined /> 讲义视图
+          </Radio.Button>
+        </Radio.Group>
+      </div>
+
+      {/* 讲义视图 */}
+      {viewMode === 'handout' && (
+        <WritingHandoutView />
+      )}
+
+      {/* 列表视图 */}
+      {viewMode === 'list' && (
       <Card>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           {/* 标题和统计 */}
@@ -422,6 +472,7 @@ export function WritingPage() {
           />
         </Space>
       </Card>
+      )}
     </div>
   )
 }

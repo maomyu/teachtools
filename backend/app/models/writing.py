@@ -132,6 +132,7 @@ class WritingSample(Base):
     highlights = Column(Text)             # 亮点表达（JSON数组）
     grammar_analysis = Column(Text)       # 语法分析（JSON）
     issues = Column(Text)                 # 存在问题（JSON数组，用于三档文）
+    translation = Column(Text)            # 中文翻译
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

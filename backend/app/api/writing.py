@@ -10,6 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from pydantic import BaseModel
 
 from app.database import get_db
@@ -24,6 +25,10 @@ from app.schemas.writing import (
     WritingFiltersResponse,
     TemplateResponse,
     SampleResponse,
+    # 讲义相关
+    WritingHandoutTopicStats,
+    WritingHandoutDetailResponse,
+    WritingGradeHandoutResponse,
 )
 from app.services.writing_service import WritingService
 
@@ -118,6 +123,102 @@ async def get_writings(
 
 
 # ==============================================================================
+#                              讲义功能（放在 /{task_id} 之前）
+# ==============================================================================
+
+@router.get("/handouts/{grade}/topics")
+async def get_writing_handout_topics(
+    grade: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取年级话题统计（按题目数量排序）
+
+    Args:
+        grade: 年级（初一/初二/初三）
+    """
+    service = WritingService(db)
+    topics = await service.get_topic_stats_for_grade(grade)
+    return {"grade": grade, "topics": topics}
+
+
+@router.get("/handouts/{grade}/topics/{topic:path}")
+async def get_writing_handout_detail(
+    grade: str,
+    topic: str,
+    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取单话题作文讲义详情（四段式）
+
+    Args:
+        grade: 年级
+        topic: 话题名称（URL编码）
+        edition: teacher/student
+    """
+    from urllib.parse import unquote
+    topic = unquote(topic)
+
+    service = WritingService(db)
+    content = await service.get_topic_handout_content(grade, topic, edition)
+
+    return WritingHandoutDetailResponse(
+        topic=content["topic"],
+        grade=content["grade"],
+        edition=content["edition"],
+        part1_topic_stats=content["part1_topic_stats"],
+        part2_frameworks=content["part2_frameworks"],
+        part3_expressions=content["part3_expressions"],
+        part4_samples=content["part4_samples"]
+    )
+
+
+@router.get("/handouts/{grade}")
+async def get_writing_handout(
+    grade: str,
+    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取年级完整作文讲义（含所有话题）
+
+    Args:
+        grade: 年级
+        edition: teacher/student
+    """
+    service = WritingService(db)
+
+    # 获取话题统计
+    topics = await service.get_topic_stats_for_grade(grade)
+
+    # 获取每个话题的讲义内容
+    content = []
+    for topic_info in topics:
+        topic_content = await service.get_topic_handout_content(
+            grade,
+            topic_info["topic"],
+            edition
+        )
+        content.append(WritingHandoutDetailResponse(
+            topic=topic_content["topic"],
+            grade=topic_content["grade"],
+            edition=topic_content["edition"],
+            part1_topic_stats=topic_content["part1_topic_stats"],
+            part2_frameworks=topic_content["part2_frameworks"],
+            part3_expressions=topic_content["part3_expressions"],
+            part4_samples=topic_content["part4_samples"]
+        ))
+
+    return WritingGradeHandoutResponse(
+        grade=grade,
+        edition=edition,
+        topics=topics,
+        content=content
+    )
+
+
+# ==============================================================================
 #                              详情查询
 # ==============================================================================
 
@@ -177,6 +278,8 @@ async def get_writing_detail(
             sample_content=s.sample_content,
             sample_type=s.sample_type,
             score_level=s.score_level,
+            word_count=s.word_count,
+            translation=s.translation,
             created_at=s.created_at,
         )
         for s in (task.samples or [])
@@ -272,6 +375,8 @@ async def generate_sample(
             sample_content=sample.sample_content,
             sample_type=sample.sample_type,
             score_level=sample.score_level,
+            word_count=sample.word_count,
+            translation=sample.translation,
             created_at=sample.created_at,
         )
     except ValueError as e:
@@ -316,6 +421,39 @@ async def batch_generate_samples(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"批量生成失败: {str(e)}")
+
+
+# ==============================================================================
+#                              范文删除
+# ==============================================================================
+
+@router.delete("/{task_id}/samples/{sample_id}")
+async def delete_sample(
+    task_id: int,
+    sample_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    删除单个范文
+
+    Args:
+        task_id: 作文 ID
+        sample_id: 范文 ID
+    """
+    result = await db.execute(
+        select(WritingSample).where(
+            WritingSample.id == sample_id,
+            WritingSample.task_id == task_id
+        )
+    )
+    sample = result.scalar_one_or_none()
+
+    if not sample:
+        raise HTTPException(status_code=404, detail="范文不存在")
+
+    await db.delete(sample)
+    await db.commit()
+    return {"message": "范文删除成功"}
 
 
 # ==============================================================================

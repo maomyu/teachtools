@@ -225,153 +225,243 @@ class WritingService:
         word_limit: str,
         template_content: str = ""
     ) -> str:
-        """构建范文生成 Prompt（v5 增强版 - 强调字数和内容拓展）"""
+        """构建范文生成 Prompt（v6 教学版 - 300词详细范文）"""
         template_hint = f"\n参考模板：\n{template_content}\n" if template_content else ""
 
-        # 解析字数上限，确保范文足够长
-        word_upper = "100"
-        if "-" in word_limit:
-            parts = word_limit.replace("词", "").split("-")
-            if len(parts) == 2:
-                word_upper = parts[1].strip()
-
-        return f"""你是北京中考英语教研专家。请根据以下作文题目生成一篇**高质量范文**。
+        return f"""你是北京中考英语教研专家。请根据以下作文题目生成一篇**教学用详细范文**。
 
 ## ⚠️ 核心要求（最重要）
-**字数必须达到 {word_upper} 词左右！太短的作文会被扣分！**
-每个要点都必须充分拓展，不能只写一句话！
+**这是一篇教学示范范文，字数必须达到 300 词左右！**
+教学范文需要充分展示写作技巧，让学生学习如何扩展内容、使用高级词汇和复杂句型。
 
 ## 作文题目
 {content}
 
 ## 写作要求
 {requirements}
-
-## 字数要求
-{word_limit} → **目标字数：{word_upper} 词**
 {template_hint}
-## 高质量范文写作方法论
+## 教学范文写作方法论
 
 ### 核心原则：展示而非告知
-- 不要说 "I am happy" → 要说 "A big smile spread across my face"
-- 不要说 "It was beautiful" → 要说具体细节（颜色、形状、声音等）
-- 不要说 "I learned a lot" → 要说具体学到了什么（用1-2句话展开）
+- 不要说 "I am happy" → 要说 "A big smile spread across my face and my heart was filled with joy"
+- 不要说 "It was beautiful" → 要描述具体细节（颜色、形状、声音、气味）
+- 不要说 "I learned a lot" → 要具体说学到了什么，用 2-3 句话展开
 
-### ⭐ 内容拓展三步法（必须使用）
+### ⭐ 五层拓展法（每个要点必须使用）
 
-**每个要点都必须拓展，不能只写一句话！**
+**Layer 1: 陈述** - 用一句话表达核心观点
+**Layer 2: 解释** - 用 2-3 句话解释原因或背景
+**Layer 3: 举例** - 用 2-3 句话给出具体例子
+**Layer 4: 细节** - 用 1-2 句话添加感官细节或情感描写
+**Layer 5: 感悟** - 用 1 句话总结这一点的意义
 
-**步骤1：陈述（Statement）** - 用一句话表达核心观点
-**步骤2：解释（Explanation）** - 用1-2句话解释为什么
-**步骤3：举例/细节（Example/Detail）** - 用1-2句话给出具体例子
-
-**应用文拓展示例**：
-> 原句：I suggest we should have more books.
+**应用文五层拓展示例**：
+> 原句：I suggest we should have more books. (7 words)
 >
-> 拓展后：I suggest we should have more English books in our library. This is because many students want to improve their reading skills but cannot find suitable materials. For example, graded readers and English magazines would be very helpful for beginners.
+> 拓展后 (60+ words)：
+> I would like to suggest that our school library should have more English books for students to borrow. The reason is that many of us are eager to improve our English reading skills, but unfortunately, we often find it difficult to locate suitable reading materials in the current library. For instance, graded readers like Oxford Bookworms and interesting English magazines such as Time for Kids would be extremely helpful for beginners like us. I still remember how frustrated I felt last week when I spent thirty minutes searching for an English book but found nothing at my level. With more resources available, I believe more students will develop a passion for English reading.
 
-**记叙文拓展示例**：
-> 原句：I went to the museum.
+**记叙文五层拓展示例**：
+> 原句：I went to the museum. (5 words)
 >
-> 拓展后：Last Saturday, I went to the Science Museum with my classmates. We were all excited because it was our first school trip after the pandemic. The museum was huge, with hundreds of interesting exhibits about space and technology.
+> 拓展后 (70+ words)：
+> Last Saturday morning, I went to the Science Museum in the city center with three of my best classmates. We had been looking forward to this trip for weeks because it was our first school outing since the pandemic began. The museum was an impressive modern building with huge glass windows that sparkled in the sunlight. As soon as we entered, I was amazed by the enormous dinosaur skeleton standing in the main hall. I could hear the excited whispers of children around me and smell the faint scent of the coffee shop nearby. At that moment, I felt like a young explorer ready to discover the wonders of science.
 
-### 内容拓展技巧
+### 内容拓展技巧库
 
 **应用文拓展技巧**：
 
-1. **理由+结果**
-   - 原句：I want to join the club.
-   - 拓展：I want to join the club because I am interested in environmental protection. If I become a member, I can help organize activities to make our school greener.
+1. **理由链**（Reason Chain）
+   - 不仅说"因为..."，还要说"这会导致..."，再延伸到"最终会..."
+   - 例：图书馆需要更多书 → 学生可以多阅读 → 英语水平提高 → 考试成绩更好 → 未来有更多机会
 
-2. **观点+建议**
-   - 原句：We should improve the library.
-   - 拓展：In my opinion, the school library needs some improvements. First, we could buy more English books. Second, it would be better to extend the opening hours so students can study there after school.
+2. **对比论证**（Comparison）
+   - 描述现状的问题 vs 改进后的美好前景
+   - 例：Currently, students... However, if we..., then...
 
-3. **感谢+具体帮助**
-   - 原句：Thank you for your help.
-   - 拓展：I would like to express my sincere gratitude for your help. Your advice on my English pronunciation was very useful. Thanks to you, I feel more confident when speaking English now.
+3. **具体数据**（Specific Details）
+   - 用具体数字、时间、地点增加可信度
+   - 例：last semester, more than 50 students, every Tuesday afternoon
+
+4. **个人经历**（Personal Experience）
+   - 用自己的故事增强说服力
+   - 例：I still remember when I..., This reminded me of...
 
 **记叙文拓展技巧**：
 
-1. **动作+感受**
-   - 原句：I went to the park.
-   - 拓展：Last Sunday, I went to the park near my home. The weather was perfect, with warm sunshine and a gentle breeze. I felt relaxed as soon as I stepped into the park.
+1. **五感描写法**（Five Senses）
+   - 视觉（颜色、形状、大小）
+   - 听觉（声音、音乐、对话）
+   - 嗅觉（气味）
+   - 触觉（温度、质地）
+   - 味觉（如果是食物相关）
 
-2. **细节描写（五感法）**
-   - 原句：The food was good.
-   - 拓展：The food at the restaurant was amazing. I could smell the delicious aroma as soon as I walked in. The dumplings were hot and juicy, and they tasted just like my grandmother's cooking.
+2. **心理活动描写**（Inner Thoughts）
+   - 直接描写想法：I thought to myself...
+   - 描写情绪变化：At first I was..., but then...
+   - 描写内心独白：Should I...? What if...?
 
-3. **对话+心理活动**
-   - 原句：My teacher praised me.
-   - 拓展：When I handed in my homework, my teacher looked at it carefully and smiled. "Excellent work!" she said. Hearing those words, I felt a sense of achievement and decided to work even harder.
+3. **动作分解**（Action Breakdown）
+   - 把一个动作拆成 3-4 个连续小动作
+   - 例：I looked at → I stared at → I narrowed my eyes → I gasped in surprise
 
-4. **对比+转变**
-   - 原句：I was nervous at first.
-   - 拓展：At first, I was so nervous that my hands were shaking. However, after taking a deep breath, I calmed down and started to speak. To my surprise, the words just flowed naturally.
+4. **环境烘托**（Atmosphere Building）
+   - 天气、光线、温度、周围的人和物
+   - 例：The golden sunlight filtered through the leaves, casting dancing shadows on the ground.
 
-### 语言提升三步法
+### 高级语言技巧
 
-**步骤1：词汇升级**
-- 基础词 → 高级词（但必须符合语境）
-- 例：good → excellent（形容人） / beneficial（形容事）
-- 例：help → assist（正式） / support（支持）
-- 例：think → believe / consider
-- 例：want → desire / hope to
+**词汇升级清单**：
+| 基础词 | 高级替换 |
+|--------|----------|
+| good | excellent, outstanding, remarkable, impressive |
+| bad | terrible, awful, disappointing, unpleasant |
+| happy | delighted, thrilled, overjoyed, ecstatic |
+| sad | upset, depressed, heartbroken, miserable |
+| think | believe, consider, assume, suppose |
+| say | mention, explain, suggest, emphasize |
+| very | extremely, incredibly, remarkably, absolutely |
+| important | significant, crucial, essential, vital |
 
-**步骤2：句式丰富**
-- 简单句 → 并列句 → 复合句
-- 必须使用的句型：
-  • 定语从句：..., which/who...
-  • 状语从句：When/If/Because..., ...
-  • 非谓语：Doing..., / To do..., / ..., doing...
+**必用句型清单**：
+1. **定语从句**：..., which/who/that...
+2. **状语从句**：When/If/Because/Although/While...
+3. **非谓语动词**：Doing.../To do.../..., doing.../..., done...
+4. **强调句**：It is/was... that...
+5. **倒装句**：Not only... but also... / Only when...
+6. **虚拟语气**：If I were..., I would... / I wish I could...
 
-**步骤3：衔接自然**
-- 段落之间用过渡词
-- 句子之间有逻辑关系
-- 常用：However, Therefore, Besides, In addition, What's more, Furthermore
+**过渡词清单**：
+- 递进：Besides, Furthermore, Moreover, In addition, What's more
+- 转折：However, Nevertheless, On the other hand, Despite this
+- 因果：Therefore, Thus, As a result, Consequently
+- 总结：In conclusion, To sum up, All in all
 
-### 结构模板（根据文体选择）
+### 结构模板（300词版本）
 
-**应用文（书信/邮件）**：
+**应用文（书信/邮件）- 300词**：
 ```
-开头（25-35词）：Dear + 写信目的（2-3句展开，说明背景和原因）
-主体（80-100词）：
-  - First of all, [要点1]. [解释为什么]. [具体例子或细节].
-  - Besides, [要点2]. [解释重要性]. [预期的结果或好处].
-  - What's more, [要点3]. [补充说明]. [总结这一点的价值].
-结尾（25-35词）：I hope [期待]. I would appreciate it if [请求]. Looking forward to [回复]. Yours sincerely, Li Hua
+开头（50-60词）：
+  - Dear [称呼],
+  - 写信背景和目的（用 3-4 句话详细说明）
+  - 为什么写这封信，有什么特别的触发事件
+
+主体（180-200词）- 分3个要点，每个60-70词：
+  - First of all, [要点1]. [五层拓展：陈述→解释→举例→细节→感悟].
+  - Besides, [要点2]. [五层拓展：陈述→解释→举例→细节→感悟].
+  - What's more/Furthermore, [要点3]. [五层拓展：陈述→解释→举例→细节→感悟].
+
+结尾（50-60词）：
+  - 总结期待和请求
+  - 表达感谢或希望
+  - Looking forward to... / I would appreciate it if...
+  - Yours sincerely, Li Hua
 ```
 
-**记叙文**：
+**记叙文 - 300词**：
 ```
-开头（30-40词）：Last [时间], I [事件背景]... The weather was [天气描述] and I felt [心情] because [原因].
-主体（80-110词）：
-  - First, [动作1]. [详细的细节描写：看到的、听到的、感受到的]. [我的内心感受].
-  - Then, [动作2]. [发生的变化或转折]. [我的惊讶/兴奋/紧张].
-  - Finally, [动作3]. [高潮时刻的描写]. At that moment, I felt [强烈的感受].
-结尾（25-35词）：This experience taught me that [深刻的感悟]. I will always remember [最难忘的细节].
+开头（50-60词）：
+  - 时间、地点、人物、事件背景
+  - 环境描写（天气、氛围）
+  - 初始心情和期待
+
+主体（180-200词）- 分3个场景，每个60-70词：
+  - First, [场景1]. [五感描写 + 心理活动 + 动作分解].
+  - Then, [场景2 - 转折或发展]. [对话 + 情感变化 + 环境烘托].
+  - Finally, [场景3 - 高潮]. [最详细的描写，突出关键时刻].
+
+结尾（50-60词）：
+  - 事件结果的简述
+  - 深刻的感悟或学到的道理
+  - 对未来的展望或决心
 ```
-
-### 量化检查清单（写完后自查）
-
-| 维度 | 要求 | 你的文章达标了吗？ |
-|------|------|-------------------|
-| 字数 | 达到或接近上限 | ☐ |
-| 内容 | 每个要点都有拓展（陈述+解释+举例） | ☐ |
-| 词汇 | 至少5个高级词汇 | ☐ |
-| 句式 | 至少2个复杂句型 | ☐ |
-| 衔接 | 至少3个过渡词 | ☐ |
-| 语法 | 0错误 | ☐ |
 
 ## 输出要求
 
 1. 直接输出范文，不要解释，不要字数统计
-2. **⚠️ 字数必须达到 {word_upper} 词左右！字数不足会被严重扣分！**
-3. **每个要点都必须用三步法拓展（陈述→解释→举例），每个要点至少 20-30 词**
-4. 语言自然流畅，使用高级词汇和复杂句型
-5. 确保涵盖所有题目要求
-6. 应用文必须有完整的开头、主体（3个拓展充分的要点）、结尾
-7. 记叙文必须有详细的情节发展、细节描写和情感表达"""
+2. **⚠️ 字数必须达到 300 词左右！这是教学示范范文！**
+3. **每个要点必须用五层拓展法，每个要点至少 50-70 词**
+4. 至少使用 5 个高级词汇（从词汇升级清单中选择）
+5. 至少使用 3 种高级句型（从必用句型清单中选择）
+6. 至少使用 4 个过渡词（从过渡词清单中选择）
+7. 确保涵盖所有题目要求
+8. 语言自然流畅，避免生硬堆砌
+
+## 输出格式（必须严格遵守！请分别用以下两个标题输出内容，不要添加任何解释性文字）
+
+### English Essay
+[在此处写300词左右的英文范文]
+
+### Chinese Translation
+[在此处写对应的中文翻译]
+
+## 示例输出格式（请严格按照此格式输出）
+
+### English Essay
+Dear Editor,
+
+I am writing to share my admiration for...
+
+[范文正文继续...]
+
+### Chinese Translation
+尊敬的编辑：
+
+我写这封信是为了分享我对...的敬佩...
+
+[翻译正文继续...]
+"""
+
+    def _parse_essay_with_translation(self, text: str) -> tuple:
+        """
+        解析 AI 返回的范文和翻译
+
+        Args:
+            text: AI 返回的原始文本
+
+        Returns:
+            (english_essay, chinese_translation) 元组
+        """
+        import re
+
+        english_essay = None
+        chinese_translation = None
+
+        # 尝试多种分隔符格式
+        # 格式1: ### Chinese Translation
+        if '### Chinese Translation' in text or '### English Essay' in text:
+            match_essay = re.search(
+                r'###\s*English\s*Essay\s*\n(.*?)(?=###\s*Chinese\s*Translation|$)',
+                text, re.DOTALL | re.IGNORECASE
+            )
+            match_translation = re.search(
+                r'###\s*Chinese\s*Translation\s*\n(.*?)$',
+                text, re.DOTALL | re.IGNORECASE
+            )
+            if match_essay:
+                english_essay = match_essay.group(1).strip()
+            if match_translation:
+                chinese_translation = match_translation.group(1).strip()
+
+        # 格式2: 只有 ### Chinese Translation，没有 ### English Essay
+        elif '### Chinese Translation' in text:
+            parts = text.split('### Chinese Translation')
+            english_essay = parts[0].strip()
+            chinese_translation = parts[1].strip() if len(parts) > 1 else None
+
+        # 格式3: 只有翻译，没有分隔符
+        elif '翻译' in text or '中文翻译' in text:
+            parts = re.split(r'(?:翻译|中文翻译)\s*[:\n]', text, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                english_essay = parts[0].strip()
+                chinese_translation = parts[1].strip()
+
+        # 如果没有找到任何分隔符，使用整个文本作为英文范文
+        if not english_essay:
+            english_essay = text.strip()
+
+        logger.info(f"解析结果: 英文 {len(english_essay)} 字符, 翻译 {len(chinese_translation) if chinese_translation else 0} 字符")
+        return english_essay, chinese_translation
 
     # 保留旧方法名作为别名（向后兼容）
     def _build_tier1_prompt(self, *args, **kwargs):
@@ -393,12 +483,12 @@ class WritingService:
         score_level: str = "一档"
     ) -> WritingSample:
         """
-        生成范文（v4 精英版 - 只生成最优范文）
+        生成范文（v6 教学版 - 300词详细范文 + 字数验证）
 
         Args:
             task_id: 作文 ID
             template_id: 模板 ID（可选，不传则自动获取或创建）
-            score_level: 档次（v4 已废弃，保留参数用于兼容）
+            score_level: 档次（v6 已废弃，保留参数用于兼容）
 
         Returns:
             WritingSample
@@ -441,24 +531,72 @@ class WritingService:
             template_content=template_content
         )
 
-        # 调用 AI 生成
-        result_text = self.ai_service.chat(prompt)
+        # 字数验证 + 自动重试机制
+        MAX_RETRIES = 3
+        MIN_WORD_COUNT = 250  # 教学范文最低 250 词
+        result_text = None
+        final_word_count = 0
+        english_essay = None
+        chinese_translation = None
 
-        if not result_text:
-            raise ValueError("AI 生成范文失败：返回内容为空")
+        for attempt in range(MAX_RETRIES):
+            # 调用 AI 生成
+            result_text = self.ai_service.chat(prompt)
+
+            if not result_text:
+                raise ValueError("AI 生成范文失败：返回内容为空")
+
+            # 解析英文范文和中文翻译
+            english_essay, chinese_translation = self._parse_essay_with_translation(result_text)
+
+            # 计算英文单词数（只计算英文部分）
+            final_word_count = len(english_essay.split()) if english_essay else 0
+            logger.info(f"范文生成尝试 {attempt + 1}/{MAX_RETRIES}，字数: {final_word_count}")
+
+            if final_word_count >= MIN_WORD_COUNT:
+                break
+
+            # 字数不足，增强提示重试
+            if attempt < MAX_RETRIES - 1:
+                logger.warning(f"范文字数不足 ({final_word_count} < {MIN_WORD_COUNT})，准备重试...")
+                prompt = f"""{prompt}
+
+⚠️ 上一次生成的内容只有 {final_word_count} 个英文单词，远远不够！
+教学范文需要至少 250-300 词，请大幅扩展内容：
+1. 每个要点必须用五层拓展法（陈述→解释→举例→细节→感悟）
+2. 添加更多具体的细节描写（颜色、声音、感受等）
+3. 增加对话或心理活动描写
+4. 使用更多的从句和复杂句型
+5. 绝对不能缩短内容，只能扩展！"""
+
+        if final_word_count < MIN_WORD_COUNT:
+            logger.warning(f"范文经过 {MAX_RETRIES} 次尝试仍不足 {MIN_WORD_COUNT} 词, 0 using last result")
+
+        # 如果 AI 没有返回翻译，单独调用翻译 API
+        if not chinese_translation and english_essay:
+            logger.info("AI 未返回翻译，单独生成翻译...")
+            translation_prompt = f"""请将以下英文范文翻译成中文，保持段落对应，语言通顺自然：
+
+{english_essay}"""
+            chinese_translation = self.ai_service.chat(translation_prompt)
+            if chinese_translation:
+                logger.info(f"翻译生成成功: {len(chinese_translation)} 字符")
 
         # 保存范文
         sample = WritingSample(
             task_id=task_id,
             template_id=actual_template_id,
             sample_type="AI生成",
-            sample_content=result_text,
-            score_level="优质范文"  # 统一标记
+            sample_content=english_essay or result_text,
+            score_level="优质范文",  # 统一标记
+            word_count=final_word_count,  # 记录实际字数
+            translation=chinese_translation,  # 中文翻译
         )
         self.db.add(sample)
         await self.db.commit()
         await self.db.refresh(sample)
 
+        logger.info(f"范文生成完成: id={sample.id}, word_count={final_word_count}")
         return sample
 
     async def batch_generate_samples(
@@ -703,3 +841,467 @@ class WritingService:
             "application_types": sorted(application_types),
             "topics": sorted(topics)
         }
+
+    # =========================================================================
+    #                              讲义功能
+    # =========================================================================
+
+    async def get_topic_stats_for_grade(self, grade: str) -> List[Dict]:
+        """
+        获取年级话题统计（按题目数量排序）
+
+        Args:
+            grade: 年级
+
+        Returns:
+            [{"topic": "校园生活", "task_count": 10, "sample_count": 8, "recent_years": [2023, 2024]}]
+        """
+        # 查询该年级下所有话题的统计
+        query = (
+            select(
+                WritingTask.primary_topic.label('topic'),
+                func.count(WritingTask.id).label('task_count'),
+                func.group_concat(ExamPaper.year.distinct()).label('years')
+            )
+            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+            .where(ExamPaper.grade == grade)
+            .where(WritingTask.primary_topic.isnot(None))
+            .where(WritingTask.primary_topic != '')
+            .group_by(WritingTask.primary_topic)
+            .order_by(func.count(WritingTask.id).desc())
+        )
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        stats = []
+        for row in rows:
+            topic = row.topic
+            task_count = row.task_count
+
+            # 查询该话题下的范文数量
+            sample_count_query = (
+                select(func.count(WritingSample.id))
+                .join(WritingTask, WritingSample.task_id == WritingTask.id)
+                .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+                .where(ExamPaper.grade == grade)
+                .where(WritingTask.primary_topic == topic)
+            )
+            sample_count_result = await self.db.execute(sample_count_query)
+            sample_count = sample_count_result.scalar() or 0
+
+            # 解析年份
+            years = []
+            if row.years:
+                try:
+                    years = sorted(set(int(y.strip()) for y in str(row.years).split(',') if y.strip().isdigit()))
+                except:
+                    pass
+
+            stats.append({
+                "topic": topic,
+                "task_count": task_count,
+                "sample_count": sample_count,
+                "recent_years": years[-3:] if years else []  # 最近3年
+            })
+
+        return stats
+
+    async def get_topic_handout_content(
+        self,
+        grade: str,
+        topic: str,
+        edition: str = 'teacher'
+    ) -> Dict:
+        """
+        获取单话题讲义内容（四段式）
+
+        Args:
+            grade: 年级
+            topic: 话题
+            edition: teacher/student
+
+        Returns:
+            四段式讲义内容
+        """
+        # Part 1: 话题统计
+        stats = await self._get_single_topic_stats(grade, topic)
+
+        # Part 2: 写作框架
+        frameworks = await self._aggregate_frameworks(grade, topic)
+
+        # Part 3: 高频表达
+        expressions = await self._aggregate_expressions(grade, topic)
+
+        # Part 4: 范文展示
+        samples = await self._get_topic_samples(grade, topic, edition)
+
+        return {
+            "topic": topic,
+            "grade": grade,
+            "edition": edition,
+            "part1_topic_stats": stats,
+            "part2_frameworks": frameworks,
+            "part3_expressions": expressions,
+            "part4_samples": samples
+        }
+
+    async def _get_single_topic_stats(self, grade: str, topic: str) -> Dict:
+        """获取单个话题的统计"""
+        # 题目数量
+        task_count_query = (
+            select(func.count(WritingTask.id))
+            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+            .where(ExamPaper.grade == grade)
+            .where(WritingTask.primary_topic == topic)
+        )
+        task_count_result = await self.db.execute(task_count_query)
+        task_count = task_count_result.scalar() or 0
+
+        # 范文数量
+        sample_count_query = (
+            select(func.count(WritingSample.id))
+            .join(WritingTask, WritingSample.task_id == WritingTask.id)
+            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+            .where(ExamPaper.grade == grade)
+            .where(WritingTask.primary_topic == topic)
+        )
+        sample_count_result = await self.db.execute(sample_count_query)
+        sample_count = sample_count_result.scalar() or 0
+
+        # 年份
+        years_query = (
+            select(ExamPaper.year.distinct())
+            .join(WritingTask, ExamPaper.id == WritingTask.paper_id)
+            .where(ExamPaper.grade == grade)
+            .where(WritingTask.primary_topic == topic)
+            .where(ExamPaper.year.isnot(None))
+            .order_by(ExamPaper.year.desc())
+            .limit(3)
+        )
+        years_result = await self.db.execute(years_query)
+        years = [y for y in years_result.scalars().all() if y]
+
+        return {
+            "topic": topic,
+            "task_count": task_count,
+            "sample_count": sample_count,
+            "recent_years": years
+        }
+
+    async def _aggregate_frameworks(self, grade: str, topic: str) -> List[Dict]:
+        """
+        聚合写作框架（从该话题下所有模板提取）
+
+        写作框架结构：
+        - 开头句（点明目的）
+        - 背景句（交代背景）
+        - 中心句（核心观点）
+        - 主体段（观点+例子+解释）
+        - 结尾句（总结+建议）
+        """
+        # 获取该话题下的文体类型
+        writing_types_query = (
+            select(WritingTask.writing_type.distinct())
+            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+            .where(ExamPaper.grade == grade)
+            .where(WritingTask.primary_topic == topic)
+            .where(WritingTask.writing_type.isnot(None))
+        )
+        writing_types_result = await self.db.execute(writing_types_query)
+        writing_types = [wt for wt in writing_types_result.scalars().all() if wt]
+
+        frameworks = []
+        for writing_type in writing_types:
+            # 获取该文体的模板
+            template_query = select(WritingTemplate).where(
+                WritingTemplate.writing_type == writing_type
+            ).limit(1)
+            template_result = await self.db.execute(template_query)
+            template = template_result.scalar_one_or_none()
+
+            # 解析模板中的句型
+            opening_sentences = []
+            closing_sentences = []
+            if template:
+                if template.opening_sentences:
+                    try:
+                        opening_sentences = json.loads(template.opening_sentences)[:3]
+                    except:
+                        pass
+                if template.closing_sentences:
+                    try:
+                        closing_sentences = json.loads(template.closing_sentences)[:3]
+                    except:
+                        pass
+
+            # 构建框架
+            if writing_type == "应用文":
+                framework = {
+                    "writing_type": writing_type,
+                    "sections": [
+                        {
+                            "name": "开头句",
+                            "description": "点明写信目的，引起注意",
+                            "examples": opening_sentences[:2] if opening_sentences else [
+                                "I am writing to tell you about...",
+                                "I would like to invite you to..."
+                            ]
+                        },
+                        {
+                            "name": "背景句",
+                            "description": "交代事件背景、原因",
+                            "examples": []
+                        },
+                        {
+                            "name": "中心句",
+                            "description": "表达核心观点或请求",
+                            "examples": []
+                        },
+                        {
+                            "name": "主体段",
+                            "description": "分点论述（观点+例子+解释）",
+                            "examples": []
+                        },
+                        {
+                            "name": "结尾句",
+                            "description": "总结、期待回复",
+                            "examples": closing_sentences[:2] if closing_sentences else [
+                                "I am looking forward to your reply.",
+                                "Best wishes!"
+                            ]
+                        }
+                    ]
+                }
+            else:  # 记叙文
+                framework = {
+                    "writing_type": writing_type,
+                    "sections": [
+                        {
+                            "name": "开头句",
+                            "description": "交代时间、地点、人物",
+                            "examples": opening_sentences[:2] if opening_sentences else [
+                                "Last weekend, I had an unforgettable experience.",
+                                "It was a sunny day when..."
+                            ]
+                        },
+                        {
+                            "name": "背景句",
+                            "description": "描述事件起因",
+                            "examples": []
+                        },
+                        {
+                            "name": "中心句",
+                            "description": "点明主题或情感",
+                            "examples": []
+                        },
+                        {
+                            "name": "主体段",
+                            "description": "详细描述事件经过（动作+对话+感受）",
+                            "examples": []
+                        },
+                        {
+                            "name": "结尾句",
+                            "description": "总结感悟、升华主题",
+                            "examples": closing_sentences[:2] if closing_sentences else [
+                                "This experience taught me that...",
+                                "I will never forget this special day."
+                            ]
+                        }
+                    ]
+                }
+
+            frameworks.append(framework)
+
+        return frameworks
+
+    async def _aggregate_expressions(self, grade: str, topic: str) -> List[Dict]:
+        """
+        聚合高频表达（从模板字段合并去重）
+
+        分类：
+        - 开头句型
+        - 结尾句型
+        - 过渡词汇
+        - 高级词汇
+        """
+        # 获取该话题下的文体类型
+        writing_types_query = (
+            select(WritingTask.writing_type.distinct())
+            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+            .where(ExamPaper.grade == grade)
+            .where(WritingTask.primary_topic == topic)
+            .where(WritingTask.writing_type.isnot(None))
+        )
+        writing_types_result = await self.db.execute(writing_types_query)
+        writing_types = [wt for wt in writing_types_result.scalars().all() if wt]
+
+        # 合并所有模板的表达素材
+        all_opening = []
+        all_closing = []
+        all_transitions = []
+        all_vocabulary = []
+
+        for writing_type in writing_types:
+            template_query = select(WritingTemplate).where(
+                WritingTemplate.writing_type == writing_type
+            ).limit(1)
+            template_result = await self.db.execute(template_query)
+            template = template_result.scalar_one_or_none()
+
+            if template:
+                if template.opening_sentences:
+                    try:
+                        all_opening.extend(json.loads(template.opening_sentences))
+                    except:
+                        pass
+                if template.closing_sentences:
+                    try:
+                        all_closing.extend(json.loads(template.closing_sentences))
+                    except:
+                        pass
+                if template.transition_words:
+                    try:
+                        all_transitions.extend(json.loads(template.transition_words))
+                    except:
+                        pass
+                if template.advanced_vocabulary:
+                    try:
+                        vocab_data = json.loads(template.advanced_vocabulary)
+                        if isinstance(vocab_data, list):
+                            all_vocabulary.extend(vocab_data)
+                    except:
+                        pass
+
+        # 去重（保持顺序）
+        def unique_keep_order(lst):
+            seen = set()
+            result = []
+            for item in lst:
+                if isinstance(item, str) and item not in seen:
+                    seen.add(item)
+                    result.append(item)
+                elif isinstance(item, dict):
+                    # 处理字典格式的高级词汇
+                    key = item.get('word', '') or item.get('basic', '')
+                    if key and key not in seen:
+                        seen.add(key)
+                        result.append(item)
+            return result
+
+        expressions = []
+
+        if unique_keep_order(all_opening):
+            expressions.append({
+                "category": "开头句型",
+                "items": unique_keep_order(all_opening)[:10]
+            })
+
+        if unique_keep_order(all_closing):
+            expressions.append({
+                "category": "结尾句型",
+                "items": unique_keep_order(all_closing)[:10]
+            })
+
+        if unique_keep_order(all_transitions):
+            expressions.append({
+                "category": "过渡词汇",
+                "items": unique_keep_order(all_transitions)[:15]
+            })
+
+        if unique_keep_order(all_vocabulary):
+            expressions.append({
+                "category": "高级词汇",
+                "items": unique_keep_order(all_vocabulary)[:15]
+            })
+
+        # 如果没有模板数据，提供默认值
+        if not expressions:
+            expressions = [
+                {
+                    "category": "开头句型",
+                    "items": [
+                        "I am writing to tell you about...",
+                        "I would like to share my experience with you.",
+                        "Last weekend, I had an unforgettable experience."
+                    ]
+                },
+                {
+                    "category": "结尾句型",
+                    "items": [
+                        "I am looking forward to your reply.",
+                        "Best wishes!",
+                        "This experience taught me a lot."
+                    ]
+                },
+                {
+                    "category": "过渡词汇",
+                    "items": [
+                        "First of all,",
+                        "Besides,",
+                        "What's more,",
+                        "However,",
+                        "In conclusion,"
+                    ]
+                }
+            ]
+
+        return expressions
+
+    async def _get_topic_samples(
+        self,
+        grade: str,
+        topic: str,
+        edition: str
+    ) -> List[Dict]:
+        """
+        获取话题范文（含重点句标注）
+
+        Args:
+            grade: 年级
+            topic: 话题
+            edition: teacher/student
+
+        Returns:
+            范文列表（教师版含重点句解析）
+        """
+        query = (
+            select(WritingTask, WritingSample, ExamPaper)
+            .join(WritingSample, WritingTask.id == WritingSample.task_id)
+            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+            .where(ExamPaper.grade == grade)
+            .where(WritingTask.primary_topic == topic)
+            .order_by(ExamPaper.year.desc())
+            .limit(5)  # 最多5篇范文
+        )
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        samples = []
+        for task, sample, paper in rows:
+            # 解析重点句
+            highlighted_sentences = []
+            if sample.highlights:
+                try:
+                    highlighted_sentences = json.loads(sample.highlights)
+                except:
+                    pass
+
+            sample_data = {
+                "id": sample.id,
+                "task_content": task.task_content,
+                "sample_content": sample.sample_content,
+                "translation": sample.translation,  # 中文翻译
+                "word_count": sample.word_count,
+                "highlighted_sentences": highlighted_sentences if edition == 'teacher' else [],
+                "source": {
+                    "year": paper.year,
+                    "region": paper.region,
+                    "exam_type": paper.exam_type,
+                    "semester": task.semester
+                }
+            }
+            samples.append(sample_data)
+
+        return samples

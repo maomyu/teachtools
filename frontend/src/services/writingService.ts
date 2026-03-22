@@ -8,7 +8,6 @@
  */
 import api from './api'
 import type {
-  WritingTask,
   WritingTaskListResponse,
   WritingTaskDetail,
   WritingFilter,
@@ -17,6 +16,8 @@ import type {
   BatchGenerateResponse,
   WritingTemplate,
   WritingSample,
+  WritingGradeHandoutResponse,
+  WritingHandoutDetailResponse,
 } from '@/types'
 
 
@@ -134,6 +135,22 @@ export async function batchDeleteWritings(
 
 
 // ==============================================================================
+//                              范文删除
+// ==============================================================================
+
+/**
+ * 删除单个范文
+ */
+export async function deleteSample(
+  taskId: number,
+  sampleId: number
+): Promise<{ message: string }> {
+  const response = await api.delete(`/writings/${taskId}/samples/${sampleId}`)
+  return response.data
+}
+
+
+// ==============================================================================
 //                              模板
 // ==============================================================================
 
@@ -150,5 +167,50 @@ export async function getTemplate(
       application_type: applicationType,
     },
   })
+  return response.data
+}
+
+
+// ==============================================================================
+//                              讲义功能
+// ==============================================================================
+
+/**
+ * 获取年级作文讲义（含所有话题）
+ */
+export async function getWritingHandout(
+  grade: string,
+  edition: 'teacher' | 'student' = 'teacher'
+): Promise<WritingGradeHandoutResponse> {
+  const response = await api.get<WritingGradeHandoutResponse>(
+    `/writings/handouts/${grade}`,
+    { params: { edition } }
+  )
+  return response.data
+}
+
+/**
+ * 获取年级话题统计
+ */
+export async function getWritingHandoutTopics(
+  grade: string
+): Promise<{ grade: string; topics: Array<{ topic: string; task_count: number; sample_count: number; recent_years: number[] }> }> {
+  const response = await api.get(`/writings/handouts/${grade}/topics`)
+  return response.data
+}
+
+/**
+ * 获取单话题作文讲义详情
+ */
+export async function getWritingHandoutDetail(
+  grade: string,
+  topic: string,
+  edition: 'teacher' | 'student' = 'teacher'
+): Promise<WritingHandoutDetailResponse> {
+  const encodedTopic = encodeURIComponent(topic)
+  const response = await api.get<WritingHandoutDetailResponse>(
+    `/writings/handouts/${grade}/topics/${encodedTopic}`,
+    { params: { edition } }
+  )
   return response.data
 }
