@@ -6,8 +6,7 @@
  * [POS]: frontend/src/pages 的作文列表页面
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Table,
   Card,
@@ -43,12 +42,15 @@ import {
 } from '@/services/writingService'
 import type { WritingTask, WritingFiltersResponse } from '@/types'
 import { WritingHandoutView } from '@/components/writingHandout/WritingHandoutView'
+import { WritingDetailContent } from '@/components/writing/WritingDetailContent'
 
 const { Title } = Typography
 const { Search } = Input
 
+// 抽屉打开时要隐藏的次要列
+const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'primary_topic', 'word_limit']
+
 export function WritingPage() {
-  const navigate = useNavigate()
   const [viewMode, setViewMode] = useState<'list' | 'handout'>('list')
   const [loading, setLoading] = useState(false)
   const [writings, setWritings] = useState<WritingTask[]>([])
@@ -69,6 +71,10 @@ export function WritingPage() {
   // 批量生成状态
   const [generating, setGenerating] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
+
+  // 抽屉状态
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [selectedWritingId, setSelectedWritingId] = useState<number | null>(null)
 
   // 筛选条件
   const [filter, setFilter] = useState({
@@ -119,8 +125,16 @@ export function WritingPage() {
     }
   }
 
+  // 打开抽屉查看详情
   const handleView = (id: number) => {
-    navigate(`/writing/${id}`)
+    setSelectedWritingId(id)
+    setDrawerOpen(true)
+  }
+
+  // 关闭抽屉
+  const handleCloseDrawer = () => {
+    setDrawerOpen(false)
+    setSelectedWritingId(null)
   }
 
   const handleSearch = (value: string) => {
@@ -207,7 +221,7 @@ export function WritingPage() {
     {
       title: '年份',
       key: 'year',
-      width: 80,
+      width: drawerOpen ? 60 : 80,
       render: (_, record) => record.source?.year || '-',
     },
     {
@@ -219,7 +233,7 @@ export function WritingPage() {
     {
       title: '学校',
       key: 'school',
-      width: 120,
+      width: drawerOpen ? 100 : 120,
       ellipsis: true,
       render: (_, record) => (
         <Tooltip title={record.source?.school}>
@@ -231,7 +245,7 @@ export function WritingPage() {
       title: '年级',
       dataIndex: 'grade',
       key: 'grade',
-      width: 80,
+      width: drawerOpen ? 50 : 80,
       render: (grade: string) => grade || '-',
     },
     {
@@ -252,7 +266,7 @@ export function WritingPage() {
       title: '文体',
       dataIndex: 'writing_type',
       key: 'writing_type',
-      width: 100,
+      width: drawerOpen ? 90 : 100,
       render: (type: string, record) => (
         <Space direction="vertical" size={0}>
           <Tag color={getWritingTypeColor(type)}>{type || '未识别'}</Tag>
@@ -276,7 +290,7 @@ export function WritingPage() {
       ellipsis: true,
       render: (content: string) => (
         <Tooltip title={content}>
-          {content?.slice(0, 80)}...
+          {content?.slice(0, drawerOpen ? 40 : 80)}...
         </Tooltip>
       ),
     },
@@ -290,7 +304,7 @@ export function WritingPage() {
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: drawerOpen ? 80 : 150,
       render: (_, record) => (
         <Space>
           <Button
@@ -299,22 +313,32 @@ export function WritingPage() {
             icon={<EyeOutlined />}
             onClick={() => handleView(record.id)}
           >
-            查看
+            {!drawerOpen && '查看'}
           </Button>
-          <Popconfirm
-            title="确定删除这篇作文吗？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
+          {!drawerOpen && (
+            <Popconfirm
+              title="确定删除这篇作文吗？"
+              onConfirm={() => handleDelete(record.id)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
   ]
+
+  // 响应式列：抽屉打开时隐藏次要列
+  const visibleColumns = useMemo(() => {
+    if (drawerOpen) {
+      return columns.filter(col => !SECONDARY_COLUMN_KEYS.includes(col.key as string))
+    }
+    return columns
+  }, [drawerOpen, columns])
 
   return (
     <div style={{ padding: 24 }}>
@@ -339,9 +363,16 @@ export function WritingPage() {
         <WritingHandoutView />
       )}
 
-      {/* 列表视图 */}
+      {/* 列表视图 + 抽屉的 flex 容器 */}
       {viewMode === 'list' && (
-      <Card>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: drawerOpen ? 16 : 0 }}>
+          {/* 左侧：列表 */}
+          <div style={{
+            flex: 1,
+            minWidth: 0,
+            transition: 'all 0.3s ease-in-out',
+          }}>
+            <Card>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           {/* 标题和统计 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -457,10 +488,14 @@ export function WritingPage() {
           {/* 表格 */}
           <Table
             rowSelection={rowSelection}
-            columns={columns}
+            columns={visibleColumns}
             dataSource={writings}
             rowKey="id"
             loading={loading}
+            onRow={(record) => ({
+              onClick: () => handleView(record.id),
+              style: { cursor: 'pointer' },
+            })}
             pagination={{
               current: filter.page,
               pageSize: filter.size,
@@ -472,7 +507,47 @@ export function WritingPage() {
           />
         </Space>
       </Card>
+          </div>
+
+          {/* 抽屉面板 */}
+          {drawerOpen && selectedWritingId && (
+            <div
+              style={{
+                width: '70%',
+                flexShrink: 0,
+                height: '100%',
+                overflow: 'hidden',
+                borderLeft: '3px solid #1890ff',
+                background: '#fafcff',
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'slideIn 0.3s ease-out',
+              }}
+            >
+              <WritingDetailContent
+                writingId={selectedWritingId}
+                onClose={handleCloseDrawer}
+              />
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
 }
+
+// CSS 动画
+const style = document.createElement('style')
+style.textContent = `
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+`
+document.head.appendChild(style)
