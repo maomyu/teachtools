@@ -8,6 +8,7 @@ import { VocabularyPage } from '@/pages/VocabularyPage'
 import { ClozePage } from '@/pages/ClozePage'
 import { ClozePointsPage } from '@/pages/ClozePointsPage'
 import { HandoutView } from '@/components/handout/HandoutView'
+import { HandoutConverterPage } from '@/pages/HandoutConverterPage'
 import { TextbookVocabPage } from '@/pages/TextbookVocabPage'
 import { WritingPage } from '@/pages/WritingPage'
 import { WritingDetailPage } from '@/pages/WritingDetailPage'
@@ -26,7 +27,8 @@ function App() {
           <Route path="vocabulary" element={<VocabularyPage />} />
           <Route path="cloze" element={<ClozePage />} />
           <Route path="cloze/points" element={<ClozePointsPage />} />
-          <Route path="handout" element={<HandoutView />} />
+          <Route path="handout" element={<HandoutConverterPage />} />
+          <Route path="reading/handout" element={<HandoutView />} />
           <Route path="textbook-vocab" element={<TextbookVocabPage />} />
           <Route path="writing" element={<WritingPage />} />
           <Route path="writing/handout" element={<WritingHandoutPage />} />

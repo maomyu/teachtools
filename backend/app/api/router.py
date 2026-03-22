@@ -15,6 +15,7 @@ from app.api.topics import router as topics_router
 from app.api.cloze import router as cloze_router
 from app.api.textbook import router as textbook_router
 from app.api.writing import router as writing_router
+from app.api.handout import router as handout_router
 
 api_router = APIRouter()
 
@@ -26,3 +27,4 @@ api_router.include_router(topics_router, prefix="/topics", tags=["话题管理"]
 api_router.include_router(cloze_router, prefix="/cloze", tags=["完形填空"])
 api_router.include_router(textbook_router, prefix="/textbook-vocab", tags=["课本单词表"])
 api_router.include_router(writing_router, prefix="/writings", tags=["作文模块"])
+api_router.include_router(handout_router, prefix="/handout", tags=["讲义转换"])
