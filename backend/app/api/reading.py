@@ -62,11 +62,17 @@ async def get_passage_filters(db: AsyncSession = Depends(get_db)):
     semesters_result = await db.execute(semesters_query)
     semesters = [s for s in semesters_result.scalars().all() if s]
 
+    # 查询所有不重复的学校
+    schools_query = select(ExamPaper.school).distinct().where(ExamPaper.school.isnot(None)).order_by(ExamPaper.school)
+    schools_result = await db.execute(schools_query)
+    schools = [s for s in schools_result.scalars().all() if s]
+
     return {
         "years": years,
         "grades": grades,
         "exam_types": exam_types,
         "regions": regions,
+        "schools": schools,
         "topics": topics,
         "semesters": semesters
     }
@@ -78,6 +84,7 @@ async def list_passages(
     topic: Optional[str] = None,
     year: Optional[int] = None,
     region: Optional[str] = None,
+    school: Optional[str] = None,
     exam_type: Optional[str] = None,
     semester: Optional[str] = None,
     search: Optional[str] = None,
@@ -98,6 +105,8 @@ async def list_passages(
         query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(year=year))
     if region:
         query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(region=region))
+    if school:
+        query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(school=school))
     if exam_type:
         query = query.join(ReadingPassage.paper).where(ReadingPassage.paper.has(exam_type=exam_type))
     if semester:

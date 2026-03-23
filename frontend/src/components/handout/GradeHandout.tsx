@@ -39,14 +39,23 @@ const { Title, Text, Paragraph } = Typography
 //  常量：A4 分页配置
 // ============================================================================
 
+// 每行字符数（A4 页面可用宽度约 170mm）
+const CHARS_PER_LINE = 70
+
+// 每页最大行数（A4 页面减去标题等，正文区约 40 行）
+const MAX_LINES_PER_PAGE = 50
+
 // 每页最大词汇行数
 const MAX_VOCAB_ROWS_PER_PAGE = 14
 
-// 每页最大题目数（含解析时需要更多空间）
-const MAX_QUESTIONS_PER_PAGE = 2
-
-// 文章正文每页最大段落数（提高密度，尽量一页显示完整文章）
-const MAX_PARAGRAPHS_PER_PAGE = 8
+// 辅助函数：估算文本行数（中文字符算 2 个，英文算 1 个）
+function estimateLines(text: string): number {
+  if (!text) return 0
+  const charCount = text.split('').reduce((acc, char) => {
+    return acc + (char.charCodeAt(0) > 127 ? 2 : 1)
+  }, 0)
+  return Math.ceil(charCount / CHARS_PER_LINE)
+}
 
 // ============================================================================
 //  Props 定义
@@ -369,7 +378,7 @@ function VocabularyTableRows({ vocabulary, startIndex }: VocabularyTableRowsProp
 }
 
 // ============================================================================
-//  子组件：文章多页面拆分
+//  子组件：文章多页面拆分（基于行数精确分页）
 // ============================================================================
 
 interface PassagePagesProps {
@@ -384,18 +393,41 @@ function PassagePages({ passage, edition, index, total }: PassagePagesProps) {
     ? `${passage.source.year} ${passage.source.region} ${passage.source.exam_type}`
     : '来源未知'
 
-  // 段落分页（统一分页，不再预留空间）
+  // 基于行数的精确分页
   const paragraphs = passage.content.split('\n').filter(p => p.trim())
-  const pages: string[][] = []
 
-  for (let i = 0; i < paragraphs.length; i += MAX_PARAGRAPHS_PER_PAGE) {
-    pages.push(paragraphs.slice(i, i + MAX_PARAGRAPHS_PER_PAGE))
+  // 第一页预留标题行数（约 10 行）
+  const HEADER_LINES = 10
+  const pages: { paragraphs: string[]; lines: number }[] = []
+  let currentPage: string[] = []
+  let currentLines = 0
+  let isFirstPage = true
+
+  for (const paragraph of paragraphs) {
+    const paragraphLines = estimateLines(paragraph) + 1 // +1 for paragraph spacing
+    const pageMaxLines = isFirstPage ? MAX_LINES_PER_PAGE - HEADER_LINES : MAX_LINES_PER_PAGE
+
+    if (currentLines + paragraphLines > pageMaxLines && currentPage.length > 0) {
+      // 当前页放不下，开始新页
+      pages.push({ paragraphs: currentPage, lines: currentLines })
+      currentPage = []
+      currentLines = 0
+      isFirstPage = false
+    }
+
+    currentPage.push(paragraph)
+    currentLines += paragraphLines
+  }
+
+  // 添加最后一页
+  if (currentPage.length > 0) {
+    pages.push({ paragraphs: currentPage, lines: currentLines })
   }
 
   return (
     <>
       {/* 文章正文页面 */}
-      {pages.map((pageParagraphs, pageIdx) => (
+      {pages.map((page, pageIdx) => (
         <section key={pageIdx} className="handout-page part-page">
           {pageIdx === 0 && (
             <>
@@ -415,9 +447,14 @@ function PassagePages({ passage, edition, index, total }: PassagePagesProps) {
               <Divider style={{ margin: '12px 0' }} />
             </>
           )}
-          {/* 正文（所有页面都渲染段落） */}
+          {pageIdx > 0 && (
+            <Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>
+              {passage.type}篇（续 {pageIdx}）
+            </Text>
+          )}
+          {/* 正文 */}
           <div className="passage-body">
-            {pageParagraphs.map((paragraph, pIdx) => (
+            {page.paragraphs.map((paragraph, pIdx) => (
               <Paragraph key={pIdx} style={{ textIndent: '2em', lineHeight: 2, marginBottom: 12 }}>
                 {paragraph}
               </Paragraph>
@@ -435,7 +472,7 @@ function PassagePages({ passage, edition, index, total }: PassagePagesProps) {
 }
 
 // ============================================================================
-//  子组件：题目分页
+//  子组件：题目分页（基于行数精确分页）
 // ============================================================================
 
 interface QuestionsPagesProps {
@@ -443,16 +480,69 @@ interface QuestionsPagesProps {
   edition: 'teacher' | 'student'
 }
 
+// 估算单道题的行数
+function estimateQuestionLines(question: HandoutQuestion, edition: 'teacher' | 'student'): number {
+  let lines = 0
+
+  // 题干（约 2 行）
+  lines += estimateLines(question.text || '') + 2
+
+  // 选项（4 个选项，每个约 1 行）
+  if (question.options) {
+    const optionsText = [
+      question.options.A,
+      question.options.B,
+      question.options.C,
+      question.options.D
+    ].filter(Boolean).join(' ')
+    lines += estimateLines(optionsText) + 2
+  }
+
+  // 教师版：答案和解析（约 4 行）
+  if (edition === 'teacher') {
+    lines += 2 // 答案行
+    if (question.explanation) {
+      lines += estimateLines(question.explanation) + 2
+    }
+  }
+
+  return lines
+}
+
 function QuestionsPages({ questions, edition }: QuestionsPagesProps) {
-  // 分页
-  const pages: HandoutQuestion[][] = []
-  for (let i = 0; i < questions.length; i += MAX_QUESTIONS_PER_PAGE) {
-    pages.push(questions.slice(i, i + MAX_QUESTIONS_PER_PAGE))
+  // 基于行数的精确分页
+  const TITLE_LINES = 6 // 标题预留行数
+  const pages: { questions: HandoutQuestion[]; startIndex: number }[] = []
+  let currentPage: HandoutQuestion[] = []
+  let currentLines = 0
+  let currentIndex = 0
+  let isFirstPage = true
+
+  for (const question of questions) {
+    const questionLines = estimateQuestionLines(question, edition)
+    const pageMaxLines = isFirstPage ? MAX_LINES_PER_PAGE - TITLE_LINES : MAX_LINES_PER_PAGE
+
+    if (currentLines + questionLines > pageMaxLines && currentPage.length > 0) {
+      // 当前页放不下，开始新页
+      pages.push({ questions: currentPage, startIndex: currentIndex })
+      currentIndex += currentPage.length
+      currentPage = []
+      currentLines = 0
+      isFirstPage = false
+    }
+
+    currentPage.push(question)
+    currentLines += questionLines
+  }
+
+  // 添加最后一页
+  if (currentPage.length > 0) {
+    pages.push({ questions: currentPage, startIndex: currentIndex })
   }
 
   return (
     <>
-      {pages.map((pageQuestions, pageIdx) => (
+      {pages.map((page, pageIdx) => (
         <section key={pageIdx} className="handout-page part-page">
           {pageIdx === 0 && (
             <>
@@ -460,12 +550,17 @@ function QuestionsPages({ questions, edition }: QuestionsPagesProps) {
               <Divider />
             </>
           )}
+          {pageIdx > 0 && (
+            <Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>
+              题目（续 {pageIdx}）
+            </Text>
+          )}
           <div className="questions-section">
-            {pageQuestions.map((question, qIdx) => (
+            {page.questions.map((question, qIdx) => (
               <QuestionItem
                 key={qIdx}
                 question={question}
-                index={pageIdx * MAX_QUESTIONS_PER_PAGE + qIdx + 1}
+                index={page.startIndex + qIdx + 1}
                 edition={edition}
               />
             ))}

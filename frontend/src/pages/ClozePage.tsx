@@ -30,7 +30,7 @@ import { ClozeDetailContent } from '@/components/cloze/ClozeDetailContent'
 import { ClozeHandoutView } from '@/components/clozeHandout/ClozeHandoutView'
 
 // 次要列（抽屉打开时隐藏）
-const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'topic', 'word_count', 'point_distribution']
+const SECONDARY_COLUMN_KEYS = ['region', 'school', 'exam_type', 'semester', 'topic', 'word_count', 'point_distribution']
 
 // ============================================================================
 //  考点类型级联筛选器
@@ -60,6 +60,7 @@ export function ClozePage() {
     topics: [],
     years: [],
     regions: [],
+    schools: [],
     exam_types: [],
     point_types: [],
     semesters: [],
@@ -72,6 +73,7 @@ export function ClozePage() {
   const [examType, setExamType] = useState<string | undefined>()
   const [semester, setSemester] = useState<string | undefined>()
   const [region, setRegion] = useState<string | undefined>()
+  const [school, setSchool] = useState<string | undefined>()
   const [year, setYear] = useState<number | undefined>()
 
   const [page, setPage] = useState(1)
@@ -94,7 +96,7 @@ export function ClozePage() {
 
   useEffect(() => {
     loadClozeList()
-  }, [grade, topic, pointType, category, examType, semester, region, year, page, size])
+  }, [grade, topic, pointType, category, examType, semester, region, school, year, page, size])
 
   const loadFilters = async () => {
     try {
@@ -116,6 +118,7 @@ export function ClozePage() {
         exam_type: examType,
         semester,
         region,
+        school,
         year,
         page,
         size,
@@ -196,6 +199,12 @@ export function ClozePage() {
       key: 'region',
       width: 80,
       render: (_, record) => record.source?.region || '-',
+    },
+    {
+      title: '学校',
+      key: 'school',
+      width: 100,
+      render: (_, record) => record.source?.school || '-',
     },
     {
       title: '年级',
@@ -370,6 +379,18 @@ export function ClozePage() {
               value={region}
               onChange={setRegion}
               options={filters.regions.map(r => ({ value: r, label: r }))}
+            />
+            <Select
+              placeholder="选择学校"
+              allowClear
+              showSearch
+              style={{ width: 160 }}
+              value={school}
+              onChange={setSchool}
+              options={filters.schools.map(s => ({ value: s, label: s }))}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
             />
             <Select
               placeholder="选择年份"

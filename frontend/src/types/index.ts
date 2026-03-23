@@ -211,6 +211,7 @@ export interface PassageFilter {
   topic?: string
   year?: number
   region?: string
+  school?: string
   exam_type?: string
   semester?: string
   search?: string
@@ -225,6 +226,7 @@ export interface PassageFiltersResponse {
   grades: string[]
   exam_types: string[]
   regions: string[]
+  schools: string[]
   topics: string[]
   semesters: string[]
 }
@@ -655,6 +657,7 @@ export interface ClozeFilter {
   exam_type?: string
   semester?: string
   region?: string
+  school?: string
   year?: number
   page?: number
   size?: number
@@ -666,6 +669,7 @@ export interface ClozeFiltersResponse {
   topics: string[]
   years: number[]
   regions: string[]
+  schools: string[]
   exam_types: string[]
   point_types: string[]
   semesters: string[]

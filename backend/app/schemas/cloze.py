@@ -401,6 +401,7 @@ class ClozeFilters(BaseModel):
     topics: List[str] = []
     years: List[int] = []
     regions: List[str] = []
+    schools: List[str] = []
     exam_types: List[str] = []
     point_types: List[str] = []
     semesters: List[str] = []

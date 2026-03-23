@@ -484,13 +484,15 @@ function QuestionCard({ question }: { question: Question }) {
       <Space direction="vertical" style={{ width: '100%' }} size="small">
         {question.options && (
           <div style={{ fontSize: 12 }}>
-            {['A', 'B', 'C', 'D'].map((opt) => (
-              <div key={opt} style={{ marginBottom: 2, paddingLeft: 4 }}>
-                <Text style={{ fontSize: 12 }}>
-                  <Text strong>{opt}.</Text> {question.options?.[opt as keyof typeof question.options] || '-'}
-                </Text>
-              </div>
-            ))}
+            {['A', 'B', 'C', 'D']
+              .filter(opt => question.options?.[opt as keyof typeof question.options])
+              .map((opt) => (
+                <div key={opt} style={{ marginBottom: 2, paddingLeft: 4 }}>
+                  <Text style={{ fontSize: 12 }}>
+                    <Text strong>{opt}.</Text> {question.options?.[opt as keyof typeof question.options]}
+                  </Text>
+                </div>
+              ))}
           </div>
         )}
 

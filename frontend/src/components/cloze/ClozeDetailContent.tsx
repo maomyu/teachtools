@@ -355,20 +355,22 @@ export function ClozeDetailContent({
 
         {/* 选项 */}
         <div style={{ marginBottom: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {['A', 'B', 'C', 'D'].map(opt => {
-            const optionValue = point.options?.[opt as keyof typeof point.options]
-            const isCorrect = point.correct_answer === opt
-            return (
-              <Tag
-                key={opt}
-                color={showAnswer && isCorrect ? 'success' : 'default'}
-                style={{ fontSize: 12, padding: '2px 6px' }}
-              >
-                {opt}. {optionValue}
-                {showAnswer && isCorrect && point.correct_word && ` (${point.correct_word})`}
-              </Tag>
-            )
-          })}
+          {['A', 'B', 'C', 'D']
+            .filter(opt => point.options?.[opt as keyof typeof point.options])
+            .map(opt => {
+              const optionValue = point.options?.[opt as keyof typeof point.options]
+              const isCorrect = point.correct_answer === opt
+              return (
+                <Tag
+                  key={opt}
+                  color={showAnswer && isCorrect ? 'success' : 'default'}
+                  style={{ fontSize: 12, padding: '2px 6px' }}
+                >
+                  {opt}. {optionValue}
+                  {showAnswer && isCorrect && point.correct_word && ` (${point.correct_word})`}
+                </Tag>
+              )
+            })}
         </div>
 
         {/* 显示答案按钮 */}

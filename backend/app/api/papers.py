@@ -49,6 +49,58 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+#  选项验证和重试机制
+# ============================================================================
+
+def validate_question_options(question_data: dict) -> tuple[bool, str]:
+    """
+    验证题目选项是否有效（至少有一个非空选项）
+
+    注意：有些题目只有3个选项，不能强制要求4个。
+    只检查是否所有选项都为空。
+
+    Returns:
+        (is_valid, error_message)
+    """
+    options = question_data.get("options", {})
+
+    # 检查是否有至少一个非空选项
+    has_valid_option = any(
+        options.get(opt) and options.get(opt).strip()
+        for opt in ['A', 'B', 'C', 'D']
+    )
+
+    if not has_valid_option:
+        return False, f"题目 {question_data.get('question_number', '?')} 所有选项均为空"
+    return True, ""
+
+
+def validate_llm_result_options(llm_result) -> tuple[bool, list]:
+    """
+    验证LLM解析结果中所有题目的选项
+
+    Returns:
+        (is_valid, list_of_errors)
+    """
+    if not llm_result.success:
+        return False, ["LLM解析失败"]
+
+    errors = []
+    for passage in (llm_result.passages or []):
+        passage_type = passage.get("passage_type", "?")
+        for q in passage.get("questions", []):
+            is_valid, error = validate_question_options(q)
+            if not is_valid:
+                errors.append(f"{passage_type}篇 - {error}")
+
+    return len(errors) == 0, errors
+
+
+# AI解析最大重试次数
+MAX_AI_RETRIES = 3
+
+
+# ============================================================================
 #  步骤定义 - 可扩展配置
 # ============================================================================
 
@@ -82,6 +134,7 @@ PIPELINE_CONFIG = [
     {"id": "ai_parse", "name": "AI解析文档", "description": "提取C/D篇阅读和题目", "icon": "🤖"},
     {"id": "save_passages", "name": "保存文章", "description": "保存阅读文章到数据库", "icon": "💾"},
     {"id": "save_questions", "name": "保存题目", "description": "保存阅读题目到数据库", "icon": "❓"},
+    {"id": "generate_explanations", "name": "生成解析", "description": "AI生成答案解析", "icon": "💡"},
     {"id": "save_cloze", "name": "保存完形填空", "description": "提取并保存完形文章", "icon": "📝"},
     {"id": "writing_extract", "name": "作文提取", "description": "从试卷中提取作文题目", "icon": "✍️"},
     {"id": "cloze_analyze", "name": "考点分析", "description": "AI分析四类考点", "icon": "🔬"},
@@ -328,21 +381,47 @@ async def upload_paper_with_progress(
                     yield emit()
                     return
 
-                # ===== Step 4: AI解析文档 =====
+                # ===== Step 4: AI解析文档（带重试机制） =====
                 reporter.start_step("ai_parse", "🤖 AI正在解析文档...")
                 yield emit()
 
+                llm_result = None
+                last_error = ""
+
                 try:
-                    # 更新进度消息
-                    reporter.update_step("ai_parse", message="提取试卷结构...", progress=20)
-                    yield emit()
+                    for retry_attempt in range(MAX_AI_RETRIES):
+                        # 更新进度消息
+                        attempt_msg = f"提取试卷结构... (尝试 {retry_attempt + 1}/{MAX_AI_RETRIES})"
+                        reporter.update_step("ai_parse", message=attempt_msg, progress=20 + retry_attempt * 10)
+                        yield emit()
 
-                    llm_result = await llm_parser.parse_document_with_fileid(fileid)
+                        llm_result = await llm_parser.parse_document_with_fileid(fileid)
 
-                    if not llm_result.success:
-                        reporter.fail_step("ai_parse", llm_result.error or "解析失败")
+                        if not llm_result.success:
+                            last_error = llm_result.error or "解析失败"
+                            logger.warning(f"AI解析失败 (尝试 {retry_attempt + 1}/{MAX_AI_RETRIES}): {last_error}")
+                            continue
+
+                        # 验证选项是否有效
+                        is_valid, errors = validate_llm_result_options(llm_result)
+                        if not is_valid:
+                            last_error = "; ".join(errors)
+                            logger.warning(f"选项验证失败 (尝试 {retry_attempt + 1}/{MAX_AI_RETRIES}): {last_error}")
+                            continue
+
+                        # 解析成功且选项有效
+                        break
+
+                    # 检查最终结果
+                    if not llm_result or not llm_result.success:
+                        reporter.fail_step("ai_parse", f"经过{MAX_AI_RETRIES}次重试仍失败: {last_error}")
                         yield emit()
                         return
+
+                    # 检查是否有选项为空的警告（但不阻止流程）
+                    is_valid, errors = validate_llm_result_options(llm_result)
+                    if not is_valid:
+                        logger.warning(f"部分题目选项为空（将正常保存）: {'; '.join(errors)}")
 
                     passages_count = len(llm_result.passages)
                     questions_count = sum(len(p.get("questions", [])) for p in llm_result.passages)
@@ -395,6 +474,7 @@ async def upload_paper_with_progress(
                 yield emit()
 
                 questions_created = 0
+                saved_questions = []  # 保存题目对象用于后续生成解析
                 for passage in saved_passages:
                     # 找到对应的解析数据
                     passage_data = next(
@@ -419,10 +499,56 @@ async def upload_paper_with_progress(
                                 answer_explanation=q_data.get("answer_explanation")
                             )
                             db.add(question)
+                            saved_questions.append((question, passage.content))
                             questions_created += 1
 
                 reporter.complete_step("save_questions", f"已保存{questions_created}道题目")
                 yield emit()
+
+                # ===== Step 6.5: AI生成答案解析 =====
+                if saved_questions:
+                    reporter.start_step("generate_explanations", "AI正在生成答案解析...")
+                    yield emit()
+
+                    from app.services.ai_service import QwenService
+                    ai_service = QwenService()
+
+                    explanations_generated = 0
+                    for idx, (question, passage_content) in enumerate(saved_questions):
+                        if question.correct_answer:
+                            reporter.update_step("generate_explanations",
+                                progress=int((idx + 1) / len(saved_questions) * 100),
+                                message=f"生成第{question.question_number}题解析..."
+                            )
+                            yield emit()
+
+                            # 构建选项字典
+                            options_dict = {}
+                            if question.option_a:
+                                options_dict["A"] = question.option_a
+                            if question.option_b:
+                                options_dict["B"] = question.option_b
+                            if question.option_c:
+                                options_dict["C"] = question.option_c
+                            if question.option_d:
+                                options_dict["D"] = question.option_d
+
+                            # 调用AI生成解析
+                            try:
+                                explanation = ai_service.generate_answer_explanation(
+                                    question_text=question.question_text,
+                                    options=options_dict,
+                                    correct_answer=question.correct_answer,
+                                    passage_content=passage_content
+                                )
+                                if explanation:
+                                    question.answer_explanation = explanation
+                                    explanations_generated += 1
+                            except Exception as e:
+                                logger.warning(f"生成第{question.question_number}题解析失败: {e}")
+
+                    reporter.complete_step("generate_explanations", f"已生成{explanations_generated}条解析")
+                    yield emit()
 
                 # ===== Step 7: 保存完形填空 =====
                 reporter.start_step("save_cloze", "正在提取完形填空...")
@@ -513,6 +639,18 @@ async def upload_paper_with_progress(
                         )
                         db.add(writing_task)
                         await db.flush()
+
+                        # ===== 自动生成范文 =====
+                        try:
+                            from app.services.writing_service import WritingService
+                            writing_service = WritingService(db)
+                            sample = await writing_service.generate_sample(
+                                task_id=writing_task.id,
+                                score_level="一档"
+                            )
+                            logger.info(f"自动生成范文成功: sample_id={sample.id}")
+                        except Exception as sample_error:
+                            logger.warning(f"自动生成范文失败（不影响导入）: {sample_error}")
 
                         writing_created = True
                         type_info = writing_result.writing_type

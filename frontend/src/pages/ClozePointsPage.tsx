@@ -175,6 +175,7 @@ export function ClozePointsPage() {
     topics: [],
     years: [],
     regions: [],
+    schools: [],
     exam_types: [],
     point_types: [],
     semesters: [],

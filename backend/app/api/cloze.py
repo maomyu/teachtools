@@ -173,11 +173,18 @@ async def get_cloze_filters(db: AsyncSession = Depends(get_db)):
     )
     semesters = [s[0] for s in semesters_result.fetchall() if s[0]]
 
+    # 获取所有学校
+    schools_result = await db.execute(
+        select(distinct(ExamPaper.school)).join(ClozePassage).where(ExamPaper.school != None)
+    )
+    schools = [s[0] for s in schools_result.fetchall() if s[0]]
+
     return ClozeFilters(
         grades=sorted(grades),
         topics=sorted(topics),
         years=sorted(years, reverse=True),
         regions=sorted(regions),
+        schools=sorted(schools),
         exam_types=sorted(exam_types),
         point_types=sorted(point_types),
         semesters=sorted(semesters)
@@ -196,6 +203,7 @@ async def list_cloze(
     exam_type: Optional[str] = None,
     semester: Optional[str] = None,
     region: Optional[str] = None,
+    school: Optional[str] = None,
     year: Optional[int] = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -212,6 +220,8 @@ async def list_cloze(
         query = query.join(ExamPaper).where(ExamPaper.grade == grade)
     if region:
         query = query.join(ExamPaper).where(ExamPaper.region == region)
+    if school:
+        query = query.join(ExamPaper).where(ExamPaper.school == school)
     if year:
         query = query.join(ExamPaper).where(ExamPaper.year == year)
     if topic:

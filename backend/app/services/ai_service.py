@@ -429,6 +429,68 @@ class QwenService:
             print(f"作文模板生成失败: {e}")
             return {}
 
+    def generate_answer_explanation(
+        self,
+        question_text: str,
+        options: Dict[str, str],
+        correct_answer: str,
+        passage_content: str = ""
+    ) -> str:
+        """
+        生成阅读理解答案解析
+
+        Args:
+            question_text: 题目内容
+            options: 选项 {"A": "...", "B": "...", "C": "...", "D": "..."}
+            correct_answer: 正确答案 (A/B/C/D)
+            passage_content: 文章内容（可选，用于上下文）
+
+        Returns:
+            答案解析文本
+        """
+        # 格式化选项
+        options_text = "\n".join([
+            f"{key}. {value}"
+            for key, value in options.items()
+            if value  # 过滤空选项
+        ])
+
+        # 截取文章内容（避免过长）
+        passage_preview = ""
+        if passage_content:
+            passage_preview = f"\n文章内容（节选）：\n{passage_content[:1500]}...\n" if len(passage_content) > 1500 else f"\n文章内容：\n{passage_content}\n"
+
+        prompt = f"""你是一位初中英语老师。请根据以下阅读理解题目，分析正确答案为什么是对的。
+
+{passage_preview}
+题目：{question_text}
+
+选项：
+{options_text}
+
+正确答案：{correct_answer}
+
+请用简洁的中文（50-100字）解释：
+1. 正确答案为什么是对的（从文中找到依据）
+2. 如果有明显的干扰项，简要说明为什么容易选错
+
+直接输出解析内容，不要有标题或其他格式。"""
+
+        try:
+            response = Generation.call(
+                model=self.model,
+                prompt=prompt,
+                result_format='message'
+            )
+
+            if response.status_code == 200:
+                return response.output.choices[0].message.content.strip()
+            return ""
+
+        except Exception as e:
+            print(f"答案解析生成失败: {e}")
+            return ""
+
     def chat(self, prompt: str) -> str:
         """
         通用对话接口 - 直接发送prompt获取回复

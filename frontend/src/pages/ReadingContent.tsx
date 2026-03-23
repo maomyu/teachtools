@@ -57,6 +57,7 @@ export function ReadingContent() {
     grades: [],
     exam_types: [],
     regions: [],
+    schools: [],
     topics: [],
     semesters: [],
   })
@@ -363,6 +364,18 @@ export function ReadingContent() {
                 value={filter.region}
                 onChange={(value) => setFilter({ ...filter, region: value, page: 1 })}
                 options={filterOptions.regions.map(r => ({ value: r, label: r }))}
+              />
+              <Select
+                placeholder="选择学校"
+                allowClear
+                showSearch
+                style={{ width: 160 }}
+                value={filter.school}
+                onChange={(value) => setFilter({ ...filter, school: value, page: 1 })}
+                options={filterOptions.schools.map(s => ({ value: s, label: s }))}
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
               />
               <Select
                 placeholder="选择年份"
