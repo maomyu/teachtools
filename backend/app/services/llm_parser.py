@@ -72,10 +72,16 @@ class LLMDocumentParser:
   - 注意：有些题目只有3个选项（A/B/C），这是正常的
   - 必须提取文档中存在的所有选项，确保至少有一个非空选项
   - 如果某个选项不存在，不要包含在options中或设为空字符串
+  - **图片选项**：如果选项内容是图片（无法提取文字），填写 "[IMAGE]" 占位符
+- has_image_options: 布尔值，表示该题目是否有图片选项（true/false）
+- expected_image_count: 整数，预期图片选项的数量（0-4）
 - correct_answer: 正确答案（A/B/C/D，如果是教师版能找到答案的话）
 - answer_explanation: 答案解析（如果是教师版能找到解析的话）
 
-**重要**：options 必须至少包含一个有效的选项内容，不能全部为空！
+**重要**：
+- 普通文本选项：options 必须至少包含一个有效的选项内容，不能全部为空
+- 图片选项：如果选项是图片，填写 "[IMAGE]" 占位符，并设置 has_image_options=true
+- 混合选项：部分文本、部分图片的情况也要正确标记
 
 ### 4. 完形填空
 提取完形填空部分（如果存在）：
@@ -125,7 +131,23 @@ class LLMDocumentParser:
                         "C": "选项C内容",
                         "D": "选项D内容"
                     },
+                    "has_image_options": false,
+                    "expected_image_count": 0,
                     "correct_answer": "A",
+                    "answer_explanation": "答案解析内容..."
+                },
+                {
+                    "question_number": 32,
+                    "question_text": "这道题的选项是图片...",
+                    "options": {
+                        "A": "[IMAGE]",
+                        "B": "[IMAGE]",
+                        "C": "[IMAGE]",
+                        "D": "[IMAGE]"
+                    },
+                    "has_image_options": true,
+                    "expected_image_count": 4,
+                    "correct_answer": "B",
                     "answer_explanation": "答案解析内容..."
                 }
             ]
@@ -144,6 +166,8 @@ class LLMDocumentParser:
                         "C": "选项C内容",
                         "D": "选项D内容"
                     },
+                    "has_image_options": false,
+                    "expected_image_count": 0,
                     "correct_answer": "B",
                     "answer_explanation": "答案解析内容..."
                 }

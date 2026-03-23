@@ -486,13 +486,38 @@ function QuestionCard({ question }: { question: Question }) {
           <div style={{ fontSize: 12 }}>
             {['A', 'B', 'C', 'D']
               .filter(opt => question.options?.[opt as keyof typeof question.options])
-              .map((opt) => (
-                <div key={opt} style={{ marginBottom: 2, paddingLeft: 4 }}>
-                  <Text style={{ fontSize: 12 }}>
-                    <Text strong>{opt}.</Text> {question.options?.[opt as keyof typeof question.options]}
-                  </Text>
-                </div>
-              ))}
+              .map((opt) => {
+                const optionValue = question.options?.[opt as keyof typeof question.options]
+                // 检测是否为图片选项 [IMAGE:/static/...]
+                const imageMatch = optionValue?.match(/^\[IMAGE:(.+?)\]$/)
+
+                return (
+                  <div key={opt} style={{ marginBottom: 4, paddingLeft: 4 }}>
+                    {imageMatch ? (
+                      // 图片选项
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <Text strong style={{ fontSize: 12 }}>{opt}.</Text>
+                        <img
+                          src={imageMatch[1]}
+                          alt={`选项 ${opt}`}
+                          style={{
+                            maxWidth: 200,
+                            maxHeight: 100,
+                            border: '1px solid #d9d9d9',
+                            borderRadius: 4,
+                            padding: 2,
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      // 文本选项
+                      <Text style={{ fontSize: 12 }}>
+                        <Text strong>{opt}.</Text> {optionValue}
+                      </Text>
+                    )}
+                  </div>
+                )
+              })}
           </div>
         )}
 

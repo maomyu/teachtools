@@ -26,6 +26,7 @@ from app.services.llm_parser import LLMDocumentParser
 from app.services.cloze_analyzer import ClozeAnalyzerV5
 from app.services.topic_classifier import TopicClassifier
 from app.services.text_utils import normalize_cloze_blanks
+from app.services.image_extractor import ImageExtractor
 
 
 async def get_or_create_paper(
@@ -118,6 +119,43 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
             paper.parse_strategy = "llm"
             paper.confidence = 0.95
             result["status"] = "completed"
+
+            # ============================================================================
+            #  提取图片选项（如果有）
+            # ============================================================================
+            has_image_questions = any(
+                q.get('has_image_options')
+                for p in llm_result.passages
+                for q in p.get('questions', [])
+            )
+
+            option_images = []
+            if has_image_questions:
+                try:
+                    image_extractor = ImageExtractor()
+                    option_images = image_extractor.extract_option_images(str(file_path), paper.id)
+
+                    # 构建 (题号, 选项) -> 图片URL 的映射
+                    image_map = {
+                        (img.question_number, img.option_label): img.image_url
+                        for img in option_images
+                    }
+
+                    # 将图片 URL 填入 LLM 结果中的 [IMAGE] 占位符
+                    for passage in llm_result.passages:
+                        for q in passage.get('questions', []):
+                            if q.get('has_image_options'):
+                                options = q.get('options', {})
+                                for opt_key in ['A', 'B', 'C', 'D']:
+                                    if options.get(opt_key) == '[IMAGE]':
+                                        img_url = image_map.get((q.get('question_number'), opt_key))
+                                        if img_url:
+                                            options[opt_key] = f"[IMAGE:{img_url}]"
+                                            print(f"    图片选项: Q{q.get('question_number')}-{opt_key} -> {img_url}")
+
+                    print(f"  提取了 {len(option_images)} 张选项图片")
+                except Exception as e:
+                    print(f"  ⚠ 图片提取失败（不影响导入）: {e}")
 
             # 初始化话题分类器（复用实例）
             topic_classifier = TopicClassifier()

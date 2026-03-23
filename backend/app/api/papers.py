@@ -43,6 +43,7 @@ from app.services.topic_classifier import TopicClassifier
 from app.services.writing_topic_classifier import WritingTopicClassifier
 from app.services.vocab_extractor import VocabExtractor
 from app.services.cloze_analyzer import ClozeAnalyzerV5, NEW_CODE_TO_LEGACY
+from app.services.image_extractor import ImageExtractor
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -56,19 +57,43 @@ def validate_question_options(question_data: dict) -> tuple[bool, str]:
     """
     验证题目选项是否有效（至少有一个非空选项）
 
-    注意：有些题目只有3个选项，不能强制要求4个。
-    只检查是否所有选项都为空。
+    注意：
+    - 有些题目只有3个选项，不能强制要求4个
+    - 图片选项使用 [IMAGE] 占位符或 [IMAGE:...] 格式
+    - 有 has_image_options 标记的题目，选项可以为 [IMAGE]
 
     Returns:
         (is_valid, error_message)
     """
     options = question_data.get("options", {})
 
-    # 检查是否有至少一个非空选项
-    has_valid_option = any(
-        options.get(opt) and options.get(opt).strip()
-        for opt in ['A', 'B', 'C', 'D']
-    )
+    # 如果标记为有图片选项，跳过验证
+    if question_data.get("has_image_options"):
+        # 检查是否有 [IMAGE] 占位符
+        has_image_placeholder = any(
+            options.get(opt) in ["[IMAGE]", ""] or
+            (options.get(opt) and options.get(opt).startswith("[IMAGE:"))
+            for opt in ['A', 'B', 'C', 'D']
+        )
+        if has_image_placeholder:
+            return True, ""
+        # 即使没有占位符，也允许（可能是 LLM 没正确标记）
+        return True, ""
+
+    # 检查是否有至少一个有效的非空选项（文本或图片引用）
+    has_valid_option = False
+    for opt in ['A', 'B', 'C', 'D']:
+        opt_val = options.get(opt, '')
+        if opt_val:
+            opt_val = opt_val.strip()
+            # 文本选项 或 图片引用
+            if opt_val and opt_val != '[IMAGE]':
+                has_valid_option = True
+                break
+            # [IMAGE:...] 格式的图片引用也算有效
+            if opt_val.startswith('[IMAGE:'):
+                has_valid_option = True
+                break
 
     if not has_valid_option:
         return False, f"题目 {question_data.get('question_number', '?')} 所有选项均为空"
@@ -438,6 +463,50 @@ async def upload_paper_with_progress(
                     yield emit()
                     return
 
+                # ===== Step 4.5: 提取图片选项 =====
+                # 检查是否有图片选项需要提取
+                has_image_questions = any(
+                    q.get('has_image_options')
+                    for p in llm_result.passages
+                    for q in p.get('questions', [])
+                )
+
+                option_images = []
+                if has_image_questions:
+                    try:
+                        image_extractor = ImageExtractor()
+                        option_images = image_extractor.extract_option_images(tmp_path, paper.id)
+
+                        # 构建 (题号, 选项) -> 图片URL 的映射
+                        image_map = {
+                            (img.question_number, img.option_label): img.image_url
+                            for img in option_images
+                        }
+
+                        # 将图片 URL 填入 LLM 结果中的 [IMAGE] 占位符
+                        for passage in llm_result.passages:
+                            for q in passage.get('questions', []):
+                                if q.get('has_image_options'):
+                                    options = q.get('options', {})
+                                    for opt_key in ['A', 'B', 'C', 'D']:
+                                        if options.get(opt_key) == '[IMAGE]':
+                                            img_url = image_map.get((q.get('question_number'), opt_key))
+                                            if img_url:
+                                                options[opt_key] = f"[IMAGE:{img_url}]"
+
+                        # 验证图片提取结果
+                        all_questions = [
+                            q for p in llm_result.passages
+                            for q in p.get('questions', [])
+                        ]
+                        warnings = image_extractor.validate_extraction(option_images, all_questions)
+                        for warning in warnings:
+                            logger.warning(warning)
+
+                        logger.info(f"提取了 {len(option_images)} 张选项图片")
+                    except Exception as e:
+                        logger.warning(f"图片提取失败（不影响导入）: {e}")
+
                 # 更新试卷状态（元数据只用文件名解析的，不用LLM推断）
                 paper.import_status = "completed"
                 paper.parse_strategy = "llm"
@@ -522,16 +591,26 @@ async def upload_paper_with_progress(
                             )
                             yield emit()
 
-                            # 构建选项字典
+                            # 构建选项字典（过滤图片选项）
                             options_dict = {}
-                            if question.option_a:
-                                options_dict["A"] = question.option_a
-                            if question.option_b:
-                                options_dict["B"] = question.option_b
-                            if question.option_c:
-                                options_dict["C"] = question.option_c
-                            if question.option_d:
-                                options_dict["D"] = question.option_d
+                            has_text_option = False
+                            for opt_key, opt_val in [
+                                ("A", question.option_a),
+                                ("B", question.option_b),
+                                ("C", question.option_c),
+                                ("D", question.option_d)
+                            ]:
+                                if opt_val:
+                                    # 跳过图片选项
+                                    if opt_val.startswith("[IMAGE:"):
+                                        continue
+                                    has_text_option = True
+                                    options_dict[opt_key] = opt_val
+
+                            # 如果没有文本选项（全是图片），跳过解析生成
+                            if not has_text_option:
+                                logger.info(f"第{question.question_number}题为图片选项，跳过解析生成")
+                                continue
 
                             # 调用AI生成解析
                             try:

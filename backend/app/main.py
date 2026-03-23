@@ -2,8 +2,10 @@
 FastAPI 主入口
 """
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db
@@ -38,6 +40,11 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(api_router, prefix="/api")
+
+# 配置静态文件服务（用于图片选项等）
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 @app.get("/")
