@@ -341,7 +341,7 @@ export function WritingPage() {
   }, [drawerOpen, columns])
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 24, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* 视图切换器 */}
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Radio.Group
@@ -360,7 +360,9 @@ export function WritingPage() {
 
       {/* 讲义视图 */}
       {viewMode === 'handout' && (
-        <WritingHandoutView />
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <WritingHandoutView />
+        </div>
       )}
 
       {/* 列表视图 + 抽屉的 flex 容器 */}

@@ -67,6 +67,30 @@ export interface SourceInfo {
   filename?: string
 }
 
+export interface PaperSummary {
+  id: number
+  filename: string
+  year: number
+  region?: string
+  school?: string
+  grade: string
+  semester?: string
+  exam_type?: string
+  version?: string
+  import_status?: string
+  parse_strategy?: string
+  confidence?: number
+  error_message?: string
+  original_path?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface PaperListResponse {
+  total: number
+  items: PaperSummary[]
+}
+
 // 文章
 export interface Passage {
   id: number

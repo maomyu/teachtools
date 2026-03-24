@@ -20,6 +20,18 @@ import type {
   WritingHandoutDetailResponse,
 } from '@/types'
 
+function buildHandoutParams(
+  edition?: 'teacher' | 'student',
+  paperIds?: number[]
+): URLSearchParams | undefined {
+  const params = new URLSearchParams()
+  if (edition) {
+    params.append('edition', edition)
+  }
+  ;(paperIds || []).forEach((paperId) => params.append('paper_ids', String(paperId)))
+  return Array.from(params.keys()).length > 0 ? params : undefined
+}
+
 
 // ==============================================================================
 //                              筛选项
@@ -180,11 +192,12 @@ export async function getTemplate(
  */
 export async function getWritingHandout(
   grade: string,
-  edition: 'teacher' | 'student' = 'teacher'
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
 ): Promise<WritingGradeHandoutResponse> {
   const response = await api.get<WritingGradeHandoutResponse>(
     `/writings/handouts/${grade}`,
-    { params: { edition } }
+    { params: buildHandoutParams(edition, paperIds) }
   )
   return response.data
 }
@@ -205,12 +218,13 @@ export async function getWritingHandoutTopics(
 export async function getWritingHandoutDetail(
   grade: string,
   topic: string,
-  edition: 'teacher' | 'student' = 'teacher'
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
 ): Promise<WritingHandoutDetailResponse> {
   const encodedTopic = encodeURIComponent(topic)
   const response = await api.get<WritingHandoutDetailResponse>(
     `/writings/handouts/${grade}/topics/${encodedTopic}`,
-    { params: { edition } }
+    { params: buildHandoutParams(edition, paperIds) }
   )
   return response.data
 }

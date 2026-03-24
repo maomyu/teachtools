@@ -846,7 +846,7 @@ I am writing to share my admiration for...
     #                              讲义功能
     # =========================================================================
 
-    async def get_topic_stats_for_grade(self, grade: str) -> List[Dict]:
+    async def get_topic_stats_for_grade(self, grade: str, paper_ids: Optional[List[int]] = None) -> List[Dict]:
         """
         获取年级话题统计（按题目数量排序）
 
@@ -870,6 +870,7 @@ I am writing to share my admiration for...
             .group_by(WritingTask.primary_topic)
             .order_by(func.count(WritingTask.id).desc())
         )
+        query = self._apply_exam_paper_filter(query, paper_ids)
 
         result = await self.db.execute(query)
         rows = result.all()
@@ -887,6 +888,7 @@ I am writing to share my admiration for...
                 .where(ExamPaper.grade == grade)
                 .where(WritingTask.primary_topic == topic)
             )
+            sample_count_query = self._apply_exam_paper_filter(sample_count_query, paper_ids)
             sample_count_result = await self.db.execute(sample_count_query)
             sample_count = sample_count_result.scalar() or 0
 
@@ -911,7 +913,8 @@ I am writing to share my admiration for...
         self,
         grade: str,
         topic: str,
-        edition: str = 'teacher'
+        edition: str = 'teacher',
+        paper_ids: Optional[List[int]] = None
     ) -> Dict:
         """
         获取单话题讲义内容（四段式）
@@ -925,16 +928,16 @@ I am writing to share my admiration for...
             四段式讲义内容
         """
         # Part 1: 话题统计
-        stats = await self._get_single_topic_stats(grade, topic)
+        stats = await self._get_single_topic_stats(grade, topic, paper_ids)
 
         # Part 2: 写作框架
-        frameworks = await self._aggregate_frameworks(grade, topic)
+        frameworks = await self._aggregate_frameworks(grade, topic, paper_ids)
 
         # Part 3: 高频表达
-        expressions = await self._aggregate_expressions(grade, topic)
+        expressions = await self._aggregate_expressions(grade, topic, paper_ids)
 
         # Part 4: 范文展示
-        samples = await self._get_topic_samples(grade, topic, edition)
+        samples = await self._get_topic_samples(grade, topic, edition, paper_ids)
 
         return {
             "topic": topic,
@@ -946,7 +949,7 @@ I am writing to share my admiration for...
             "part4_samples": samples
         }
 
-    async def _get_single_topic_stats(self, grade: str, topic: str) -> Dict:
+    async def _get_single_topic_stats(self, grade: str, topic: str, paper_ids: Optional[List[int]] = None) -> Dict:
         """获取单个话题的统计"""
         # 题目数量
         task_count_query = (
@@ -955,6 +958,7 @@ I am writing to share my admiration for...
             .where(ExamPaper.grade == grade)
             .where(WritingTask.primary_topic == topic)
         )
+        task_count_query = self._apply_exam_paper_filter(task_count_query, paper_ids)
         task_count_result = await self.db.execute(task_count_query)
         task_count = task_count_result.scalar() or 0
 
@@ -966,6 +970,7 @@ I am writing to share my admiration for...
             .where(ExamPaper.grade == grade)
             .where(WritingTask.primary_topic == topic)
         )
+        sample_count_query = self._apply_exam_paper_filter(sample_count_query, paper_ids)
         sample_count_result = await self.db.execute(sample_count_query)
         sample_count = sample_count_result.scalar() or 0
 
@@ -979,6 +984,7 @@ I am writing to share my admiration for...
             .order_by(ExamPaper.year.desc())
             .limit(3)
         )
+        years_query = self._apply_exam_paper_filter(years_query, paper_ids)
         years_result = await self.db.execute(years_query)
         years = [y for y in years_result.scalars().all() if y]
 
@@ -989,7 +995,7 @@ I am writing to share my admiration for...
             "recent_years": years
         }
 
-    async def _aggregate_frameworks(self, grade: str, topic: str) -> List[Dict]:
+    async def _aggregate_frameworks(self, grade: str, topic: str, paper_ids: Optional[List[int]] = None) -> List[Dict]:
         """
         聚合写作框架（从该话题下所有模板提取）
 
@@ -1008,6 +1014,7 @@ I am writing to share my admiration for...
             .where(WritingTask.primary_topic == topic)
             .where(WritingTask.writing_type.isnot(None))
         )
+        writing_types_query = self._apply_exam_paper_filter(writing_types_query, paper_ids)
         writing_types_result = await self.db.execute(writing_types_query)
         writing_types = [wt for wt in writing_types_result.scalars().all() if wt]
 
@@ -1115,7 +1122,7 @@ I am writing to share my admiration for...
 
         return frameworks
 
-    async def _aggregate_expressions(self, grade: str, topic: str) -> List[Dict]:
+    async def _aggregate_expressions(self, grade: str, topic: str, paper_ids: Optional[List[int]] = None) -> List[Dict]:
         """
         聚合高频表达（从模板字段合并去重）
 
@@ -1133,6 +1140,7 @@ I am writing to share my admiration for...
             .where(WritingTask.primary_topic == topic)
             .where(WritingTask.writing_type.isnot(None))
         )
+        writing_types_query = self._apply_exam_paper_filter(writing_types_query, paper_ids)
         writing_types_result = await self.db.execute(writing_types_query)
         writing_types = [wt for wt in writing_types_result.scalars().all() if wt]
 
@@ -1252,7 +1260,8 @@ I am writing to share my admiration for...
         self,
         grade: str,
         topic: str,
-        edition: str
+        edition: str,
+        paper_ids: Optional[List[int]] = None
     ) -> List[Dict]:
         """
         获取话题范文（含重点句标注）
@@ -1274,6 +1283,7 @@ I am writing to share my admiration for...
             .order_by(ExamPaper.year.desc())
             .limit(5)  # 最多5篇范文
         )
+        query = self._apply_exam_paper_filter(query, paper_ids)
 
         result = await self.db.execute(query)
         rows = result.all()
@@ -1305,3 +1315,12 @@ I am writing to share my admiration for...
             samples.append(sample_data)
 
         return samples
+    def _normalize_paper_ids(self, paper_ids: Optional[List[int]]) -> Optional[List[int]]:
+        ids = [paper_id for paper_id in (paper_ids or []) if paper_id is not None]
+        return ids or None
+
+    def _apply_exam_paper_filter(self, query, paper_ids: Optional[List[int]]):
+        normalized_ids = self._normalize_paper_ids(paper_ids)
+        if normalized_ids:
+            query = query.where(ExamPaper.id.in_(normalized_ids))
+        return query

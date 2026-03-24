@@ -27,6 +27,18 @@ from app.schemas.reading import (
 router = APIRouter()
 
 
+def _normalize_paper_ids(paper_ids: Optional[List[int]]) -> Optional[List[int]]:
+    ids = [paper_id for paper_id in (paper_ids or []) if paper_id is not None]
+    return ids or None
+
+
+def _apply_paper_filter(query, paper_ids: Optional[List[int]]):
+    normalized_ids = _normalize_paper_ids(paper_ids)
+    if normalized_ids:
+        query = query.where(ExamPaper.id.in_(normalized_ids))
+    return query
+
+
 @router.get("/filters")
 async def get_passage_filters(db: AsyncSession = Depends(get_db)):
     """获取文章筛选项（动态从数据库获取）"""
@@ -441,6 +453,7 @@ from app.models.vocabulary_cloze import VocabularyCloze
 async def get_grade_handout(
     grade: str,
     edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    paper_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -452,7 +465,7 @@ async def get_grade_handout(
     [PROTOCOL]: 变更时更新此头部
     """
     # 获取主题统计（按考频排序）
-    topics = await _get_topic_stats_for_grade(db, grade)
+    topics = await _get_topic_stats_for_grade(db, grade, paper_ids)
 
     # 获取每个主题的内容
     content = []
@@ -460,9 +473,9 @@ async def get_grade_handout(
         topic = topic_info["topic"]
         topic_content = {
             "topic": topic,
-            "part1_article_sources": await _get_article_sources(db, grade, topic),
-            "part2_vocabulary": await _get_topic_vocabulary_with_source(db, grade, topic),
-            "part3_passages": await _get_topic_passages(db, grade, topic, edition)
+            "part1_article_sources": await _get_article_sources(db, grade, topic, paper_ids),
+            "part2_vocabulary": await _get_topic_vocabulary_with_source(db, grade, topic, paper_ids),
+            "part3_passages": await _get_topic_passages(db, grade, topic, edition, paper_ids)
         }
         content.append(topic_content)
 
@@ -474,7 +487,7 @@ async def get_grade_handout(
     }
 
 
-async def _get_topic_stats_for_grade(db: AsyncSession, grade: str):
+async def _get_topic_stats_for_grade(db: AsyncSession, grade: str, paper_ids: Optional[List[int]] = None):
     """
     获取某年级的主题统计（按考频降序）
 
@@ -495,6 +508,7 @@ async def _get_topic_stats_for_grade(db: AsyncSession, grade: str):
         .group_by(ReadingPassage.primary_topic)
         .order_by(func.count(ReadingPassage.id).desc())
     )
+    query = _apply_paper_filter(query, paper_ids)
 
     result = await db.execute(query)
     topics = []
@@ -512,6 +526,7 @@ async def _get_topic_stats_for_grade(db: AsyncSession, grade: str):
 @router.get("/handouts/{grade}/topics")
 async def get_topic_stats_for_grade(
     grade: str,
+    paper_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -522,7 +537,7 @@ async def get_topic_stats_for_grade(
     [POS]: reading.py 的讲义主题统计端点
     [PROTOCOL]: 变更时更新此头部
     """
-    topics = await _get_topic_stats_for_grade(db, grade)
+    topics = await _get_topic_stats_for_grade(db, grade, paper_ids)
     return {"topics": topics}
 
 
@@ -531,6 +546,7 @@ async def get_handout_detail(
     grade: str,
     topic: str,
     edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    paper_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -542,13 +558,13 @@ async def get_handout_detail(
     [PROTOCOL]: 变更时更新此头部
     """
     # 第一部分：文章来源
-    article_sources = await _get_article_sources(db, grade, topic)
+    article_sources = await _get_article_sources(db, grade, topic, paper_ids)
 
     # 第二部分：高频词汇（仅阅读）
-    vocabulary = await _get_topic_vocabulary(db, grade, topic)
+    vocabulary = await _get_topic_vocabulary(db, grade, topic, paper_ids)
 
     # 第三部分：阅读文章（含题目）
-    passages = await _get_topic_passages(db, grade, topic, edition)
+    passages = await _get_topic_passages(db, grade, topic, edition, paper_ids)
 
     return {
         "topic": topic,
@@ -564,7 +580,7 @@ async def get_handout_detail(
 #  讲义辅助函数
 # ============================================================================
 
-async def _get_article_sources(db: AsyncSession, grade: str, topic: str):
+async def _get_article_sources(db: AsyncSession, grade: str, topic: str, paper_ids: Optional[List[int]] = None):
     """
     获取主题下所有文章来源（按年份+区县分组）
 
@@ -580,6 +596,7 @@ async def _get_article_sources(db: AsyncSession, grade: str, topic: str):
         .where(ReadingPassage.primary_topic == topic)
         .order_by(ExamPaper.year.desc(), ExamPaper.region)
     )
+    query = _apply_paper_filter(query, paper_ids)
     result = await db.execute(query)
 
     # 按试卷分组
@@ -603,7 +620,7 @@ async def _get_article_sources(db: AsyncSession, grade: str, topic: str):
     return list(sources.values())
 
 
-async def _get_topic_vocabulary(db: AsyncSession, grade: str, topic: str):
+async def _get_topic_vocabulary(db: AsyncSession, grade: str, topic: str, paper_ids: Optional[List[int]] = None):
     """
     获取主题高频词汇（仅来自阅读文章，按词频排序）
 
@@ -628,6 +645,7 @@ async def _get_topic_vocabulary(db: AsyncSession, grade: str, topic: str):
         .group_by(Vocabulary.id)
         .order_by(func.count(VocabularyPassage.id).desc())
     )
+    query = _apply_paper_filter(query, paper_ids)
 
     result = await db.execute(query)
     vocabulary = []
@@ -643,7 +661,7 @@ async def _get_topic_vocabulary(db: AsyncSession, grade: str, topic: str):
     return vocabulary
 
 
-async def _get_topic_vocabulary_with_source(db: AsyncSession, grade: str, topic: str):
+async def _get_topic_vocabulary_with_source(db: AsyncSession, grade: str, topic: str, paper_ids: Optional[List[int]] = None):
     """
     获取主题高频词汇（含来源标注，按优先级排序）
 
@@ -674,6 +692,7 @@ async def _get_topic_vocabulary_with_source(db: AsyncSession, grade: str, topic:
         .where(ReadingPassage.primary_topic == topic)
         .group_by(Vocabulary.id)
     )
+    reading_query = _apply_paper_filter(reading_query, paper_ids)
     reading_result = await db.execute(reading_query)
     reading_vocabs = {row.id: {"id": row.id, "word": row.word, "definition": row.definition,
                                 "phonetic": row.phonetic, "frequency": row.frequency}
@@ -695,6 +714,7 @@ async def _get_topic_vocabulary_with_source(db: AsyncSession, grade: str, topic:
         .where(ClozePassage.primary_topic == topic)
         .group_by(Vocabulary.id)
     )
+    cloze_query = _apply_paper_filter(cloze_query, paper_ids)
     cloze_result = await db.execute(cloze_query)
     cloze_vocabs = {row.id: {"id": row.id, "word": row.word, "definition": row.definition,
                               "phonetic": row.phonetic, "frequency": row.frequency}
@@ -738,7 +758,13 @@ async def _get_topic_vocabulary_with_source(db: AsyncSession, grade: str, topic:
     return vocabulary
 
 
-async def _get_topic_passages(db: AsyncSession, grade: str, topic: str, edition: str):
+async def _get_topic_passages(
+    db: AsyncSession,
+    grade: str,
+    topic: str,
+    edition: str,
+    paper_ids: Optional[List[int]] = None
+):
     """
     获取主题下的阅读文章（含题目）
 
@@ -759,6 +785,7 @@ async def _get_topic_passages(db: AsyncSession, grade: str, topic: str, edition:
         .where(ReadingPassage.primary_topic == topic)
         .order_by(ExamPaper.year.desc(), ReadingPassage.passage_type)
     )
+    query = _apply_paper_filter(query, paper_ids)
 
     result = await db.execute(query)
     passages = result.scalars().all()

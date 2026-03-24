@@ -137,6 +137,7 @@ if (typeof document !== 'undefined') {
 interface GradeWritingHandoutProps {
   grade: string
   edition: 'teacher' | 'student'
+  paperIds?: number[]
   onBack: () => void
 }
 
@@ -144,7 +145,7 @@ interface GradeWritingHandoutProps {
 //  主组件：年级作文讲义（A4 文档）
 // ============================================================================
 
-export function GradeWritingHandout({ grade, edition, onBack }: GradeWritingHandoutProps) {
+export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeWritingHandoutProps) {
   const [handout, setHandout] = useState<WritingGradeHandoutResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -152,12 +153,12 @@ export function GradeWritingHandout({ grade, edition, onBack }: GradeWritingHand
 
   useEffect(() => {
     loadHandout()
-  }, [grade, edition])
+  }, [grade, edition, paperIds?.join(',')])
 
   const loadHandout = async () => {
     try {
       setLoading(true)
-      const response = await getWritingHandout(grade, edition)
+      const response = await getWritingHandout(grade, edition, paperIds)
       setHandout(response)
     } catch (error) {
       console.error('加载讲义失败:', error)
@@ -170,7 +171,8 @@ export function GradeWritingHandout({ grade, edition, onBack }: GradeWritingHand
     if (!contentRef.current) return
     try {
       setExporting(true)
-      const filename = `${grade}作文讲义_${edition === 'teacher' ? '教师版' : '学生版'}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
+      const scopeSuffix = paperIds && paperIds.length > 0 ? `_选${paperIds.length}卷` : ''
+      const filename = `${grade}作文讲义${scopeSuffix}_${edition === 'teacher' ? '教师版' : '学生版'}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
       await exportToPDF(contentRef.current, filename)
     } finally {
       setExporting(false)
@@ -223,6 +225,10 @@ export function GradeWritingHandout({ grade, edition, onBack }: GradeWritingHand
             <Title level={3} type="secondary">话题分类 · 四段式结构</Title>
             <Divider />
             <Text>包含 {handout.topics.length} 个话题 · {handout.topics.reduce((sum, t) => sum + t.task_count, 0)} 道真题</Text>
+            <br />
+            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+              {paperIds && paperIds.length > 0 ? `已选 ${paperIds.length} 份试卷` : '范围：全年级全部试卷'}
+            </Text>
             <br />
             <Text type="secondary">{edition === 'teacher' ? '教师版（含重点句解析）' : '学生版'}</Text>
           </div>
@@ -551,4 +557,3 @@ function SamplePages({ sample, sampleIndex, edition }: SamplePagesProps) {
     </>
   )
 }
-

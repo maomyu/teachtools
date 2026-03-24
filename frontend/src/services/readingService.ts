@@ -22,6 +22,18 @@ import type {
   BatchDeleteResponse,
 } from '@/types'
 
+function buildHandoutParams(
+  edition?: 'teacher' | 'student',
+  paperIds?: number[]
+): URLSearchParams | undefined {
+  const params = new URLSearchParams()
+  if (edition) {
+    params.append('edition', edition)
+  }
+  ;(paperIds || []).forEach((paperId) => params.append('paper_ids', String(paperId)))
+  return Array.from(params.keys()).length > 0 ? params : undefined
+}
+
 /**
  * 获取文章筛选项（动态从数据库获取）
  */
@@ -101,11 +113,12 @@ export async function getTopicStatsForGrade(grade: string): Promise<TopicStatsRe
 export async function getHandoutDetail(
   grade: string,
   topic: string,
-  edition: 'teacher' | 'student' = 'teacher'
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
 ): Promise<HandoutDetailResponse> {
   const response = await api.get<HandoutDetailResponse>(
     `/passages/handouts/${grade}/topics/${topic}`,
-    { params: { edition } }
+    { params: buildHandoutParams(edition, paperIds) }
   )
   return response.data
 }
@@ -115,11 +128,12 @@ export async function getHandoutDetail(
  */
 export async function getGradeHandout(
   grade: string,
-  edition: 'teacher' | 'student' = 'teacher'
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
 ): Promise<GradeHandoutResponse> {
   const response = await api.get<GradeHandoutResponse>(
     `/passages/handouts/${grade}`,
-    { params: { edition } }
+    { params: buildHandoutParams(edition, paperIds) }
   )
   return response.data
 }

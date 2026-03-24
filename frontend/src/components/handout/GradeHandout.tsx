@@ -66,6 +66,7 @@ function estimateLines(text: string): number {
 interface GradeHandoutProps {
   grade: string
   edition: 'teacher' | 'student'
+  paperIds?: number[]
   onBack: () => void
 }
 
@@ -73,7 +74,7 @@ interface GradeHandoutProps {
 //  主组件：年级讲义（A4 文档）
 // ============================================================================
 
-export function GradeHandout({ grade, edition, onBack }: GradeHandoutProps) {
+export function GradeHandout({ grade, edition, paperIds, onBack }: GradeHandoutProps) {
   const [handout, setHandout] = useState<GradeHandoutResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -81,12 +82,12 @@ export function GradeHandout({ grade, edition, onBack }: GradeHandoutProps) {
 
   useEffect(() => {
     loadHandout()
-  }, [grade, edition])
+  }, [grade, edition, paperIds?.join(',')])
 
   const loadHandout = async () => {
     try {
       setLoading(true)
-      const response = await getGradeHandout(grade, edition)
+      const response = await getGradeHandout(grade, edition, paperIds)
       setHandout(response)
     } catch (error) {
       console.error('加载讲义失败:', error)
@@ -99,7 +100,8 @@ export function GradeHandout({ grade, edition, onBack }: GradeHandoutProps) {
     if (!contentRef.current) return
     try {
       setExporting(true)
-      const filename = `${grade}阅读CD篇讲义_${edition === 'teacher' ? '教师版' : '学生版'}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
+      const scopeSuffix = paperIds && paperIds.length > 0 ? `_选${paperIds.length}卷` : ''
+      const filename = `${grade}阅读CD篇讲义${scopeSuffix}_${edition === 'teacher' ? '教师版' : '学生版'}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
       await exportToPDF(contentRef.current, filename)
     } finally {
       setExporting(false)
@@ -152,6 +154,9 @@ export function GradeHandout({ grade, edition, onBack }: GradeHandoutProps) {
             <div style={{ marginTop: 48 }}>
               <Text style={{ fontSize: 18, display: 'block', marginBottom: 16 }}>
                 {edition === 'teacher' ? '教师版（含答案）' : '学生版'}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 8 }}>
+                {paperIds && paperIds.length > 0 ? `已选 ${paperIds.length} 份试卷` : '范围：全年级全部试卷'}
               </Text>
               <Text type="secondary" style={{ fontSize: 14 }}>
                 生成日期：{new Date().toLocaleDateString('zh-CN')}

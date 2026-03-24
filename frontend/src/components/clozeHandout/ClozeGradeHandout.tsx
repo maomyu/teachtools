@@ -38,6 +38,7 @@ const { Title, Text } = Typography
 interface ClozeGradeHandoutProps {
   grade: string
   edition: 'teacher' | 'student'
+  paperIds?: number[]
   onBack: () => void
 }
 
@@ -45,7 +46,7 @@ interface ClozeGradeHandoutProps {
 //  主组件：完形年级讲义（A4 文档）
 // ============================================================================
 
-export function ClozeGradeHandout({ grade, edition, onBack }: ClozeGradeHandoutProps) {
+export function ClozeGradeHandout({ grade, edition, paperIds, onBack }: ClozeGradeHandoutProps) {
   const [handout, setHandout] = useState<ClozeGradeHandoutResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -53,12 +54,12 @@ export function ClozeGradeHandout({ grade, edition, onBack }: ClozeGradeHandoutP
 
   useEffect(() => {
     loadHandout()
-  }, [grade, edition])
+  }, [grade, edition, paperIds?.join(',')])
 
   const loadHandout = async () => {
     try {
       setLoading(true)
-      const response = await getClozeGradeHandout(grade, edition)
+      const response = await getClozeGradeHandout(grade, edition, paperIds)
       setHandout(response)
     } catch (error) {
       console.error('加载讲义失败:', error)
@@ -71,7 +72,8 @@ export function ClozeGradeHandout({ grade, edition, onBack }: ClozeGradeHandoutP
     if (!contentRef.current) return
     try {
       setExporting(true)
-      const filename = `${grade}完形填空讲义_${edition === 'teacher' ? '教师版' : '学生版'}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
+      const scopeSuffix = paperIds && paperIds.length > 0 ? `_选${paperIds.length}卷` : ''
+      const filename = `${grade}完形填空讲义${scopeSuffix}_${edition === 'teacher' ? '教师版' : '学生版'}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
       await exportToPDF(contentRef.current, filename)
     } finally {
       setExporting(false)
@@ -124,6 +126,9 @@ export function ClozeGradeHandout({ grade, edition, onBack }: ClozeGradeHandoutP
             <div style={{ marginTop: 48 }}>
               <Text style={{ fontSize: 18, display: 'block', marginBottom: 16 }}>
                 {edition === 'teacher' ? '教师版（含答案和解析）' : '学生版'}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 8 }}>
+                {paperIds && paperIds.length > 0 ? `已选 ${paperIds.length} 份试卷` : '范围：全年级全部试卷'}
               </Text>
               <Text type="secondary" style={{ fontSize: 14 }}>
                 生成日期：{new Date().toLocaleDateString('zh-CN')}

@@ -117,6 +117,18 @@ import type {
   ClozeGradeHandoutResponse,
 } from '@/types'
 
+function buildHandoutParams(
+  edition?: 'teacher' | 'student',
+  paperIds?: number[]
+): URLSearchParams | undefined {
+  const params = new URLSearchParams()
+  if (edition) {
+    params.append('edition', edition)
+  }
+  ;(paperIds || []).forEach((paperId) => params.append('paper_ids', String(paperId)))
+  return Array.from(params.keys()).length > 0 ? params : undefined
+}
+
 /**
  * 获取某年级的完形主题统计
  */
@@ -131,11 +143,12 @@ export async function getClozeTopicStats(grade: string): Promise<{ topics: Cloze
 export async function getClozeHandoutDetail(
   grade: string,
   topic: string,
-  edition: 'teacher' | 'student' = 'teacher'
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
 ): Promise<ClozeHandoutDetailResponse> {
   const response = await api.get(
     `/cloze/handouts/${grade}/topics/${encodeURIComponent(topic)}`,
-    { params: { edition } }
+    { params: buildHandoutParams(edition, paperIds) }
   )
   return response.data
 }
@@ -145,11 +158,12 @@ export async function getClozeHandoutDetail(
  */
 export async function getClozeGradeHandout(
   grade: string,
-  edition: 'teacher' | 'student' = 'teacher'
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
 ): Promise<ClozeGradeHandoutResponse> {
   const response = await api.get(
     `/cloze/handouts/${grade}`,
-    { params: { edition } }
+    { params: buildHandoutParams(edition, paperIds) }
   )
   return response.data
 }

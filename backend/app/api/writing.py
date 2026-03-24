@@ -129,6 +129,7 @@ async def get_writings(
 @router.get("/handouts/{grade}/topics")
 async def get_writing_handout_topics(
     grade: str,
+    paper_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -138,7 +139,7 @@ async def get_writing_handout_topics(
         grade: 年级（初一/初二/初三）
     """
     service = WritingService(db)
-    topics = await service.get_topic_stats_for_grade(grade)
+    topics = await service.get_topic_stats_for_grade(grade, paper_ids=paper_ids)
     return {"grade": grade, "topics": topics}
 
 
@@ -147,6 +148,7 @@ async def get_writing_handout_detail(
     grade: str,
     topic: str,
     edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    paper_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -161,7 +163,7 @@ async def get_writing_handout_detail(
     topic = unquote(topic)
 
     service = WritingService(db)
-    content = await service.get_topic_handout_content(grade, topic, edition)
+    content = await service.get_topic_handout_content(grade, topic, edition, paper_ids=paper_ids)
 
     return WritingHandoutDetailResponse(
         topic=content["topic"],
@@ -178,6 +180,7 @@ async def get_writing_handout_detail(
 async def get_writing_handout(
     grade: str,
     edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    paper_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -190,7 +193,7 @@ async def get_writing_handout(
     service = WritingService(db)
 
     # 获取话题统计
-    topics = await service.get_topic_stats_for_grade(grade)
+    topics = await service.get_topic_stats_for_grade(grade, paper_ids=paper_ids)
 
     # 获取每个话题的讲义内容
     content = []
@@ -198,7 +201,8 @@ async def get_writing_handout(
         topic_content = await service.get_topic_handout_content(
             grade,
             topic_info["topic"],
-            edition
+            edition,
+            paper_ids=paper_ids
         )
         content.append(WritingHandoutDetailResponse(
             topic=topic_content["topic"],
