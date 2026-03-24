@@ -22,6 +22,7 @@ import {
 } from '@ant-design/icons'
 
 import { QuestionOptions, parseOptionContent } from '@/components/common/QuestionOptions'
+import { RichTextWithImages } from '@/components/common/RichTextWithImages'
 import { getGradeHandout } from '@/services/readingService'
 import { exportToPDF } from '@/utils/pdfExport'
 import type {
@@ -485,8 +486,16 @@ interface QuestionsPagesProps {
 function estimateQuestionLines(question: HandoutQuestion, edition: 'teacher' | 'student'): number {
   let lines = 0
 
-  // 题干（约 2 行）
-  lines += estimateLines(question.text || '') + 2
+  // 题干（文本 + 题干配图）
+  const parsedQuestionText = parseOptionContent(question.text || '')
+  if (parsedQuestionText.text) {
+    lines += estimateLines(parsedQuestionText.text) + 2
+  } else {
+    lines += 2
+  }
+  if (parsedQuestionText.imageUrls.length || parsedQuestionText.pendingImageCount) {
+    lines += (parsedQuestionText.imageUrls.length + parsedQuestionText.pendingImageCount) * 6
+  }
 
   // 选项（图片选项按更高行数估算，避免分页截断）
   if (question.options) {
@@ -596,9 +605,21 @@ function QuestionItem({ question, index, edition }: QuestionItemProps) {
   return (
     <div className="question-item" style={{ marginBottom: 24 }}>
       {/* 题干 */}
-      <Paragraph strong style={{ fontSize: 14, marginBottom: 12 }}>
-        {index}. {question.text || '题目内容缺失'}
-      </Paragraph>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14, lineHeight: 1.7 }}>
+          {index}.
+        </Text>
+        <RichTextWithImages
+          value={question.text || '题目内容缺失'}
+          fontSize={14}
+          imageMaxWidth={320}
+          imageMaxHeight={180}
+          strong
+          textStyle={{ lineHeight: 1.7 }}
+          imageAlt={`题目 ${index} 配图`}
+          style={{ flex: 1 }}
+        />
+      </div>
 
       {/* 选项 */}
       <QuestionOptions
@@ -611,7 +632,7 @@ function QuestionItem({ question, index, edition }: QuestionItemProps) {
       />
 
       {/* 教师版显示答案 */}
-      {edition === 'teacher' && question.correct_answer && (
+      {edition === 'teacher' && (question.correct_answer || question.explanation) && (
         <div className="answer-section" style={{
           marginTop: 12,
           padding: '8px 16px',
@@ -620,11 +641,12 @@ function QuestionItem({ question, index, edition }: QuestionItemProps) {
           borderLeft: '3px solid #1890ff'
         }}>
           <Text strong style={{ color: '#1890ff' }}>
-            答案：{question.correct_answer}
+            {question.correct_answer ? `答案：${question.correct_answer}` : '参考答案'}
           </Text>
           {question.explanation && (
-            <Paragraph style={{ marginTop: 8, marginBottom: 0 }}>
-              <Text strong>解析：</Text>{question.explanation}
+            <Paragraph style={{ marginTop: 8, marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+              {question.correct_answer ? <Text strong>解析：</Text> : null}
+              {question.explanation}
             </Paragraph>
           )}
         </div>

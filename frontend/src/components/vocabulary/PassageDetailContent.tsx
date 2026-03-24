@@ -22,6 +22,7 @@ import {
 import { ArrowLeftOutlined, CheckCircleOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons'
 
 import { QuestionOptions } from '@/components/common/QuestionOptions'
+import { RichTextWithImages } from '@/components/common/RichTextWithImages'
 import { getPassage } from '@/services/readingService'
 import type { PassageDetail, VocabularyInPassage, VocabularyOccurrence, Question } from '@/types'
 
@@ -476,10 +477,18 @@ function QuestionCard({ question }: { question: Question }) {
       size="small"
       style={{ marginBottom: 8 }}
       title={
-        <Space>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           <Tag color="blue" style={{ fontSize: 11 }}>Q{question.question_number}</Tag>
-          <Text style={{ fontSize: 13 }}>{question.question_text}</Text>
-        </Space>
+          <RichTextWithImages
+            value={question.question_text}
+            fontSize={13}
+            imageMaxWidth={240}
+            imageMaxHeight={160}
+            textStyle={{ lineHeight: 1.6 }}
+            imageAlt={`题目 ${question.question_number} 配图`}
+            style={{ flex: 1 }}
+          />
+        </div>
       }
     >
       <Space direction="vertical" style={{ width: '100%' }} size="small">
@@ -501,19 +510,23 @@ function QuestionCard({ question }: { question: Question }) {
           {showAnswer ? '隐藏答案' : '显示答案'}
         </Button>
 
-        {showAnswer && (
+        {showAnswer && (question.correct_answer || question.answer_explanation) && (
           <div style={{
             padding: 8,
             background: '#f6ffed',
             borderLeft: '3px solid #52c41a',
             borderRadius: 4
           }}>
-            <Text style={{ fontSize: 12 }}>
-              <Text strong type="success">正确答案：</Text>
-              <Tag color="success" style={{ fontSize: 11 }}>{question.correct_answer}</Tag>
-            </Text>
+            {question.correct_answer ? (
+              <Text style={{ fontSize: 12 }}>
+                <Text strong type="success">正确答案：</Text>
+                <Tag color="success" style={{ fontSize: 11 }}>{question.correct_answer}</Tag>
+              </Text>
+            ) : (
+              <Text strong type="success" style={{ fontSize: 12 }}>参考答案：</Text>
+            )}
             {question.answer_explanation && (
-              <div style={{ marginTop: 4 }}>
+              <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>{question.answer_explanation}</Text>
               </div>
             )}

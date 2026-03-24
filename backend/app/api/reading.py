@@ -216,7 +216,7 @@ async def get_passage(
                 "id": occ.vocabulary.id,
                 "word": occ.vocabulary.word,
                 "definition": occ.vocabulary.definition,
-                "frequency": occ.vocabulary.frequency,
+                "frequency": len(unique_occurrences),
                 "occurrences": list(unique_occurrences.values())
             })
             seen_words.add(occ.vocabulary.word)
@@ -790,7 +790,7 @@ async def _get_topic_passages(db: AsyncSession, grade: str, topic: str, edition:
                     "id": occ.vocabulary.id,
                     "word": occ.vocabulary.word,
                     "definition": occ.vocabulary.definition,
-                    "frequency": occ.vocabulary.frequency,
+                    "frequency": len(unique_occurrences),
                     "occurrences": list(unique_occurrences.values())
                 })
                 seen_words.add(occ.vocabulary.word)

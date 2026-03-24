@@ -30,6 +30,15 @@ def count_english_words(text: str) -> int:
     # 匹配连续的英文字母（包括带连字符的单词）
     words = re.findall(r"[a-zA-Z]+(?:-[a-zA-Z]+)*", text)
     return len(words)
+
+
+def strip_image_tokens(text: str) -> str:
+    """移除题干中的图片 token，避免影响后续 AI 解析。"""
+    if not text:
+        return ""
+    return re.sub(r"\s*\[IMAGE(?::[^\]]+)?\]", "", text).strip()
+
+
 from app.models.paper import ExamPaper
 from app.models.reading import ReadingPassage, Question
 from app.models.vocabulary import Vocabulary, VocabularyPassage
@@ -562,47 +571,46 @@ async def upload_paper_with_progress(
 
                     explanations_generated = 0
                     for idx, (question, passage_content) in enumerate(saved_questions):
-                        if question.correct_answer:
-                            reporter.update_step("generate_explanations",
-                                progress=int((idx + 1) / len(saved_questions) * 100),
-                                message=f"生成第{question.question_number}题解析..."
-                            )
-                            yield emit()
+                        reporter.update_step("generate_explanations",
+                            progress=int((idx + 1) / len(saved_questions) * 100),
+                            message=f"优化第{question.question_number}题答案解析..."
+                        )
+                        yield emit()
 
-                            # 构建选项字典（过滤图片选项）
-                            options_dict = {}
-                            has_text_option = False
-                            for opt_key, opt_val in [
-                                ("A", question.option_a),
-                                ("B", question.option_b),
-                                ("C", question.option_c),
-                                ("D", question.option_d)
-                            ]:
-                                if opt_val:
-                                    # 跳过图片选项
-                                    if opt_val.startswith("[IMAGE:"):
-                                        continue
-                                    has_text_option = True
-                                    options_dict[opt_key] = opt_val
-
-                            # 如果没有文本选项（全是图片），跳过解析生成
-                            if not has_text_option:
-                                logger.info(f"第{question.question_number}题为图片选项，跳过解析生成")
+                        # 构建选项字典（过滤图片选项）
+                        options_dict = {}
+                        for opt_key, opt_val in [
+                            ("A", question.option_a),
+                            ("B", question.option_b),
+                            ("C", question.option_c),
+                            ("D", question.option_d)
+                        ]:
+                            if not opt_val:
                                 continue
+                            if opt_val.startswith("[IMAGE:"):
+                                continue
+                            options_dict[opt_key] = opt_val
 
-                            # 调用AI生成解析
-                            try:
-                                explanation = ai_service.generate_answer_explanation(
-                                    question_text=question.question_text,
-                                    options=options_dict,
-                                    correct_answer=question.correct_answer,
-                                    passage_content=passage_content
-                                )
-                                if explanation:
-                                    question.answer_explanation = explanation
-                                    explanations_generated += 1
-                            except Exception as e:
-                                logger.warning(f"生成第{question.question_number}题解析失败: {e}")
+                        existing_explanation = (question.answer_explanation or "").strip()
+
+                        # 调用AI优化/补全解析。即使原题已有答案或解析，也继续增强。
+                        try:
+                            explanation = ai_service.generate_answer_explanation(
+                                question_text=strip_image_tokens(question.question_text),
+                                options=options_dict,
+                                correct_answer=question.correct_answer or "",
+                                passage_content=passage_content,
+                                existing_explanation=existing_explanation,
+                            )
+                            if explanation:
+                                question.answer_explanation = explanation
+                                explanations_generated += 1
+                            elif existing_explanation:
+                                question.answer_explanation = existing_explanation
+                        except Exception as e:
+                            logger.warning(f"生成第{question.question_number}题解析失败: {e}")
+                            if existing_explanation:
+                                question.answer_explanation = existing_explanation
 
                     reporter.complete_step("generate_explanations", f"已生成{explanations_generated}条解析")
                     await db.commit()
@@ -926,6 +934,16 @@ async def upload_paper_with_progress(
                             # 使用AI异步提取
                             extracted_words = await vocab_extractor.extract_async(passage.content)
 
+                            existing_passage_keys = await db.execute(
+                                select(
+                                    VocabularyPassage.vocabulary_id,
+                                    VocabularyPassage.char_position
+                                ).where(VocabularyPassage.passage_id == passage.id)
+                            )
+                            seen_passage_occurrences = {
+                                (row[0], row[1]) for row in existing_passage_keys.all()
+                            }
+
                             for word_data in extracted_words:
                                 # 查找或创建词汇记录
                                 result = await db.execute(
@@ -950,16 +968,9 @@ async def upload_paper_with_progress(
 
                                 # 创建关联记录（带去重检查）
                                 for occ in word_data.occurrences:
-                                    # 检查是否已存在相同的记录
-                                    existing = await db.execute(
-                                        select(VocabularyPassage).where(
-                                            VocabularyPassage.vocabulary_id == vocab.id,
-                                            VocabularyPassage.passage_id == passage.id,
-                                            VocabularyPassage.char_position == occ.char_position
-                                        )
-                                    )
-                                    if existing.scalar_one_or_none():
-                                        continue  # 跳过重复记录
+                                    occ_key = (vocab.id, occ.char_position)
+                                    if occ_key in seen_passage_occurrences:
+                                        continue
 
                                     vocab_passage = VocabularyPassage(
                                         vocabulary_id=vocab.id,
@@ -970,6 +981,7 @@ async def upload_paper_with_progress(
                                         word_position=occ.word_position
                                     )
                                     db.add(vocab_passage)
+                                    seen_passage_occurrences.add(occ_key)
                                     total_words += 1
 
                     # 完形文章词汇提取
@@ -983,6 +995,16 @@ async def upload_paper_with_progress(
 
                             # 使用AI异步提取
                             extracted_words = await vocab_extractor.extract_async(content_for_vocab)
+
+                            existing_cloze_keys = await db.execute(
+                                select(
+                                    VocabularyCloze.vocabulary_id,
+                                    VocabularyCloze.char_position
+                                ).where(VocabularyCloze.cloze_id == cloze_passage.id)
+                            )
+                            seen_cloze_occurrences = {
+                                (row[0], row[1]) for row in existing_cloze_keys.all()
+                            }
 
                             for word_data in extracted_words:
                                 # 查找或创建词汇记录
@@ -1006,14 +1028,8 @@ async def upload_paper_with_progress(
 
                                 # 创建完形词汇关联记录
                                 for occ in word_data.occurrences:
-                                    existing = await db.execute(
-                                        select(VocabularyCloze).where(
-                                            VocabularyCloze.vocabulary_id == vocab.id,
-                                            VocabularyCloze.cloze_id == cloze_passage.id,
-                                            VocabularyCloze.char_position == occ.char_position
-                                        )
-                                    )
-                                    if existing.scalar_one_or_none():
+                                    occ_key = (vocab.id, occ.char_position)
+                                    if occ_key in seen_cloze_occurrences:
                                         continue
 
                                     vocab_cloze = VocabularyCloze(
@@ -1025,6 +1041,7 @@ async def upload_paper_with_progress(
                                         word_position=occ.word_position
                                     )
                                     db.add(vocab_cloze)
+                                    seen_cloze_occurrences.add(occ_key)
                                     total_words += 1
 
                     # 在发送“词汇提取完成”进度前先提交，避免客户端提前断开时丢失尾段结果

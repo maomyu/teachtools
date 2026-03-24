@@ -32,6 +32,15 @@ class OptionImage:
 
 
 @dataclass
+class QuestionImage:
+    """题干图片数据"""
+    question_number: int
+    image_url: str
+    paragraph_index: int
+    question_key: Optional[str] = None
+
+
+@dataclass
 class QuestionAnchor:
     """题目在文档中的锚点位置"""
     question_number: int
@@ -45,6 +54,7 @@ class QuestionBlockAnalysis:
     """单道题块的结构分析结果"""
     question_number: int
     option_images: List[OptionImage]
+    question_images: List[QuestionImage]
     has_option_markers: bool
     question_key: Optional[str] = None
 
@@ -131,9 +141,13 @@ class ImageExtractor:
             return [], []
 
         block_marker_map: Dict[str, bool] = {}
+        question_image_map: Dict[str, List[str]] = {}
         for analysis in analyses:
             if analysis.question_key:
                 block_marker_map[analysis.question_key] = analysis.has_option_markers
+                question_image_map[analysis.question_key] = [
+                    image.image_url for image in analysis.question_images
+                ]
 
         image_map: Dict[tuple[str, str], str] = {}
         for img in option_images:
@@ -149,6 +163,7 @@ class ImageExtractor:
                 options = question.setdefault("options", {})
                 matched_count = 0
                 has_option_markers = block_marker_map.get(question_key, True)
+                question_images = question_image_map.get(question_key, [])
 
                 for opt_key in ["A", "B", "C", "D"]:
                     image_url = image_map.get((question_key, opt_key))
@@ -165,6 +180,13 @@ class ImageExtractor:
                         int(question.get("expected_image_count", 0) or 0),
                         matched_count
                     )
+
+                if question_images:
+                    merged_question_text = question.get("question_text", "")
+                    for image_url in question_images:
+                        merged_question_text = self._merge_option_value(merged_question_text, image_url)
+                    question["question_text"] = merged_question_text
+                    question["has_question_images"] = True
 
                 if not has_option_markers and matched_count == 0:
                     question["is_open_ended"] = True
@@ -476,16 +498,23 @@ class ImageExtractor:
         1. `A.` 行内直接跟图片
         2. `A.` 单独一行，下一段是图片
         3. `A. B.` / `C. D.` 同行多图
+
+        另外支持开放题/题干配图：
+        - 题干段落之后、显式选项之前的图片，会作为题干图片保留
         """
         assignments: Dict[str, OptionImage] = {}
+        question_images: List[QuestionImage] = []
         pending_labels: List[str] = []
         has_option_markers = False
+        block_start_index = block[0]["index"] if block else -1
 
         for para in block:
             text = para["text"]
             images = para["images"]
 
             if text and self._should_stop_block(text):
+                break
+            if para["index"] != block_start_index and text and self._looks_like_new_block_start(text, question_number):
                 break
 
             multi_match = self.MULTI_OPTION_LABEL_PATTERN.match(text)
@@ -544,6 +573,16 @@ class ImageExtractor:
                 )
                 continue
 
+            if images and not pending_labels and not has_option_markers:
+                self._append_question_images(
+                    question_images=question_images,
+                    question_number=question_number,
+                    paragraph_index=para["index"],
+                    image_urls=images,
+                    question_key=question_key,
+                )
+                continue
+
             if text and not images:
                 pending_labels = []
 
@@ -554,6 +593,7 @@ class ImageExtractor:
                 assignments.values(),
                 key=lambda item: order.get(item.option_label, 99),
             ),
+            question_images=question_images,
             has_option_markers=has_option_markers,
             question_key=question_key,
         )
@@ -590,11 +630,46 @@ class ImageExtractor:
 
         return remaining_labels
 
+    def _append_question_images(
+        self,
+        question_images: List[QuestionImage],
+        question_number: int,
+        paragraph_index: int,
+        image_urls: List[str],
+        question_key: Optional[str] = None,
+    ) -> None:
+        """把题干附近的图片保留为题干图片。"""
+        seen_urls = {image.image_url for image in question_images}
+        for image_url in image_urls:
+            if image_url in seen_urls:
+                continue
+            question_images.append(
+                QuestionImage(
+                    question_number=question_number,
+                    image_url=image_url,
+                    paragraph_index=paragraph_index,
+                    question_key=question_key,
+                )
+            )
+            seen_urls.add(image_url)
+
     def _extract_question_number(self, text: str) -> Optional[int]:
         match = self.QUESTION_PATTERN.match(text or "")
         if not match:
             return None
         return int(match.group(1))
+
+    def _looks_like_new_block_start(self, text: str, current_question_number: int) -> bool:
+        """
+        判断是否已经进入下一道题或下一个大题块。
+
+        对最后一道题尤其重要，否则题块会一路吞到下一篇阅读或答案区，
+        把后续出现的 A/B/C/D 误判成当前题的选项结构。
+        """
+        next_question_number = self._extract_question_number(text)
+        if next_question_number is None:
+            return False
+        return next_question_number != current_question_number
 
     def _score_question_candidate(self, candidate_text: str, question_text: str) -> float:
         candidate_body = self._normalize_text(self._strip_question_prefix(candidate_text))

@@ -434,16 +434,18 @@ class QwenService:
         question_text: str,
         options: Dict[str, str],
         correct_answer: str,
-        passage_content: str = ""
+        passage_content: str = "",
+        existing_explanation: str = "",
     ) -> str:
         """
-        生成阅读理解答案解析
+        生成或优化阅读理解答案解析
 
         Args:
             question_text: 题目内容
             options: 选项 {"A": "...", "B": "...", "C": "...", "D": "..."}
             correct_answer: 正确答案 (A/B/C/D)
             passage_content: 文章内容（可选，用于上下文）
+            existing_explanation: 原题已有答案/解析（可选）
 
         Returns:
             答案解析文本
@@ -454,13 +456,38 @@ class QwenService:
             for key, value in options.items()
             if value  # 过滤空选项
         ])
+        has_text_options = bool(options_text.strip())
+        if not has_text_options:
+            options_text = "该题选项为图片或未提取到文字内容，无法直接展示选项文本。"
 
         # 截取文章内容（避免过长）
         passage_preview = ""
         if passage_content:
             passage_preview = f"\n文章内容（节选）：\n{passage_content[:1500]}...\n" if len(passage_content) > 1500 else f"\n文章内容：\n{passage_content}\n"
 
-        prompt = f"""你是一位初中英语老师。请根据以下阅读理解题目，分析正确答案为什么是对的。
+        answer_label = correct_answer if correct_answer else "开放题/未提供固定标准答案"
+        explanation_preview = existing_explanation.strip() or "无"
+
+        if not correct_answer.strip():
+            prompt = f"""你是一位经验丰富的初中英语老师。请根据以下英语阅读开放题，输出一版适合教师版使用的最终参考答案。
+
+{passage_preview}
+题目：{question_text}
+
+原题已有答案/解析：
+{explanation_preview}
+
+要求：
+1. 最终答案必须先给出英文参考答案，不能只写中文。
+2. 如果原题已有英文示例答案，优先保留其核心意思并优化语言表达，不要改写成纯中文。
+3. 中文只作为英文答案的翻译或补充说明，不能替代英文答案本身。
+4. 输出格式固定为：
+参考答案（英文）：...
+参考翻译（中文）：...
+5. 如有必要，可在末尾补一句“作答说明：...”，但整体保持简洁。
+6. 直接输出最终内容，不要额外标题。"""
+        else:
+            prompt = f"""你是一位经验丰富的初中英语老师。请根据以下阅读理解题目，输出一版更清晰、更完整、更适合教学使用的最终答案说明。
 
 {passage_preview}
 题目：{question_text}
@@ -468,13 +495,18 @@ class QwenService:
 选项：
 {options_text}
 
-正确答案：{correct_answer}
+正确答案：{answer_label}
 
-请用简洁的中文（50-100字）解释：
-1. 正确答案为什么是对的（从文中找到依据）
-2. 如果有明显的干扰项，简要说明为什么容易选错
+原题已有答案/解析：
+{explanation_preview}
 
-直接输出解析内容，不要有标题或其他格式。"""
+要求：
+1. AI必须参与优化和补全，不要直接照抄原题已有内容。
+2. 如果原题已有答案或解析，保留其核心结论，不要与原题冲突，并补充更清晰的依据、逻辑或表达。
+3. 如果原题只有答案没有解析，请补出简洁解析。
+4. 如果这是一道开放题，请输出“参考答案：...”并补一句简短理由。
+5. 如果这是一道图片选项题，请基于题干、文章结构、上下文和正确答案标签输出“参考解析”，不要假装看到了图片细节。
+6. 输出 60-140 字中文，直接输出最终内容，不要标题。"""
 
         try:
             response = Generation.call(

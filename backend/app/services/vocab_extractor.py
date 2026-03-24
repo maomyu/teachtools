@@ -143,7 +143,7 @@ class VocabExtractor:
             data = json.loads(json_str)
             words_data = data.get('words', [])
 
-            result = []
+            words_by_key: Dict[str, Dict] = {}
             for w in words_data:
                 word = w.get('word', '').lower().strip()
                 if not word or len(word) < self.min_length:
@@ -152,14 +152,41 @@ class VocabExtractor:
                 # 在原文中查找该词的出现位置
                 occurrences = self._find_word_occurrences(word, original_content)
 
-                if occurrences:
-                    result.append(ExtractedWord(
-                        word=word,
-                        lemma=word,
-                        frequency=len(occurrences),
-                        definition=w.get('definition', ''),
-                        occurrences=occurrences
-                    ))
+                if not occurrences:
+                    continue
+
+                definition = (w.get('definition') or '').strip()
+                existing = words_by_key.get(word)
+                if not existing:
+                    words_by_key[word] = {
+                        "definition": definition,
+                        "occurrences": occurrences,
+                    }
+                    continue
+
+                if not existing["definition"] and definition:
+                    existing["definition"] = definition
+
+                seen_positions = {occ.char_position for occ in existing["occurrences"]}
+                for occ in occurrences:
+                    if occ.char_position in seen_positions:
+                        continue
+                    existing["occurrences"].append(occ)
+                    seen_positions.add(occ.char_position)
+
+            result = []
+            for word, payload in words_by_key.items():
+                ordered_occurrences = sorted(
+                    payload["occurrences"],
+                    key=lambda occ: occ.char_position
+                )
+                result.append(ExtractedWord(
+                    word=word,
+                    lemma=word,
+                    frequency=len(ordered_occurrences),
+                    definition=payload["definition"],
+                    occurrences=ordered_occurrences
+                ))
 
             return result
 
