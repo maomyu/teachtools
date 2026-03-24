@@ -21,6 +21,7 @@ import {
   PrinterOutlined,
 } from '@ant-design/icons'
 
+import { QuestionOptions } from '@/components/common/QuestionOptions'
 import { getHandoutDetail } from '@/services/readingService'
 import type { HandoutDetailResponse, ArticleSource, HandoutVocabulary, HandoutPassage, HandoutQuestion } from '@/types'
 import './HandoutDetail.css'
@@ -341,14 +342,14 @@ function QuestionItem({ question, index, edition }: QuestionItemProps) {
       </Paragraph>
 
       {/* 选项 */}
-      {question.options && (
-        <div className="options" style={{ paddingLeft: 24, lineHeight: 2 }}>
-          <Text>A. {question.options.A || ''}</Text><br/>
-          <Text>B. {question.options.B || ''}</Text><br/>
-          <Text>C. {question.options.C || ''}</Text><br/>
-          <Text>D. {question.options.D || ''}</Text>
-        </div>
-      )}
+      <QuestionOptions
+        options={question.options}
+        fontSize={14}
+        imageMaxWidth={280}
+        imageMaxHeight={160}
+        optionSpacing={10}
+        style={{ paddingLeft: 24 }}
+      />
 
       {/* 教师版显示答案 */}
       {edition === 'teacher' && question.correct_answer && (

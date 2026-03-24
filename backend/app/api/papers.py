@@ -59,6 +59,7 @@ def validate_question_options(question_data: dict) -> tuple[bool, str]:
 
     注意：
     - 有些题目只有3个选项，不能强制要求4个
+    - 有些阅读题是开放题，本身就没有 A/B/C/D 选项
     - 图片选项使用 [IMAGE] 占位符或 [IMAGE:...] 格式
     - 有 has_image_options 标记的题目，选项可以为 [IMAGE]
 
@@ -66,6 +67,10 @@ def validate_question_options(question_data: dict) -> tuple[bool, str]:
         (is_valid, error_message)
     """
     options = question_data.get("options", {})
+
+    # 开放题没有 A/B/C/D 选项，跳过选项校验
+    if question_data.get("is_open_ended"):
+        return True, ""
 
     # 如果标记为有图片选项，跳过验证
     if question_data.get("has_image_options"):
@@ -412,6 +417,7 @@ async def upload_paper_with_progress(
 
                 llm_result = None
                 last_error = ""
+                image_extractor = ImageExtractor()
 
                 try:
                     for retry_attempt in range(MAX_AI_RETRIES):
@@ -426,6 +432,20 @@ async def upload_paper_with_progress(
                             last_error = llm_result.error or "解析失败"
                             logger.warning(f"AI解析失败 (尝试 {retry_attempt + 1}/{MAX_AI_RETRIES}): {last_error}")
                             continue
+
+                        # 先基于题目块回填图片选项，再做选项有效性校验
+                        try:
+                            option_images, warnings = image_extractor.enrich_passages_with_images(
+                                doc_path=tmp_path,
+                                paper_id=paper.id,
+                                passages=llm_result.passages,
+                            )
+                            for warning in warnings:
+                                logger.warning(warning)
+                            if option_images:
+                                logger.info(f"提取了 {len(option_images)} 张选项图片")
+                        except Exception as image_error:
+                            logger.warning(f"图片提取失败（不影响导入）: {image_error}")
 
                         # 验证选项是否有效
                         is_valid, errors = validate_llm_result_options(llm_result)
@@ -463,50 +483,6 @@ async def upload_paper_with_progress(
                     yield emit()
                     return
 
-                # ===== Step 4.5: 提取图片选项 =====
-                # 检查是否有图片选项需要提取
-                has_image_questions = any(
-                    q.get('has_image_options')
-                    for p in llm_result.passages
-                    for q in p.get('questions', [])
-                )
-
-                option_images = []
-                if has_image_questions:
-                    try:
-                        image_extractor = ImageExtractor()
-                        option_images = image_extractor.extract_option_images(tmp_path, paper.id)
-
-                        # 构建 (题号, 选项) -> 图片URL 的映射
-                        image_map = {
-                            (img.question_number, img.option_label): img.image_url
-                            for img in option_images
-                        }
-
-                        # 将图片 URL 填入 LLM 结果中的 [IMAGE] 占位符
-                        for passage in llm_result.passages:
-                            for q in passage.get('questions', []):
-                                if q.get('has_image_options'):
-                                    options = q.get('options', {})
-                                    for opt_key in ['A', 'B', 'C', 'D']:
-                                        if options.get(opt_key) == '[IMAGE]':
-                                            img_url = image_map.get((q.get('question_number'), opt_key))
-                                            if img_url:
-                                                options[opt_key] = f"[IMAGE:{img_url}]"
-
-                        # 验证图片提取结果
-                        all_questions = [
-                            q for p in llm_result.passages
-                            for q in p.get('questions', [])
-                        ]
-                        warnings = image_extractor.validate_extraction(option_images, all_questions)
-                        for warning in warnings:
-                            logger.warning(warning)
-
-                        logger.info(f"提取了 {len(option_images)} 张选项图片")
-                    except Exception as e:
-                        logger.warning(f"图片提取失败（不影响导入）: {e}")
-
                 # 更新试卷状态（元数据只用文件名解析的，不用LLM推断）
                 paper.import_status = "completed"
                 paper.parse_strategy = "llm"
@@ -536,6 +512,7 @@ async def upload_paper_with_progress(
                     saved_passages.append(passage)
 
                 reporter.complete_step("save_passages", f"已保存{passages_created}篇文章")
+                await db.commit()
                 yield emit()
 
                 # ===== Step 6: 保存题目 =====
@@ -572,6 +549,7 @@ async def upload_paper_with_progress(
                             questions_created += 1
 
                 reporter.complete_step("save_questions", f"已保存{questions_created}道题目")
+                await db.commit()
                 yield emit()
 
                 # ===== Step 6.5: AI生成答案解析 =====
@@ -627,6 +605,7 @@ async def upload_paper_with_progress(
                                 logger.warning(f"生成第{question.question_number}题解析失败: {e}")
 
                     reporter.complete_step("generate_explanations", f"已生成{explanations_generated}条解析")
+                    await db.commit()
                     yield emit()
 
                 # ===== Step 7: 保存完形填空 =====
@@ -674,6 +653,7 @@ async def upload_paper_with_progress(
 
                     cloze_created = True
                     reporter.complete_step("save_cloze", f"已提取{blanks_created}个空格")
+                    await db.commit()
                 else:
                     reporter.skip_step("save_cloze", "未找到完形填空")
                 yield emit()
@@ -737,6 +717,7 @@ async def upload_paper_with_progress(
                             type_info += f"({writing_result.application_type})"
                         topic_info = f" | 话题: {primary_topic}" if primary_topic else ""
                         reporter.complete_step("writing_extract", f"已提取: {type_info}{topic_info}")
+                        await db.commit()
                     else:
                         reporter.skip_step("writing_extract", writing_result.error or "未找到作文题目")
                 except Exception as e:
@@ -872,6 +853,7 @@ async def upload_paper_with_progress(
                                     pass  # 分析失败，不更新
 
                         reporter.complete_step("cloze_analyze", f"已分析{analyzed_count}个考点")
+                        await db.commit()
                         yield emit()
 
                     except Exception as e:
@@ -898,7 +880,7 @@ async def upload_paper_with_progress(
                             yield emit()
 
                             topic_result = await classifier.classify(passage.content, paper.grade)
-                            if topic_result.success:
+                            if topic_result.success and topic_result.primary_topic:
                                 passage.primary_topic = topic_result.primary_topic
                                 passage.secondary_topics = json.dumps([], ensure_ascii=False)  # 不再使用次要话题
                                 passage.topic_confidence = topic_result.confidence
@@ -912,13 +894,14 @@ async def upload_paper_with_progress(
                         yield emit()
 
                         topic_result = await classifier.classify(cloze_passage.original_content, paper.grade)
-                        if topic_result.success:
+                        if topic_result.success and topic_result.primary_topic:
                             cloze_passage.primary_topic = topic_result.primary_topic
                             cloze_passage.secondary_topics = json.dumps([], ensure_ascii=False)  # 不再使用次要话题
                             cloze_passage.topic_confidence = topic_result.confidence
                             topics_found.append(topic_result.primary_topic)
 
                     reporter.complete_step("topic_classify", f"已分类{len(topics_found)}篇文章主题")
+                    await db.commit()
                     yield emit()
 
                 except Exception as e:
@@ -1044,15 +1027,15 @@ async def upload_paper_with_progress(
                                     db.add(vocab_cloze)
                                     total_words += 1
 
+                    # 在发送“词汇提取完成”进度前先提交，避免客户端提前断开时丢失尾段结果
+                    await db.commit()
+
                     reporter.complete_step("vocab_extract", f"AI已提取{total_words}个核心词汇")
                     yield emit()
 
                 except Exception as e:
                     reporter.skip_step("vocab_extract", f"跳过: {str(e)}")
                     yield emit()
-
-                # 提交所有更改
-                await db.commit()
 
                 # 发送最终结果
                 result_data = {

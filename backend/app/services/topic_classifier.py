@@ -179,13 +179,19 @@ class TopicClassifier:
             data = json.loads(json_str)
 
             # 验证primary_topic是否在有效话题列表中
-            primary_topic = data.get("primary_topic", "")
+            primary_topic = (data.get("primary_topic", "") or "").strip()
             if primary_topic not in valid_topics:
                 # 尝试模糊匹配
                 for topic in valid_topics:
                     if topic in primary_topic or primary_topic in topic:
                         primary_topic = topic
                         break
+
+            if not primary_topic:
+                return ClassifyResult(
+                    success=False,
+                    error="未识别出有效主话题"
+                )
 
             return ClassifyResult(
                 success=True,

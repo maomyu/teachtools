@@ -21,6 +21,7 @@ import {
   DownloadOutlined,
 } from '@ant-design/icons'
 
+import { QuestionOptions, parseOptionContent } from '@/components/common/QuestionOptions'
 import { getGradeHandout } from '@/services/readingService'
 import { exportToPDF } from '@/utils/pdfExport'
 import type {
@@ -487,15 +488,25 @@ function estimateQuestionLines(question: HandoutQuestion, edition: 'teacher' | '
   // 题干（约 2 行）
   lines += estimateLines(question.text || '') + 2
 
-  // 选项（4 个选项，每个约 1 行）
+  // 选项（图片选项按更高行数估算，避免分页截断）
   if (question.options) {
-    const optionsText = [
+    for (const optionValue of [
       question.options.A,
       question.options.B,
       question.options.C,
-      question.options.D
-    ].filter(Boolean).join(' ')
-    lines += estimateLines(optionsText) + 2
+      question.options.D,
+    ]) {
+      if (!optionValue) continue
+
+      const parsed = parseOptionContent(optionValue)
+      if (parsed.text) {
+        lines += estimateLines(parsed.text) + 1
+      }
+      if (parsed.imageUrls.length || parsed.pendingImageCount) {
+        lines += (parsed.imageUrls.length + parsed.pendingImageCount) * 6
+      }
+    }
+    lines += 2
   }
 
   // 教师版：答案和解析（约 4 行）
@@ -590,14 +601,14 @@ function QuestionItem({ question, index, edition }: QuestionItemProps) {
       </Paragraph>
 
       {/* 选项 */}
-      {question.options && (
-        <div className="options" style={{ paddingLeft: 24, lineHeight: 2 }}>
-          <Text>A. {question.options.A || ''}</Text><br/>
-          <Text>B. {question.options.B || ''}</Text><br/>
-          <Text>C. {question.options.C || ''}</Text><br/>
-          <Text>D. {question.options.D || ''}</Text>
-        </div>
-      )}
+      <QuestionOptions
+        options={question.options}
+        fontSize={14}
+        imageMaxWidth={280}
+        imageMaxHeight={160}
+        optionSpacing={10}
+        style={{ paddingLeft: 24 }}
+      />
 
       {/* 教师版显示答案 */}
       {edition === 'teacher' && question.correct_answer && (
