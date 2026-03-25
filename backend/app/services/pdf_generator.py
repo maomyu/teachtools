@@ -120,11 +120,10 @@ class PDFGenerator:
             watermark_page = watermark_reader.pages[0]
 
             for page in reader.pages:
-                # 关键：先合并水印到底层，再合并原内容到上层
-                # 方法：把原页面内容合并到水印页面上
-                watermark_page_copy = watermark_reader.pages[0]
-                watermark_page_copy.merge_page(page)
-                writer.add_page(watermark_page_copy)
+                # pypdf 会原地修改 self；如果直接复用同一个模板页，容易让所有输出页
+                # 指向同一份内容。这里先把原页面加入 writer，再仅修改该页。
+                writer.add_page(page)
+                writer.pages[-1].merge_page(watermark_page, over=False)
 
             # 保存
             with open(output_path, 'wb') as f:

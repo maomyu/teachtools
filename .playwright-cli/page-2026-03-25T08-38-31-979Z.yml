@@ -1,0 +1,127 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - heading "中考英语教研" [level=4] [ref=e7]
+        - menu [ref=e8]:
+          - menuitem "home 首页" [ref=e9] [cursor=pointer]:
+            - img "home" [ref=e10]:
+              - img [ref=e11]
+            - generic [ref=e13]: 首页
+          - menuitem "upload 试卷导入" [ref=e14] [cursor=pointer]:
+            - img "upload" [ref=e15]:
+              - img [ref=e16]
+            - generic [ref=e18]: 试卷导入
+          - menuitem "read 阅读文章" [ref=e19] [cursor=pointer]:
+            - img "read" [ref=e20]:
+              - img [ref=e21]
+            - generic [ref=e23]: 阅读文章
+          - menuitem "edit 完形文章" [ref=e24] [cursor=pointer]:
+            - img "edit" [ref=e25]:
+              - img [ref=e26]
+            - generic [ref=e28]: 完形文章
+          - menuitem "edit 考点汇总" [ref=e29] [cursor=pointer]:
+            - img "edit" [ref=e30]:
+              - img [ref=e31]
+            - generic [ref=e33]: 考点汇总
+          - menuitem "form 作文汇编" [ref=e34] [cursor=pointer]:
+            - img "form" [ref=e35]:
+              - img [ref=e36]
+            - generic [ref=e39]: 作文汇编
+          - menuitem "book 高频词库" [ref=e40] [cursor=pointer]:
+            - img "book" [ref=e41]:
+              - img [ref=e42]
+            - generic [ref=e44]: 高频词库
+          - menuitem "database 课本单词表" [ref=e45] [cursor=pointer]:
+            - img "database" [ref=e46]:
+              - img [ref=e47]
+            - generic [ref=e49]: 课本单词表
+          - menuitem "file-text 讲义转换" [ref=e50] [cursor=pointer]:
+            - img "file-text" [ref=e51]:
+              - img [ref=e52]
+            - generic [ref=e54]: 讲义转换
+      - img "left" [ref=e56] [cursor=pointer]:
+        - img [ref=e57]
+    - generic [ref=e59]:
+      - banner [ref=e60]:
+        - heading "北京中考英语教研资料系统" [level=4] [ref=e61]
+      - main [ref=e62]:
+        - generic [ref=e66]:
+          - generic [ref=e68]:
+            - heading "file-text 教师版讲义转学生版" [level=3] [ref=e69]:
+              - img "file-text" [ref=e70]:
+                - img [ref=e71]
+              - text: 教师版讲义转学生版
+            - text: 上传教师版 Word 讲义，AI 将自动识别并删除答案，生成带水印的学生版 PDF
+          - separator [ref=e74]
+          - generic [ref=e76]:
+            - strong [ref=e78]: 1. 选择文件
+            - generic [ref=e79]:
+              - generic [ref=e80]:
+                - button "upload 选择 Word 文件" [ref=e83] [cursor=pointer]:
+                  - img "upload" [ref=e85]:
+                    - img [ref=e86]
+                  - generic [ref=e88]: 选择 Word 文件
+                - generic [ref=e141]:
+                  - img "paper-clip" [ref=e143]:
+                    - img [ref=e144]
+                  - generic "handout_api_repro.docx" [ref=e146]
+                  - button "delete" [ref=e148] [cursor=pointer]:
+                    - img "delete" [ref=e150]:
+                      - img [ref=e151]
+              - generic [ref=e153]: "已选择: handout_api_repro.docx"
+          - generic [ref=e90]:
+            - strong [ref=e92]: 2. 水印设置
+            - generic [ref=e96]:
+              - generic [ref=e98]:
+                - text: 水印文字
+                - textbox "水印文字" [ref=e99]: 学生版
+              - generic [ref=e101]:
+                - text: 水印密度
+                - generic [ref=e102] [cursor=pointer]:
+                  - generic [ref=e104]:
+                    - combobox [ref=e106]
+                    - generic "适中" [ref=e107]
+                  - generic:
+                    - img:
+                      - img
+              - generic [ref=e109]:
+                - text: 水印大小
+                - generic [ref=e110] [cursor=pointer]:
+                  - generic [ref=e112]:
+                    - combobox [ref=e114]
+                    - generic "中" [ref=e115]
+                  - generic:
+                    - img:
+                      - img
+          - generic [ref=e117]:
+            - strong [ref=e119]: 3. 开始转换
+            - generic [ref=e121]:
+              - button "upload 上传文件" [disabled] [ref=e123]:
+                - img "upload":
+                  - img
+                - generic: 上传文件
+              - button "play-circle 开始处理" [ref=e125] [cursor=pointer]:
+                - img "play-circle" [ref=e158]:
+                  - img [ref=e159]
+                - generic [ref=e162]: 开始处理
+          - generic [ref=e164]:
+            - separator [ref=e165]
+            - progressbar [ref=e166]:
+              - img "check-circle" [ref=e171]:
+                - img [ref=e172]
+            - text: 文件上传成功
+          - separator [ref=e127]
+          - alert [ref=e129]:
+            - generic [ref=e130]:
+              - generic [ref=e131]: 使用说明
+              - generic [ref=e133]:
+                - generic [ref=e134]: 1. 选择教师版 Word 讲义文件（.docx 格式）
+                - generic [ref=e135]: 2. 点击"上传文件"将文件上传到服务器
+                - generic [ref=e136]: 3. 点击"开始处理"，AI 将自动识别并删除答案内容
+                - generic [ref=e137]: 4. 处理完成后点击"下载学生版 PDF"获取结果
+                - generic [ref=e138]: 注意：处理过程中请勿关闭页面，原文档中的图片将被保留
+  - generic [ref=e175]:
+    - img "check-circle" [ref=e176]:
+      - img [ref=e177]
+    - generic [ref=e179]: "文件上传成功: handout_api_repro.docx"
