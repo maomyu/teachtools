@@ -9,6 +9,7 @@ import httpx
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from pathlib import Path
+from docx import Document
 
 from app.config import settings
 
@@ -259,6 +260,82 @@ class LLMDocumentParser:
         if not self.api_key:
             raise ValueError("DASHSCOPE_API_KEY未配置")
 
+    def _build_file_messages(self, fileid: str, prompt: str) -> List[Dict[str, str]]:
+        """构造 fileid 解析消息。"""
+        return [
+            {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
+            {"role": "system", "content": f"fileid://{fileid}"},
+            {"role": "user", "content": prompt},
+        ]
+
+    def _extract_docx_text(self, file_path: str) -> str:
+        """提取 docx 文本，兼容段落和表格内容。"""
+        doc = Document(file_path)
+
+        parts: List[str] = []
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text:
+                parts.append(text)
+
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = "\t".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                if row_text:
+                    parts.append(row_text)
+
+        return "\n".join(parts)
+
+    def _build_text_messages(self, file_path: str, prompt: str, max_chars: int = 30000) -> List[Dict[str, str]]:
+        """构造文本回退解析消息。"""
+        full_text = self._extract_docx_text(file_path)
+        return [
+            {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
+            {"role": "user", "content": f"{prompt}\n\n## 文档内容\n\n{full_text[:max_chars]}"},
+        ]
+
+    def _should_fallback_to_text(self, error: Optional[str]) -> bool:
+        """识别需要回退到文本解析的文件提取错误。"""
+        if not error:
+            return False
+
+        lowered = error.lower()
+        fallback_signals = [
+            "encrypted or corrupted",
+            "invalid_parameter_error",
+            "file-extract",
+            "unsupported",
+            "failed to extract",
+        ]
+        return any(signal in lowered for signal in fallback_signals)
+
+    async def _call_chat_completion(self, messages: List[Dict[str, str]], max_tokens: int) -> str:
+        """统一调用 DashScope 聊天补全接口。"""
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+
+            payload = {
+                "model": "qwen-long",
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": max_tokens
+            }
+
+            response = await client.post(
+                self.API_URL,
+                headers=headers,
+                json=payload
+            )
+
+            if response.status_code != 200:
+                raise Exception(f"API调用失败: {response.status_code} - {response.text}")
+
+            result = response.json()
+            return result['choices'][0]['message']['content']
+
     async def upload_file(self, file_path: str) -> str:
         """
         上传文件到DashScope文件服务
@@ -301,55 +378,16 @@ class LLMDocumentParser:
         """
         try:
             if use_fileid:
-                # 方式1: 上传文件后使用fileid
                 fileid = await self.upload_file(file_path)
-                messages = [
-                    {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
-                    {"role": "system", "content": f"fileid://{fileid}"},
-                    {"role": "user", "content": self.EXTRACT_PROMPT}
-                ]
+                result = await self.parse_document_with_fileid(fileid, file_path=file_path)
+                if result.success or not self._should_fallback_to_text(result.error):
+                    return result
             else:
-                # 方式2: 直接读取文本内容（备用方案）
-                from docx import Document
-                doc = Document(file_path)
-                full_text = "\n".join([p.text for p in doc.paragraphs])
+                pass
 
-                messages = [
-                    {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
-                    {"role": "user", "content": f"{self.EXTRACT_PROMPT}\n\n## 文档内容\n\n{full_text[:30000]}"}  # 限制长度
-                ]
-
-            # 调用LLM API
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}',
-                    'Content-Type': 'application/json'
-                }
-
-                payload = {
-                    "model": "qwen-long",
-                    "messages": messages,
-                    "temperature": 0.1,  # 低温度保证稳定性
-                    "max_tokens": 16000  # 增加以支持题目和答案
-                }
-
-                response = await client.post(
-                    self.API_URL,
-                    headers=headers,
-                    json=payload
-                )
-
-                if response.status_code != 200:
-                    return LLMParseResult(
-                        success=False,
-                        error=f"API调用失败: {response.status_code} - {response.text}"
-                    )
-
-                result = response.json()
-                content = result['choices'][0]['message']['content']
-
-                # 解析JSON响应
-                return self._parse_llm_response(content)
+            messages = self._build_text_messages(file_path, self.EXTRACT_PROMPT)
+            content = await self._call_chat_completion(messages, max_tokens=16000)
+            return self._parse_llm_response(content)
 
         except Exception as e:
             return LLMParseResult(
@@ -390,111 +428,72 @@ class LLMDocumentParser:
                 raw_response=content
             )
 
-    async def parse_document_with_fileid(self, fileid: str) -> LLMParseResult:
+    async def parse_document_with_fileid(self, fileid: str, file_path: Optional[str] = None) -> LLMParseResult:
         """
         使用已上传的fileid解析文档
 
         Args:
             fileid: 已上传到DashScope的文件ID
+            file_path: 原始文件路径，fileid 解析失败时用于文本回退
 
         Returns:
             LLMParseResult: 解析结果
         """
         try:
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
-                {"role": "system", "content": f"fileid://{fileid}"},
-                {"role": "user", "content": self.EXTRACT_PROMPT}
-            ]
-
-            # 调用LLM API
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}',
-                    'Content-Type': 'application/json'
-                }
-
-                payload = {
-                    "model": "qwen-long",
-                    "messages": messages,
-                    "temperature": 0.1,
-                    "max_tokens": 16000
-                }
-
-                response = await client.post(
-                    self.API_URL,
-                    headers=headers,
-                    json=payload
-                )
-
-                if response.status_code != 200:
-                    return LLMParseResult(
-                        success=False,
-                        error=f"API调用失败: {response.status_code} - {response.text}"
-                    )
-
-                result = response.json()
-                content = result['choices'][0]['message']['content']
-
-                return self._parse_llm_response(content)
+            messages = self._build_file_messages(fileid, self.EXTRACT_PROMPT)
+            content = await self._call_chat_completion(messages, max_tokens=16000)
+            return self._parse_llm_response(content)
 
         except Exception as e:
+            error = str(e)
+            if file_path and self._should_fallback_to_text(error):
+                try:
+                    messages = self._build_text_messages(file_path, self.EXTRACT_PROMPT)
+                    content = await self._call_chat_completion(messages, max_tokens=16000)
+                    result = self._parse_llm_response(content)
+                    if not result.success and result.error:
+                        result.error = f"{result.error} (fileid回退到文本解析)"
+                    return result
+                except Exception as fallback_error:
+                    error = f"{error} | 文本回退失败: {fallback_error}"
+
             return LLMParseResult(
                 success=False,
-                error=str(e)
+                error=error
             )
 
-    async def extract_writing(self, fileid: str) -> "WritingExtractResult":
+    async def extract_writing(self, fileid: str, file_path: Optional[str] = None) -> "WritingExtractResult":
         """
         使用 LLM 提取作文题目信息
 
         Args:
             fileid: 已上传到 DashScope 的文件 ID
+            file_path: 原始文件路径，fileid 解析失败时用于文本回退
 
         Returns:
             WritingExtractResult: 结构化提取结果
         """
         try:
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant specialized in parsing English exam papers."},
-                {"role": "system", "content": f"fileid://{fileid}"},
-                {"role": "user", "content": self.EXTRACT_WRITING_PROMPT}
-            ]
-
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}',
-                    'Content-Type': 'application/json'
-                }
-
-                payload = {
-                    "model": "qwen-long",
-                    "messages": messages,
-                    "temperature": 0.1,
-                    "max_tokens": 2000
-                }
-
-                response = await client.post(
-                    self.API_URL,
-                    headers=headers,
-                    json=payload
-                )
-
-                if response.status_code != 200:
-                    return WritingExtractResult(
-                        success=False,
-                        error=f"API调用失败: {response.status_code}"
-                    )
-
-                result = response.json()
-                content = result['choices'][0]['message']['content']
-
-                return self._parse_writing_response(content)
+            messages = self._build_file_messages(fileid, self.EXTRACT_WRITING_PROMPT)
+            content = await self._call_chat_completion(messages, max_tokens=2000)
+            return self._parse_writing_response(content)
 
         except Exception as e:
+            error = str(e)
+            if file_path and self._should_fallback_to_text(error):
+                try:
+                    messages = self._build_text_messages(file_path, self.EXTRACT_WRITING_PROMPT)
+                    content = await self._call_chat_completion(messages, max_tokens=2000)
+                    result = self._parse_writing_response(content)
+                    if not result.success and result.error:
+                        result.error = f"{result.error} (fileid回退到文本解析)"
+                    return result
+                except Exception as fallback_error:
+                    error = f"{error} | 文本回退失败: {fallback_error}"
+
             return WritingExtractResult(
                 success=False,
-                error=str(e)
+                error=error
             )
 
     def _parse_writing_response(self, content: str) -> "WritingExtractResult":

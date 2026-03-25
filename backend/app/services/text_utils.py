@@ -9,7 +9,7 @@
 import re
 import json
 import logging
-from typing import Tuple
+from typing import Tuple, List
 
 from app.services.ai_service import QwenService
 
@@ -89,6 +89,52 @@ def validate_blanks(content: str, expected_count: int) -> bool:
     # 检查是否连续：1, 2, 3, ..., expected_count
     expected_set = set(range(1, expected_count + 1))
     return found_numbers == expected_set
+
+
+def extract_blank_numbers(content: str) -> List[int]:
+    """提取标准化正文中的空格编号。"""
+    if not content:
+        return []
+    return [int(match) for match in re.findall(r'\((\d+)\)', content)]
+
+
+def align_blank_numbers_with_content(
+    content: str,
+    blank_numbers: List[int],
+) -> List[int]:
+    """
+    兼容“正文空格是 1..N，但 LLM 返回题号是 38..49”这类情况。
+
+    当正文中的空格标记已经被标准化为连续的 1..N，且 blanks 列表数量一致时，
+    优先按正文出现顺序回写空格编号，保证前端定位和后续语境提取一致。
+    """
+    content_blank_numbers = extract_blank_numbers(content)
+    if not content_blank_numbers or len(content_blank_numbers) != len(blank_numbers):
+        return blank_numbers
+
+    if content_blank_numbers == blank_numbers:
+        return blank_numbers
+
+    expected_sequence = list(range(1, len(content_blank_numbers) + 1))
+    if content_blank_numbers != expected_sequence:
+        return blank_numbers
+
+    sorted_blank_numbers = sorted(blank_numbers)
+    if sorted_blank_numbers == expected_sequence:
+        return blank_numbers
+
+    is_consecutive = sorted_blank_numbers == list(
+        range(sorted_blank_numbers[0], sorted_blank_numbers[0] + len(sorted_blank_numbers))
+    )
+    if is_consecutive:
+        logger.info(
+            "检测到完形空格编号与正文标记不一致，按正文顺序兼容映射: %s -> %s",
+            blank_numbers,
+            content_blank_numbers,
+        )
+        return content_blank_numbers
+
+    return blank_numbers
 
 
 async def normalize_with_ai(content: str, expected_count: int) -> str:

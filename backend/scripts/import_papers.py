@@ -25,7 +25,7 @@ from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser
 from app.services.cloze_analyzer import ClozeAnalyzerV5
 from app.services.topic_classifier import TopicClassifier
-from app.services.text_utils import normalize_cloze_blanks
+from app.services.text_utils import normalize_cloze_blanks, align_blank_numbers_with_content
 from app.services.image_extractor import ImageExtractor
 
 
@@ -49,10 +49,10 @@ async def get_or_create_paper(
     paper = ExamPaper(
         filename=filename,
         original_path=str(file_path),
-        year=metadata.get("year", 0),
+        year=metadata.get("year"),
         region=metadata.get("region"),
         school=metadata.get("school"),
-        grade=metadata.get("grade", "初二"),  # 默认初二
+        grade=metadata.get("grade"),
         semester=metadata.get("semester"),
         season=metadata.get("season"),
         exam_type=metadata.get("exam_type"),
@@ -139,7 +139,7 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
 
             # 初始化话题分类器（复用实例）
             topic_classifier = TopicClassifier()
-            grade = metadata.get("grade", "初二")
+            grade = metadata.get("grade") or "初二"
 
             # ============================================================================
             #  处理阅读文章
@@ -222,8 +222,13 @@ async def import_paper(file_path: Path, batch_id: str, use_llm: bool = True) -> 
                     cloze_analyzer = ClozeAnalyzerV5()
 
                     # 遍历每个空格，分析考点并保存
-                    for blank in blanks:
-                        blank_number = blank.get("blank_number")
+                    aligned_blank_numbers = align_blank_numbers_with_content(
+                        normalized_content,
+                        [blank.get("blank_number") or 0 for blank in blanks],
+                    )
+
+                    for index, blank in enumerate(blanks):
+                        blank_number = aligned_blank_numbers[index] if index < len(aligned_blank_numbers) else blank.get("blank_number")
                         options = blank.get("options", {})
                         correct_answer = blank.get("correct_answer")
                         correct_word = blank.get("correct_word")

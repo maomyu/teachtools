@@ -20,7 +20,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, async_session_factory
-from app.services.text_utils import normalize_cloze_blanks
+from app.services.text_utils import normalize_cloze_blanks, align_blank_numbers_with_content
 
 
 def count_english_words(text: str) -> int:
@@ -393,10 +393,10 @@ async def upload_paper_with_progress(
                 paper = ExamPaper(
                     filename=file.filename,
                     original_path=tmp_path,
-                    year=metadata.get("year", 0),
+                    year=metadata.get("year"),
                     region=metadata.get("region"),
                     school=metadata.get("school"),  # 学校名（如果有）
-                    grade=metadata.get("grade", ""),
+                    grade=metadata.get("grade"),
                     semester=metadata.get("semester"),
                     exam_type=metadata.get("exam_type"),
                     version=metadata.get("version", "学生版"),
@@ -416,6 +416,9 @@ async def upload_paper_with_progress(
                     reporter.complete_step("upload_to_ai", "AI服务已就绪")
                     yield emit()
                 except Exception as e:
+                    paper.import_status = "failed"
+                    paper.error_message = str(e)
+                    await db.commit()
                     reporter.fail_step("upload_to_ai", str(e))
                     yield emit()
                     return
@@ -435,7 +438,7 @@ async def upload_paper_with_progress(
                         reporter.update_step("ai_parse", message=attempt_msg, progress=20 + retry_attempt * 10)
                         yield emit()
 
-                        llm_result = await llm_parser.parse_document_with_fileid(fileid)
+                        llm_result = await llm_parser.parse_document_with_fileid(fileid, file_path=tmp_path)
 
                         if not llm_result.success:
                             last_error = llm_result.error or "解析失败"
@@ -468,6 +471,9 @@ async def upload_paper_with_progress(
 
                     # 检查最终结果
                     if not llm_result or not llm_result.success:
+                        paper.import_status = "failed"
+                        paper.error_message = last_error
+                        await db.commit()
                         reporter.fail_step("ai_parse", f"经过{MAX_AI_RETRIES}次重试仍失败: {last_error}")
                         yield emit()
                         return
@@ -488,12 +494,14 @@ async def upload_paper_with_progress(
                     yield emit()
 
                 except Exception as e:
+                    paper.import_status = "failed"
+                    paper.error_message = str(e)
+                    await db.commit()
                     reporter.fail_step("ai_parse", str(e))
                     yield emit()
                     return
 
-                # 更新试卷状态（元数据只用文件名解析的，不用LLM推断）
-                paper.import_status = "completed"
+                # 先仅写入解析策略，试卷状态保持 processing，直到整条流水线完成。
                 paper.parse_strategy = "llm"
                 paper.confidence = 0.95
 
@@ -644,11 +652,16 @@ async def upload_paper_with_progress(
 
                     # 保存空格
                     blanks_data = cloze_data.get("blanks", [])
-                    for blank_data in blanks_data:
+                    aligned_blank_numbers = align_blank_numbers_with_content(
+                        normalized_content,
+                        [blank_data.get("blank_number") or 0 for blank_data in blanks_data],
+                    )
+
+                    for blank_index, blank_data in enumerate(blanks_data):
                         options = blank_data.get("options", {})
                         point = ClozePoint(
                             cloze_id=cloze_passage.id,
-                            blank_number=blank_data.get("blank_number"),
+                            blank_number=aligned_blank_numbers[blank_index] if blank_index < len(aligned_blank_numbers) else blank_data.get("blank_number"),
                             correct_answer=blank_data.get("correct_answer"),
                             options=json.dumps(options, ensure_ascii=False),
                             correct_word=blank_data.get("correct_word")
@@ -673,7 +686,7 @@ async def upload_paper_with_progress(
                 writing_created = False
                 try:
                     # 使用 LLM 提取作文（替代正则表达式）
-                    writing_result = await llm_parser.extract_writing(fileid)
+                    writing_result = await llm_parser.extract_writing(fileid, file_path=tmp_path)
 
                     if writing_result.success and writing_result.content:
                         # ===== 新增：话题提取 =====
@@ -887,7 +900,7 @@ async def upload_paper_with_progress(
                                 message=f"分析{passage.passage_type}篇主题...")
                             yield emit()
 
-                            topic_result = await classifier.classify(passage.content, paper.grade)
+                            topic_result = await classifier.classify(passage.content, paper.grade or "初二")
                             if topic_result.success and topic_result.primary_topic:
                                 passage.primary_topic = topic_result.primary_topic
                                 passage.secondary_topics = json.dumps([], ensure_ascii=False)  # 不再使用次要话题
@@ -901,7 +914,7 @@ async def upload_paper_with_progress(
                         reporter.update_step("topic_classify", progress=75, message="分析完形文章主题...")
                         yield emit()
 
-                        topic_result = await classifier.classify(cloze_passage.original_content, paper.grade)
+                        topic_result = await classifier.classify(cloze_passage.original_content, paper.grade or "初二")
                         if topic_result.success and topic_result.primary_topic:
                             cloze_passage.primary_topic = topic_result.primary_topic
                             cloze_passage.secondary_topics = json.dumps([], ensure_ascii=False)  # 不再使用次要话题
@@ -1053,6 +1066,11 @@ async def upload_paper_with_progress(
                 except Exception as e:
                     reporter.skip_step("vocab_extract", f"跳过: {str(e)}")
                     yield emit()
+
+                # 所有后处理完成后，才将试卷标记为 completed。
+                paper.import_status = "completed"
+                paper.error_message = None
+                await db.commit()
 
                 # 发送最终结果
                 result_data = {

@@ -17,10 +17,10 @@ class ExamPaper(Base):
     original_path = Column(String(500))
 
     # 元数据
-    year = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=True)
     region = Column(String(50))  # 区县：东城、西城、海淀等
     school = Column(String(100))  # 学校（如果有）
-    grade = Column(String(20), nullable=False)  # 初一、初二、初三
+    grade = Column(String(20), nullable=True)  # 初一、初二、初三
     semester = Column(String(10))  # 上、下
     season = Column(String(20))  # 春季、秋季
     exam_type = Column(String(20))  # 期中、期末、一模、二模、月考
@@ -42,7 +42,7 @@ class ExamPaper(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "grade IN ('初一', '初二', '初三')",
+            "grade IS NULL OR grade IN ('初一', '初二', '初三')",
             name="ck_papers_grade"
         ),
         CheckConstraint(

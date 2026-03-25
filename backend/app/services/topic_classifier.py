@@ -87,14 +87,14 @@ class TopicClassifier:
         if not self.api_key:
             raise ValueError("请配置DASHSCOPE_API_KEY")
 
-    def _get_topics_for_grade(self, grade: str) -> List[str]:
+    def _get_topics_for_grade(self, grade: Optional[str]) -> List[str]:
         """获取话题列表（使用统一话题池，不区分年级）"""
         return UNIFIED_TOPICS
 
     async def classify(
         self,
         content: str,
-        grade: str = "初二"
+        grade: Optional[str] = "初二"
     ) -> ClassifyResult:
         """
         分类文章主题
@@ -107,6 +107,8 @@ class TopicClassifier:
             ClassifyResult: 分类结果
         """
         try:
+            grade = grade or "初二"
+
             # 获取该年级的话题列表
             topics = self._get_topics_for_grade(grade)
             topics_str = "、".join(topics)
@@ -214,7 +216,7 @@ class TopicClassifier:
 
 async def classify_passage_topic(
     content: str,
-    grade: str = "初二"
+    grade: Optional[str] = "初二"
 ) -> ClassifyResult:
     """
     分类文章主题的便捷函数

@@ -70,10 +70,10 @@ export interface SourceInfo {
 export interface PaperSummary {
   id: number
   filename: string
-  year: number
+  year?: number
   region?: string
   school?: string
-  grade: string
+  grade?: string
   semester?: string
   exam_type?: string
   version?: string

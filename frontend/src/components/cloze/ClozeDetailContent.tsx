@@ -60,6 +60,13 @@ interface ClozeDetailContentProps {
   initialBlankNumber?: number // 初始定位的空格编号
 }
 
+interface BlankBinding {
+  contentBlankNumber: number
+  pointBlankNumber: number | null
+  point: ClozePoint | null
+  usesOrderFallback: boolean
+}
+
 // ============================================================================
 //  主组件
 // ============================================================================
@@ -163,6 +170,44 @@ export function ClozeDetailContent({
     return result
   }, [cloze?.content])
 
+  const blankBindings = useMemo(() => {
+    const points = [...(cloze?.points || [])].sort(
+      (a, b) => (a.blank_number || 0) - (b.blank_number || 0)
+    )
+    const contentBlankNumbers = contentParts.filter(
+      (part): part is number => typeof part === 'number'
+    )
+
+    const exactPointMap = new Map<number, ClozePoint>()
+    points.forEach(point => {
+      if (point.blank_number != null) {
+        exactPointMap.set(point.blank_number, point)
+      }
+    })
+
+    const allContentMarkersMatchPoints = contentBlankNumbers.every(num => exactPointMap.has(num))
+    const usesOrderFallback = !allContentMarkersMatchPoints && contentBlankNumbers.length === points.length
+
+    const byContentBlank = new Map<number, BlankBinding>()
+    const byPointBlank = new Map<number, BlankBinding>()
+
+    contentBlankNumbers.forEach((contentBlankNumber, index) => {
+      const point = exactPointMap.get(contentBlankNumber) || (usesOrderFallback ? points[index] || null : null)
+      const binding: BlankBinding = {
+        contentBlankNumber,
+        pointBlankNumber: point?.blank_number ?? null,
+        point,
+        usesOrderFallback,
+      }
+      byContentBlank.set(contentBlankNumber, binding)
+      if (binding.pointBlankNumber != null) {
+        byPointBlank.set(binding.pointBlankNumber, binding)
+      }
+    })
+
+    return { byContentBlank, byPointBlank, usesOrderFallback }
+  }, [cloze?.points, contentParts])
+
   // 构建渲染后的纯文本、空格位置映射
   const renderedTextInfo = useMemo(() => {
     if (!contentParts.length) return { text: '', blankPositions: [], positionMap: [] }
@@ -195,13 +240,27 @@ export function ClozeDetailContent({
     return { text, blankPositions, positionMap }
   }, [contentParts])
 
+  const getBlankBinding = useCallback((blankNumber: number): BlankBinding => {
+    return blankBindings.byContentBlank.get(blankNumber)
+      || blankBindings.byPointBlank.get(blankNumber)
+      || {
+        contentBlankNumber: blankNumber,
+        pointBlankNumber: null,
+        point: null,
+        usesOrderFallback: false,
+      }
+  }, [blankBindings.byContentBlank, blankBindings.byPointBlank])
+
   // ============================================================================
   //  滚动定位
   // ============================================================================
 
   // 滚动到空格位置 - 支持重试机制
   const scrollToBlank = useCallback((blankNumber: number, attempts = 0) => {
-    const element = blankRefs.current.get(blankNumber)
+    const binding = getBlankBinding(blankNumber)
+    const element = blankRefs.current.get(binding.pointBlankNumber ?? binding.contentBlankNumber)
+      || blankRefs.current.get(binding.contentBlankNumber)
+      || blankRefs.current.get(blankNumber)
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' })
       console.log(`[scrollToBlank] 成功定位到空格 ${blankNumber}`)
@@ -212,7 +271,7 @@ export function ClozeDetailContent({
     } else {
       console.warn(`[scrollToBlank] 定位失败: 空格 ${blankNumber} 不存在，当前可用的空格:`, Array.from(blankRefs.current.keys()))
     }
-  }, [])
+  }, [getBlankBinding])
 
   // 初始空格定位
   useEffect(() => {
@@ -321,8 +380,11 @@ export function ClozeDetailContent({
   // ============================================================================
 
   // 渲染考点 Popover 内容
-  const renderPointPopover = (point: ClozePoint, blankNum: number) => {
-    const showAnswer = showAnswerBlanks.has(blankNum)
+  const renderPointPopover = (binding: BlankBinding) => {
+    const { point, contentBlankNumber, pointBlankNumber, usesOrderFallback } = binding
+    if (!point) return null
+
+    const showAnswer = showAnswerBlanks.has(contentBlankNumber)
     const pointType = point.point_type || '其他'
 
     // v2 多标签数据
@@ -335,7 +397,14 @@ export function ClozeDetailContent({
         {/* 标题行 - 使用 PointTagGroup */}
         <div style={{ marginBottom: 8 }}>
           <Space wrap align="start">
-            <Tag color="blue" style={{ fontSize: 12, padding: '2px 8px' }}>第 {blankNum} 空</Tag>
+            <Tag color="blue" style={{ fontSize: 12, padding: '2px 8px' }}>
+              第 {pointBlankNumber ?? contentBlankNumber} 空
+            </Tag>
+            {usesOrderFallback && pointBlankNumber != null && pointBlankNumber !== contentBlankNumber && (
+              <Tag color="gold" style={{ fontSize: 12, padding: '2px 8px' }}>
+                题号 {pointBlankNumber} {'->'} 文中空格 {contentBlankNumber}
+              </Tag>
+            )}
             {/* 熟词僻义标签（作为附加标签） */}
             {(point as any).is_rare_meaning && (
               <Tag color="purple" style={{ fontSize: 11, padding: '2px 8px', fontWeight: 500 }}>
@@ -379,7 +448,7 @@ export function ClozeDetailContent({
           type={showAnswer ? 'default' : 'primary'}
           ghost={!showAnswer}
           icon={showAnswer ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-          onClick={(e) => toggleAnswerShow(blankNum, e)}
+          onClick={(e) => toggleAnswerShow(contentBlankNumber, e)}
           block
         >
           {showAnswer ? '隐藏答案' : '显示答案'}
@@ -604,15 +673,16 @@ export function ClozeDetailContent({
       <div style={{ whiteSpace: 'pre-wrap', lineHeight: 2.2, fontSize: 15 }}>
         {contentParts.map((part, idx) => {
           if (typeof part === 'number') {
-            const blankNum = part
-            const isSelected = selectedBlank === blankNum
-            const point = cloze?.points?.find(p => p.blank_number === blankNum)
+            const binding = getBlankBinding(part)
+            const blankNum = binding.contentBlankNumber
+            const point = binding.point
             const primaryPoint = point ? (point as any).primary_point as PointType | undefined : undefined
+            const isSelected = selectedBlank === blankNum || selectedBlank === binding.pointBlankNumber
 
             return (
               <Popover
                 key={idx}
-                content={point ? renderPointPopover(point, blankNum) : null}
+                content={renderPointPopover(binding)}
                 trigger="click"
                 placement="bottom"
                 arrow={false}
@@ -622,7 +692,11 @@ export function ClozeDetailContent({
               >
                 <span
                   ref={(el) => {
-                    if (el) blankRefs.current.set(blankNum, el as unknown as HTMLSpanElement)
+                    if (!el) return
+                    blankRefs.current.set(blankNum, el as unknown as HTMLSpanElement)
+                    if (binding.pointBlankNumber != null) {
+                      blankRefs.current.set(binding.pointBlankNumber, el as unknown as HTMLSpanElement)
+                    }
                   }}
                 >
                   <BlankTag
@@ -669,14 +743,15 @@ export function ClozeDetailContent({
         )
       }
 
-      const isSelected = selectedBlank === bp.num
-      const point = cloze?.points?.find(p => p.blank_number === bp.num)
+      const binding = getBlankBinding(bp.num)
+      const point = binding.point
+      const isSelected = selectedBlank === binding.contentBlankNumber || selectedBlank === binding.pointBlankNumber
       const primaryPoint = point ? (point as any).primary_point as PointType | undefined : undefined
 
       result.push(
         <Popover
           key={`blank-${bp.num}-${idx}`}
-          content={point ? renderPointPopover(point, bp.num) : null}
+          content={renderPointPopover(binding)}
           trigger="click"
           placement="bottom"
           arrow={false}
@@ -686,11 +761,15 @@ export function ClozeDetailContent({
         >
           <span
             ref={(el) => {
-              if (el) blankRefs.current.set(bp.num, el as unknown as HTMLSpanElement)
+              if (!el) return
+              blankRefs.current.set(binding.contentBlankNumber, el as unknown as HTMLSpanElement)
+              if (binding.pointBlankNumber != null) {
+                blankRefs.current.set(binding.pointBlankNumber, el as unknown as HTMLSpanElement)
+              }
             }}
           >
             <BlankTag
-              blankNumber={bp.num}
+              blankNumber={binding.contentBlankNumber}
               point={primaryPoint}
               selected={isSelected}
             />
@@ -723,7 +802,7 @@ export function ClozeDetailContent({
         handleWordClick(vocab)
       }
     }
-  }, [loading, cloze, initialHighlightWord, renderedTextInfo.text])
+  }, [loading, cloze, initialHighlightWord, renderedTextInfo.text, handleWordClick])
 
   // ============================================================================
   //  渲染

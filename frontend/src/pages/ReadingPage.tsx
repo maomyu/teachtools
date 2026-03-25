@@ -141,6 +141,12 @@ export function ReadingPage() {
     setFilter({ ...filter, page: 1 })  // 切换 Tab 时重置分页
   }
 
+  const renderContentPreview = (content?: string, limit = 100) => {
+    if (!content) return '-'
+    const preview = content.length > limit ? `${content.slice(0, limit)}...` : content
+    return <span title={content}>{preview}</span>
+  }
+
   // 表格列定义
   const columns: ColumnsType<Passage> = [
     {
@@ -186,11 +192,11 @@ export function ReadingPage() {
       render: (count: number) => count || '-',
     },
     {
-      title: '内容预览',
+      title: '内容预览（悬停查看全文）',
       dataIndex: 'content',
       key: 'content',
       ellipsis: true,
-      render: (content: string) => content.slice(0, 100) + '...',
+      render: (content: string) => renderContentPreview(content, 100),
     },
     {
       title: '操作',

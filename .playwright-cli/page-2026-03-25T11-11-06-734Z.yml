@@ -1,0 +1,380 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - heading "中考英语教研" [level=4] [ref=e7]
+      - menu [ref=e8]:
+        - menuitem "home 首页" [ref=e9] [cursor=pointer]:
+          - img "home" [ref=e10]:
+            - img [ref=e11]
+          - generic [ref=e13]: 首页
+        - menuitem "upload 试卷导入" [ref=e14] [cursor=pointer]:
+          - img "upload" [ref=e15]:
+            - img [ref=e16]
+          - generic [ref=e18]: 试卷导入
+        - menuitem "read 阅读文章" [ref=e19] [cursor=pointer]:
+          - img "read" [ref=e20]:
+            - img [ref=e21]
+          - generic [ref=e23]: 阅读文章
+        - menuitem "edit 完形文章" [ref=e24] [cursor=pointer]:
+          - img "edit" [ref=e25]:
+            - img [ref=e26]
+          - generic [ref=e28]: 完形文章
+        - menuitem "edit 考点汇总" [ref=e29] [cursor=pointer]:
+          - img "edit" [ref=e30]:
+            - img [ref=e31]
+          - generic [ref=e33]: 考点汇总
+        - menuitem "form 作文汇编" [ref=e34] [cursor=pointer]:
+          - img "form" [ref=e35]:
+            - img [ref=e36]
+          - generic [ref=e39]: 作文汇编
+        - menuitem "book 高频词库" [ref=e40] [cursor=pointer]:
+          - img "book" [ref=e41]:
+            - img [ref=e42]
+          - generic [ref=e44]: 高频词库
+        - menuitem "database 课本单词表" [ref=e45] [cursor=pointer]:
+          - img "database" [ref=e46]:
+            - img [ref=e47]
+          - generic [ref=e49]: 课本单词表
+        - menuitem "file-text 讲义转换" [ref=e50] [cursor=pointer]:
+          - img "file-text" [ref=e51]:
+            - img [ref=e52]
+          - generic [ref=e54]: 讲义转换
+    - img "left" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+  - generic [ref=e59]:
+    - banner [ref=e60]:
+      - heading "北京中考英语教研资料系统" [level=4] [ref=e61]
+    - main [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - strong [ref=e66]: 考点汇总
+          - generic [ref=e67]: 共 115 个考点
+        - generic [ref=e70]:
+          - generic [ref=e72]:
+            - generic [ref=e74] [cursor=pointer]: P1 核心考点
+            - generic [ref=e76] [cursor=pointer]: 语篇理解
+            - generic [ref=e78] [cursor=pointer]: 逻辑关系
+            - generic [ref=e80] [cursor=pointer]: 词汇选项
+          - generic [ref=e82]:
+            - generic [ref=e84] [cursor=pointer]:
+              - generic [ref=e86]:
+                - combobox [ref=e88]
+                - generic: 考点类型（大类/具体）
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e90] [cursor=pointer]:
+              - generic [ref=e92]:
+                - combobox [ref=e94]
+                - generic: 优先级
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e96] [cursor=pointer]:
+              - generic [ref=e98]:
+                - combobox [ref=e100]
+                - generic: 选择年级
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e103]:
+              - searchbox "搜索考点词..." [ref=e105]
+              - button "search" [ref=e108] [cursor=pointer]:
+                - img "search" [ref=e110]:
+                  - img [ref=e111]
+            - button "搜 索" [ref=e114] [cursor=pointer]:
+              - generic [ref=e115]: 搜 索
+        - generic [ref=e116]:
+          - generic [ref=e127]:
+            - table [ref=e131]:
+              - rowgroup [ref=e140]:
+                - row "考点词 类型 出现次数" [ref=e510]:
+                  - columnheader [ref=e142]
+                  - columnheader "考点词" [ref=e143]
+                  - columnheader "类型" [ref=e145]
+                  - columnheader "出现次数" [ref=e146]
+              - rowgroup [ref=e149]:
+                - row "展开行 garden 复现照应 3" [ref=e511] [cursor=pointer]:
+                  - cell "展开行" [ref=e151]:
+                    - button "展开行" [ref=e152]
+                  - cell "garden" [ref=e153]:
+                    - strong [ref=e155]: garden
+                  - cell "复现照应" [ref=e157]:
+                    - generic [ref=e158]: 复现照应
+                  - cell "3" [ref=e159]:
+                    - generic [ref=e160]: "3"
+                - row "展开行 quick 固定搭配 2" [ref=e512] [cursor=pointer]:
+                  - cell "展开行" [ref=e170]:
+                    - button "展开行" [ref=e171]
+                  - cell "quick" [ref=e172]:
+                    - strong [ref=e174]: quick
+                  - cell "固定搭配" [ref=e176]:
+                    - generic [ref=e177]: 固定搭配
+                  - cell "2" [ref=e178]:
+                    - generic [ref=e179]: "2"
+                - row "展开行 warm 生活常识 2" [ref=e513] [cursor=pointer]:
+                  - cell "展开行" [ref=e188]:
+                    - button "展开行" [ref=e189]
+                  - cell "warm" [ref=e190]:
+                    - strong [ref=e192]: warm
+                  - cell "生活常识" [ref=e194]:
+                    - generic [ref=e195]: 生活常识
+                  - cell "2" [ref=e196]:
+                    - generic [ref=e197]: "2"
+                - row "展开行 watch TV 并列一致 2" [ref=e514] [cursor=pointer]:
+                  - cell "展开行" [ref=e206]:
+                    - button "展开行" [ref=e207]
+                  - cell "watch TV" [ref=e208]:
+                    - strong [ref=e210]: watch TV
+                  - cell "并列一致" [ref=e212]:
+                    - generic [ref=e213]: 并列一致
+                  - cell "2" [ref=e214]:
+                    - generic [ref=e215]: "2"
+                - row "展开行 Again 复现照应 1" [ref=e515] [cursor=pointer]:
+                  - cell "展开行" [ref=e224]:
+                    - button "展开行" [ref=e225]
+                  - cell "Again" [ref=e226]:
+                    - strong [ref=e228]: Again
+                  - cell "复现照应" [ref=e230]:
+                    - generic [ref=e231]: 复现照应
+                  - cell "1" [ref=e232]:
+                    - generic [ref=e233]: "1"
+                - row "展开行 Luckily 情感态度 1" [ref=e516] [cursor=pointer]:
+                  - cell "展开行" [ref=e240]:
+                    - button "展开行" [ref=e241]
+                  - cell "Luckily" [ref=e242]:
+                    - strong [ref=e244]: Luckily
+                  - cell "情感态度" [ref=e246]:
+                    - generic [ref=e247]: 情感态度
+                  - cell "1" [ref=e248]:
+                    - generic [ref=e249]: "1"
+                - row "展开行 ball 复现照应 1" [ref=e517] [cursor=pointer]:
+                  - cell "展开行" [ref=e256]:
+                    - button "展开行" [ref=e257]
+                  - cell "ball" [ref=e258]:
+                    - strong [ref=e260]: ball
+                  - cell "复现照应" [ref=e262]:
+                    - generic [ref=e263]: 复现照应
+                  - cell "1" [ref=e264]:
+                    - generic [ref=e265]: "1"
+                - row "展开行 better 固定搭配 1" [ref=e518] [cursor=pointer]:
+                  - cell "展开行" [ref=e272]:
+                    - button "展开行" [ref=e273]
+                  - cell "better" [ref=e274]:
+                    - strong [ref=e276]: better
+                  - cell "固定搭配" [ref=e278]:
+                    - generic [ref=e279]: 固定搭配
+                  - cell "1" [ref=e280]:
+                    - generic [ref=e281]: "1"
+                - row "展开行 bird 复现照应 1" [ref=e519] [cursor=pointer]:
+                  - cell "展开行" [ref=e288]:
+                    - button "展开行" [ref=e289]
+                  - cell "bird" [ref=e290]:
+                    - strong [ref=e292]: bird
+                  - cell "复现照应" [ref=e294]:
+                    - generic [ref=e295]: 复现照应
+                  - cell "1" [ref=e296]:
+                    - generic [ref=e297]: "1"
+                - row "展开行 books 复现照应 1" [ref=e520] [cursor=pointer]:
+                  - cell "展开行" [ref=e304]:
+                    - button "展开行" [ref=e305]
+                  - cell "books" [ref=e306]:
+                    - strong [ref=e308]: books
+                  - cell "复现照应" [ref=e310]:
+                    - generic [ref=e311]: 复现照应
+                  - cell "1" [ref=e312]:
+                    - generic [ref=e313]: "1"
+                - row "展开行 carefully 词义辨析 1" [ref=e521] [cursor=pointer]:
+                  - cell "展开行" [ref=e320]:
+                    - button "展开行" [ref=e321]
+                  - cell "carefully" [ref=e322]:
+                    - strong [ref=e324]: carefully
+                  - cell "词义辨析" [ref=e326]:
+                    - generic [ref=e327]: 词义辨析
+                  - cell "1" [ref=e328]:
+                    - generic [ref=e329]: "1"
+                - row "展开行 carefully 情节顺序 1" [ref=e522] [cursor=pointer]:
+                  - cell "展开行" [ref=e336]:
+                    - button "展开行" [ref=e337]
+                  - cell "carefully" [ref=e338]:
+                    - strong [ref=e340]: carefully
+                  - cell "情节顺序" [ref=e342]:
+                    - generic [ref=e343]: 情节顺序
+                  - cell "1" [ref=e344]:
+                    - generic [ref=e345]: "1"
+                - row "展开行 cheerful 情感态度 1" [ref=e523] [cursor=pointer]:
+                  - cell "展开行" [ref=e352]:
+                    - button "展开行" [ref=e353]
+                  - cell "cheerful" [ref=e354]:
+                    - strong [ref=e356]: cheerful
+                  - cell "情感态度" [ref=e358]:
+                    - generic [ref=e359]: 情感态度
+                  - cell "1" [ref=e360]:
+                    - generic [ref=e361]: "1"
+                - row "展开行 choice 词性成分 1" [ref=e524] [cursor=pointer]:
+                  - cell "展开行" [ref=e368]:
+                    - button "展开行" [ref=e369]
+                  - cell "choice" [ref=e370]:
+                    - strong [ref=e372]: choice
+                  - cell "词性成分" [ref=e374]:
+                    - generic [ref=e375]: 词性成分
+                  - cell "1" [ref=e376]:
+                    - generic [ref=e377]: "1"
+                - row "展开行 clean 复现照应 1" [ref=e525] [cursor=pointer]:
+                  - cell "展开行" [ref=e384]:
+                    - button "展开行" [ref=e385]
+                  - cell "clean" [ref=e386]:
+                    - strong [ref=e388]: clean
+                  - cell "复现照应" [ref=e390]:
+                    - generic [ref=e391]: 复现照应
+                  - cell "1" [ref=e392]:
+                    - generic [ref=e393]: "1"
+                - row "展开行 club 复现照应 1" [ref=e526] [cursor=pointer]:
+                  - cell "展开行" [ref=e400]:
+                    - button "展开行" [ref=e401]
+                  - cell "club" [ref=e402]:
+                    - strong [ref=e404]: club
+                  - cell "复现照应" [ref=e406]:
+                    - generic [ref=e407]: 复现照应
+                  - cell "1" [ref=e408]:
+                    - generic [ref=e409]: "1"
+                - row "展开行 comfortable 词性成分 1" [ref=e527] [cursor=pointer]:
+                  - cell "展开行" [ref=e416]:
+                    - button "展开行" [ref=e417]
+                  - cell "comfortable" [ref=e418]:
+                    - strong [ref=e420]: comfortable
+                  - cell "词性成分" [ref=e422]:
+                    - generic [ref=e423]: 词性成分
+                  - cell "1" [ref=e424]:
+                    - generic [ref=e425]: "1"
+                - row "展开行 company 熟词僻义 1" [ref=e528] [cursor=pointer]:
+                  - cell "展开行" [ref=e432]:
+                    - button "展开行" [ref=e433]
+                  - cell "company" [ref=e434]:
+                    - strong [ref=e436]: company
+                  - cell "熟词僻义" [ref=e438]:
+                    - generic [ref=e439]: 熟词僻义
+                  - cell "1" [ref=e440]:
+                    - generic [ref=e441]: "1"
+                - row "展开行 complained 情感态度 1" [ref=e529] [cursor=pointer]:
+                  - cell "展开行" [ref=e448]:
+                    - button "展开行" [ref=e449]
+                  - cell "complained" [ref=e450]:
+                    - strong [ref=e452]: complained
+                  - cell "情感态度" [ref=e454]:
+                    - generic [ref=e455]: 情感态度
+                  - cell "1" [ref=e456]:
+                    - generic [ref=e457]: "1"
+                - row "展开行 confidently 情感态度 1" [ref=e530] [cursor=pointer]:
+                  - cell "展开行" [ref=e464]:
+                    - button "展开行" [ref=e465]
+                  - cell "confidently" [ref=e466]:
+                    - strong [ref=e468]: confidently
+                  - cell "情感态度" [ref=e470]:
+                    - generic [ref=e471]: 情感态度
+                  - cell "1" [ref=e472]:
+                    - generic [ref=e473]: "1"
+            - list [ref=e479]:
+              - listitem [ref=e480]: 共 115 个考点
+              - listitem "上一页" [ref=e481]:
+                - button "left" [disabled] [ref=e482]:
+                  - img "left" [ref=e483]:
+                    - img [ref=e484]
+              - listitem "1" [ref=e486] [cursor=pointer]:
+                - generic [ref=e487]: "1"
+              - listitem "2" [ref=e488] [cursor=pointer]:
+                - generic [ref=e489]: "2"
+              - listitem "3" [ref=e490] [cursor=pointer]:
+                - generic [ref=e491]: "3"
+              - listitem "4" [ref=e492] [cursor=pointer]:
+                - generic [ref=e493]: "4"
+              - listitem "5" [ref=e494] [cursor=pointer]:
+                - generic [ref=e495]: "5"
+              - listitem "6" [ref=e496] [cursor=pointer]:
+                - generic [ref=e497]: "6"
+              - listitem "下一页" [ref=e498] [cursor=pointer]:
+                - button "right" [ref=e499]:
+                  - img "right" [ref=e500]:
+                    - img [ref=e501]
+              - listitem [ref=e503]:
+                - generic "页码" [ref=e504] [cursor=pointer]:
+                  - generic [ref=e506]:
+                    - combobox "页码" [ref=e508]
+                    - generic "20 条/页" [ref=e509]
+                  - generic:
+                    - img:
+                      - img
+          - generic [ref=e533]:
+            - generic [ref=e535]:
+              - button "arrow-left 返回列表" [ref=e536] [cursor=pointer]:
+                - img "arrow-left" [ref=e538]:
+                  - img [ref=e539]
+                - generic [ref=e541]: 返回列表
+              - generic [ref=e542]: "2007"
+            - generic [ref=e545]:
+              - table [ref=e548]:
+                - rowgroup [ref=e549]:
+                  - 'row "词数 : 278 空格数 : 12 话题 : 助人为乐" [ref=e550]':
+                    - 'cell "词数 : 278" [ref=e551]':
+                      - generic [ref=e552]:
+                        - generic [ref=e553]: "词数 :"
+                        - strong [ref=e556]: "278"
+                    - 'cell "空格数 : 12" [ref=e557]':
+                      - generic [ref=e558]:
+                        - generic [ref=e559]: "空格数 :"
+                        - strong [ref=e562]: "12"
+                    - 'cell "话题 : 助人为乐" [ref=e563]':
+                      - generic [ref=e564]:
+                        - generic [ref=e565]: "话题 :"
+                        - generic [ref=e567]: 助人为乐
+              - generic [ref=e568]:
+                - generic [ref=e570]: 句法语法类 (4)
+                - generic [ref=e572]: 词汇选项类 (3)
+                - generic [ref=e574]: 语篇理解类 (5)
+            - generic [ref=e575]:
+              - generic [ref=e576]:
+                - strong [ref=e582]: 完形原文
+                - generic [ref=e585]:
+                  - text: Jessie was driving home happily when a truck went past her car. The driver was moving much too fast. When Jessie neared her exit（出口）, she
+                  - generic [ref=e587] [cursor=pointer]: "1"
+                  - text: something and stopped her car to the right of the highway（高速公路）. An accident had happened on the left side. The truck had
+                  - generic [ref=e589] [cursor=pointer]: "2"
+                  - text: a car, but the driver was gone. Jessie thought that the people inside must be badly
+                  - generic [ref=e591] [cursor=pointer]: "3"
+                  - text: and she should help them as much as she could. Not thinking of the
+                  - generic [ref=e593] [cursor=pointer]: "4"
+                  - text: ", Jessie hurried to the other side of the road, though few people dared（敢）cross such a busy road. Looking into the car, she saw five people —two women and three children. Jessie was"
+                  - generic [ref=e595] [cursor=pointer]: "5"
+                  - text: to see all of them moving. Jessie pulled one of the car doors. It wouldn’t open. She went to the next door.
+                  - generic [ref=e597] [cursor=pointer]: "6"
+                  - text: ", she couldn’t move it. She almost thought that all was"
+                  - generic [ref=e599] [cursor=pointer]: "7"
+                  - text: before she got one of the doors to open a little. “Please get the children out,” one of the women called. Jessie
+                  - generic [ref=e601] [cursor=pointer]: "8"
+                  - text: a little boy from the car and moved him to a
+                  - generic [ref=e603] [cursor=pointer]: "9"
+                  - text: place. Then she went to bring the other children to safety. After the last child was out of the car, Jessie thought of the box in
+                  - generic [ref=e605] [cursor=pointer]: "10"
+                  - text: car. She had something in it that could help get that door open. So she got the box quickly. As Jessie was
+                  - generic [ref=e607] [cursor=pointer]: "11"
+                  - text: on the door, the driver said, “Not many people would do what you’re doing.” “Your just take it easy, and I’ll have you
+                  - generic [ref=e609] [cursor=pointer]: "12"
+                  - text: soon,” said Jessie. She was as good as her word. As soon as she helped the women out of the car, it caught fire.
+              - generic [ref=e611]:
+                - generic [ref=e612]: 核心词汇 (3)
+                - list [ref=e616]:
+                  - listitem [ref=e617] [cursor=pointer]:
+                    - generic [ref=e618]:
+                      - strong [ref=e620]: accident
+                      - generic [ref=e621]: 1次
+                      - generic [ref=e622]: 事故；尤指交通事故
+                  - listitem [ref=e623] [cursor=pointer]:
+                    - generic [ref=e624]:
+                      - strong [ref=e626]: safety
+                      - generic [ref=e627]: 1次
+                      - generic [ref=e628]: 安全；平安
+                  - listitem [ref=e629] [cursor=pointer]:
+                    - generic [ref=e630]:
+                      - strong [ref=e632]: fire
+                      - generic [ref=e633]: 1次
+                      - generic [ref=e634]: 火灾；起火（作为紧急危险要素）

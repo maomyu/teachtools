@@ -9,10 +9,10 @@ from pydantic import BaseModel
 class PaperBase(BaseModel):
     """试卷基础信息"""
     filename: str
-    year: int
+    year: Optional[int] = None
     region: Optional[str] = None
     school: Optional[str] = None
-    grade: str
+    grade: Optional[str] = None
     semester: Optional[str] = None
     exam_type: Optional[str] = None
     version: Optional[str] = None
