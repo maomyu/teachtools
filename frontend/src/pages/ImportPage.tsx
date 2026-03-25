@@ -4,7 +4,7 @@
  * [POS]: frontend/src/pages 的试卷导入页面，实现可扩展的步骤化进度监控
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useCallback, useMemo } from 'react'
+import { useMemo } from 'react'
 import {
   Card,
   Upload,
@@ -35,10 +35,10 @@ import type { UploadFile } from 'antd/es/upload/interface'
 import type { ColumnsType } from 'antd/es/table'
 import type {
   PipelineStep,
-  StepUpdateEvent,
   StepStatus,
   ImportResult
 } from '@/types'
+import { useImportStore } from '@/stores/importStore'
 
 const { Title, Text } = Typography
 const { Dragger } = Upload
@@ -146,90 +146,21 @@ function StepItem({ step, isCurrent }: StepItemProps) {
 // ============================================================================
 
 export function ImportPage() {
-  const [fileList, setFileList] = useState<UploadFile[]>([])
-  const [uploading, setUploading] = useState(false)
-  const [results, setResults] = useState<ImportResult[]>([])
-
-  // 步骤化进度状态
-  const [steps, setSteps] = useState<PipelineStep[]>([])
-  const [currentStep, setCurrentStep] = useState<string | null>(null)
-  const [overallProgress, setOverallProgress] = useState(0)
-  const [currentFileIndex, setCurrentFileIndex] = useState(0)
-
-
-  // 解析SSE事件
-  const parseSSEEvent = useCallback((line: string): StepUpdateEvent | null => {
-    if (!line.startsWith('data: ')) return null
-    try {
-      return JSON.parse(line.slice(6)) as StepUpdateEvent
-    } catch {
-      return null
-    }
-  }, [])
-
-  // 使用SSE上传单个文件
-  const uploadWithProgress = useCallback(async (file: UploadFile): Promise<ImportResult> => {
-    return new Promise((resolve, reject) => {
-      const formData = new FormData()
-      // 获取原始文件对象
-      const rawFile = file.originFileObj || file
-      formData.append('file', rawFile as any)
-
-      const params = new URLSearchParams()
-      params.append('force', 'true')  // 总是强制导入
-
-      fetch(`/api/papers/upload-with-progress?${params.toString()}`, {
-        method: 'POST',
-        body: formData,
-      })
-        .then(async (response) => {
-          const reader = response.body?.getReader()
-          if (!reader) {
-            reject(new Error('无法读取响应流'))
-            return
-          }
-
-          const decoder = new TextDecoder()
-          let lastResult: ImportResult | null = null
-
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            const text = decoder.decode(value)
-            const lines = text.split('\n')
-
-            for (const line of lines) {
-              const event = parseSSEEvent(line)
-              if (!event) continue
-
-              // 更新步骤状态
-              setSteps(event.steps)
-              setCurrentStep(event.current_step)
-              setOverallProgress(event.overall_progress)
-
-              // 记录最终结果
-              if (event.type === 'completed' && event.result) {
-                lastResult = event.result
-              }
-            }
-          }
-
-          if (lastResult) {
-            resolve(lastResult)
-          } else {
-            resolve({
-              status: 'error',
-              filename: file.name,
-              error: '未收到完成信号',
-            })
-          }
-        })
-        .catch((error) => {
-          reject(error)
-        })
-    })
-  }, [parseSSEEvent])
+  const {
+    fileList,
+    uploading,
+    results,
+    steps,
+    currentStep,
+    overallProgress,
+    currentFileIndex,
+    activeFileName,
+    setFileList,
+    addFiles,
+    removeFile,
+    clear,
+    startImport,
+  } = useImportStore()
 
   // 处理文件上传
   const handleUpload = async () => {
@@ -238,39 +169,7 @@ export function ImportPage() {
       return
     }
 
-    setUploading(true)
-    setOverallProgress(0)
-    setResults([])
-    setSteps([])
-    setCurrentStep(null)
-
-    const uploadResults: ImportResult[] = []
-
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i]
-      setCurrentFileIndex(i + 1)
-
-      try {
-        const result = await uploadWithProgress(file)  // 强制导入
-        uploadResults.push(result)
-        setResults([...uploadResults])
-      } catch (error: any) {
-        uploadResults.push({
-          status: 'error',
-          filename: file.name,
-          error: error.message || '上传失败',
-        })
-        setResults([...uploadResults])
-      }
-    }
-
-    setUploading(false)
-    setCurrentStep(null)
-
-    // 统计结果
-    const successCount = uploadResults.filter(r => r.status === 'success').length
-    const failedCount = uploadResults.filter(r => r.status === 'failed' || r.status === 'error').length
-    const existsCount = uploadResults.filter(r => r.status === 'exists').length
+    const { successCount, failedCount, existsCount } = await startImport()
 
     if (successCount > 0) {
       message.success(`成功导入 ${successCount} 份试卷`)
@@ -285,11 +184,7 @@ export function ImportPage() {
 
   // 清空结果
   const handleClear = () => {
-    setFileList([])
-    setResults([])
-    setOverallProgress(0)
-    setSteps([])
-    setCurrentStep(null)
+    clear()
   }
 
   // 结果表格列定义
@@ -396,6 +291,7 @@ export function ImportPage() {
           multiple
           accept=".docx"
           fileList={fileList}
+          disabled={uploading}
           beforeUpload={(file, _fileList) => {
             // 批量添加文件
             if (!file.name.endsWith('.docx')) {
@@ -412,10 +308,7 @@ export function ImportPage() {
             setFileList(docxFiles)
           }}
           onRemove={(file) => {
-            const index = fileList.indexOf(file)
-            const newFileList = fileList.slice()
-            newFileList.splice(index, 1)
-            setFileList(newFileList)
+            removeFile(file)
           }}
         >
           <p className="ant-upload-drag-icon">
@@ -451,7 +344,7 @@ export function ImportPage() {
                   status: 'done' as const,
                   originFileObj: f,
                 })) as UploadFile[]
-                setFileList(prev => [...prev, ...newFiles])
+                addFiles(newFiles)
                 message.success(`已添加 ${docxFiles.length} 个 .docx 文件`)
               }
               // 重置 input 以便再次选择同一文件夹
@@ -462,6 +355,7 @@ export function ImportPage() {
             onClick={() => document.getElementById('folder-input')?.click()}
             icon={<InboxOutlined />}
             style={{ marginRight: 8 }}
+            disabled={uploading}
           >
             选择文件夹
           </Button>
@@ -482,12 +376,22 @@ export function ImportPage() {
               >
                 开始导入 ({fileList.length} 个文件)
               </Button>
-              <Button onClick={handleClear} icon={<ReloadOutlined />}>
+              <Button onClick={handleClear} icon={<ReloadOutlined />} disabled={uploading}>
                 清空
               </Button>
             </Space>
           </Space>
         </div>
+
+        {uploading && (
+          <Alert
+            style={{ marginTop: 16 }}
+            type="info"
+            showIcon
+            message="导入正在后台继续"
+            description="现在可以切换到其他菜单继续使用系统；导入不会中断，返回本页后会继续显示当前进度和最终结果。"
+          />
+        )}
 
         {/* 步骤化进度展示 */}
         {uploading && steps.length > 0 && (
@@ -499,7 +403,7 @@ export function ImportPage() {
                 <span>
                   正在处理: 第 {currentFileIndex} / {fileList.length} 个文件
                 </span>
-                <Tag color="blue">{fileList[currentFileIndex - 1]?.name}</Tag>
+                <Tag color="blue">{activeFileName || fileList[currentFileIndex - 1]?.name}</Tag>
               </div>
             }
           >

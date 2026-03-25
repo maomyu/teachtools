@@ -1,0 +1,192 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - heading "中考英语教研" [level=4] [ref=e7]
+      - menu [ref=e8]:
+        - menuitem "home 首页" [ref=e9] [cursor=pointer]:
+          - img "home" [ref=e10]:
+            - img [ref=e11]
+          - generic [ref=e13]: 首页
+        - menuitem "upload 试卷导入" [active] [ref=e14] [cursor=pointer]:
+          - img "upload" [ref=e15]:
+            - img [ref=e16]
+          - generic [ref=e19]:
+            - text: 试卷导入
+            - superscript [ref=e137]
+        - menuitem "read 阅读文章" [ref=e20] [cursor=pointer]:
+          - img "read" [ref=e21]:
+            - img [ref=e22]
+          - generic [ref=e24]: 阅读文章
+        - menuitem "edit 完形文章" [ref=e25] [cursor=pointer]:
+          - img "edit" [ref=e26]:
+            - img [ref=e27]
+          - generic [ref=e29]: 完形文章
+        - menuitem "edit 考点汇总" [ref=e30] [cursor=pointer]:
+          - img "edit" [ref=e31]:
+            - img [ref=e32]
+          - generic [ref=e34]: 考点汇总
+        - menuitem "form 作文汇编" [ref=e35] [cursor=pointer]:
+          - img "form" [ref=e36]:
+            - img [ref=e37]
+          - generic [ref=e40]: 作文汇编
+        - menuitem "book 高频词库" [ref=e41] [cursor=pointer]:
+          - img "book" [ref=e42]:
+            - img [ref=e43]
+          - generic [ref=e45]: 高频词库
+        - menuitem "database 课本单词表" [ref=e46] [cursor=pointer]:
+          - img "database" [ref=e47]:
+            - img [ref=e48]
+          - generic [ref=e50]: 课本单词表
+        - menuitem "file-text 讲义转换" [ref=e51] [cursor=pointer]:
+          - img "file-text" [ref=e52]:
+            - img [ref=e53]
+          - generic [ref=e55]: 讲义转换
+    - img "left" [ref=e57] [cursor=pointer]:
+      - img [ref=e58]
+  - generic [ref=e60]:
+    - banner [ref=e61]:
+      - generic [ref=e62]:
+        - heading "北京中考英语教研资料系统" [level=4] [ref=e63]
+        - generic [ref=e138]:
+          - generic [ref=e140]: 后台导入中 1/1
+          - generic [ref=e142]: 2007年北京市中考英语试题（解析版）.docx
+          - button "查看进度" [ref=e144] [cursor=pointer]:
+            - generic [ref=e145]: 查看进度
+    - main [ref=e64]:
+      - generic [ref=e1770]:
+        - heading "试卷导入" [level=3] [ref=e1771]
+        - generic [ref=e1773]:
+          - generic [ref=e1774]:
+            - button "inbox 点击或拖拽文件到此区域上传 支持批量上传 .docx 格式的试卷文件（可一次选择多个文件）" [ref=e1776]:
+              - generic [ref=e1777]:
+                - paragraph [ref=e1778]:
+                  - img "inbox" [ref=e1779]:
+                    - img [ref=e1780]
+                - paragraph [ref=e1782]: 点击或拖拽文件到此区域上传
+                - paragraph [ref=e1783]: 支持批量上传 .docx 格式的试卷文件（可一次选择多个文件）
+            - generic [ref=e1786]:
+              - img "paper-clip" [ref=e1788]:
+                - img [ref=e1789]
+              - generic "2007年北京市中考英语试题（解析版）.docx" [ref=e1791]
+          - generic [ref=e1792]:
+            - button "inbox 选择文件夹" [disabled] [ref=e1793]:
+              - generic:
+                - img "inbox":
+                  - img
+              - generic: 选择文件夹
+            - text: 点击可选择整个文件夹（自动筛选 .docx 文件）
+          - generic [ref=e1797]:
+            - button "loading 开始导入 (1 个文件)" [ref=e1799]:
+              - img "loading" [ref=e1801]:
+                - img [ref=e1802]
+              - generic [ref=e1804]: 开始导入 (1 个文件)
+            - button "reload 清空" [disabled] [ref=e1806]:
+              - generic:
+                - img "reload":
+                  - img
+              - generic: 清空
+          - alert [ref=e1807]:
+            - img "info-circle" [ref=e1808]:
+              - img [ref=e1809]
+            - generic [ref=e1811]:
+              - generic [ref=e1812]: 导入正在后台继续
+              - generic [ref=e1813]: 现在可以切换到其他菜单继续使用系统；导入不会中断，返回本页后会继续显示当前进度和最终结果。
+          - generic [ref=e1814]:
+            - generic [ref=e1818]:
+              - generic [ref=e1819]: "正在处理: 第 1 / 1 个文件"
+              - generic [ref=e1820]: 2007年北京市中考英语试题（解析版）.docx
+            - generic [ref=e1821]:
+              - generic [ref=e1822]:
+                - generic [ref=e1823]:
+                  - strong [ref=e1825]: 总体进度
+                  - generic [ref=e1826]: 考点分析
+                - progressbar [ref=e1827]:
+                  - generic "75%" [ref=e1831]
+              - generic [ref=e1832]:
+                - generic [ref=e1833]:
+                  - generic [ref=e1834]:
+                    - img "check-circle" [ref=e1836]:
+                      - img [ref=e1837]
+                    - generic [ref=e1840]: 📤 上传文件
+                  - generic [ref=e1842]: "✓ 文件大小: 17.6KB"
+                - generic [ref=e1843]:
+                  - generic [ref=e1844]:
+                    - img "check-circle" [ref=e1846]:
+                      - img [ref=e1847]
+                    - generic [ref=e1850]: 📝 解析文件名
+                  - generic [ref=e1852]: "✓ 识别:"
+                - generic [ref=e1853]:
+                  - generic [ref=e1854]:
+                    - img "check-circle" [ref=e1856]:
+                      - img [ref=e1857]
+                    - generic [ref=e1860]: ☁️ 上传AI服务
+                  - generic [ref=e1862]: ✓ AI服务已就绪
+                - generic [ref=e1863]:
+                  - generic [ref=e1864]:
+                    - img "check-circle" [ref=e1866]:
+                      - img [ref=e1867]
+                    - generic [ref=e1870]: 🤖 AI解析文档
+                  - generic [ref=e1872]: ✓ 提取2篇文章, 9道题目
+                - generic [ref=e1873]:
+                  - generic [ref=e1874]:
+                    - img "check-circle" [ref=e1876]:
+                      - img [ref=e1877]
+                    - generic [ref=e1880]: 💾 保存文章
+                  - generic [ref=e1882]: ✓ 已保存2篇文章
+                - generic [ref=e1883]:
+                  - generic [ref=e1884]:
+                    - img "check-circle" [ref=e1886]:
+                      - img [ref=e1887]
+                    - generic [ref=e1890]: ❓ 保存题目
+                  - generic [ref=e1892]: ✓ 已保存9道题目
+                - generic [ref=e1893]:
+                  - generic [ref=e1894]:
+                    - img "check-circle" [ref=e1896]:
+                      - img [ref=e1897]
+                    - generic [ref=e1900]: 💡 生成解析
+                  - generic [ref=e1902]: ✓ 已生成9条解析
+                - generic [ref=e1903]:
+                  - generic [ref=e1904]:
+                    - img "check-circle" [ref=e1906]:
+                      - img [ref=e1907]
+                    - generic [ref=e1910]: 📝 保存完形填空
+                  - generic [ref=e1912]: ✓ 已提取12个空格
+                - generic [ref=e1913]:
+                  - generic [ref=e1914]:
+                    - img "check-circle" [ref=e1916]:
+                      - img [ref=e1917]
+                    - generic [ref=e1920]: ✍️ 作文提取
+                  - generic [ref=e1922]: "✓ 已提取: 应用文(书信) | 话题: 个人成长与问题解决"
+                - generic [ref=e1923]:
+                  - generic [ref=e1924]:
+                    - img "loading" [ref=e1926]:
+                      - img [ref=e1927]
+                    - strong [ref=e1930]: 🔬 考点分析
+                  - progressbar [ref=e1932]
+                  - generic [ref=e1936]: 分析第38空...
+                - generic [ref=e1937]:
+                  - generic [ref=e1938]:
+                    - img "minus-circle" [ref=e1940]:
+                      - img [ref=e1941]
+                    - generic [ref=e1944]: 🎯 AI话题分类
+                  - generic [ref=e1945]: 等待中
+                - generic [ref=e1946]:
+                  - generic [ref=e1947]:
+                    - img "minus-circle" [ref=e1949]:
+                      - img [ref=e1950]
+                    - generic [ref=e1953]: 📚 词汇提取
+                  - generic [ref=e1954]: 等待中
+        - generic [ref=e1955]:
+          - generic [ref=e1958]: 使用说明
+          - alert [ref=e1960]:
+            - img "info-circle" [ref=e1961]:
+              - img [ref=e1962]
+            - generic [ref=e1964]:
+              - generic [ref=e1965]: 支持的文件命名格式
+              - generic [ref=e1967]:
+                - paragraph [ref=e1968]: 推荐格式：年份 + 北京 + 区县 + 年级 + 学期 + 考试类型 + 英语 + 版本.docx
+                - paragraph [ref=e1969]: 示例：2023北京海淀初三（上）期末英语（教师版）.docx
+                - paragraph [ref=e1970]: 系统会自动解析文件名提取：年份、区县、年级、学期、考试类型等信息
+                - paragraph [ref=e1971]:
+                  - strong [ref=e1972]: AI解析流程：
+                  - text: 上传文件 → 解析文件名 → 上传AI服务 → AI提取C/D篇阅读和题目 → 保存数据 → AI话题分类 → 词汇提取

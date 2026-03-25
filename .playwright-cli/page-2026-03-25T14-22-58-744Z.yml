@@ -1,0 +1,555 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - heading "中考英语教研" [level=4] [ref=e7]
+      - menu [ref=e8]:
+        - menuitem "home 首页" [ref=e9] [cursor=pointer]:
+          - img "home" [ref=e10]:
+            - img [ref=e11]
+          - generic [ref=e13]: 首页
+        - menuitem "upload 试卷导入" [ref=e14] [cursor=pointer]:
+          - img "upload" [ref=e15]:
+            - img [ref=e16]
+          - generic [ref=e19]:
+            - text: 试卷导入
+            - superscript [ref=e137]
+        - menuitem "read 阅读文章" [active] [ref=e20] [cursor=pointer]:
+          - img "read" [ref=e21]:
+            - img [ref=e22]
+          - generic [ref=e24]: 阅读文章
+        - menuitem "edit 完形文章" [ref=e25] [cursor=pointer]:
+          - img "edit" [ref=e26]:
+            - img [ref=e27]
+          - generic [ref=e29]: 完形文章
+        - menuitem "edit 考点汇总" [ref=e30] [cursor=pointer]:
+          - img "edit" [ref=e31]:
+            - img [ref=e32]
+          - generic [ref=e34]: 考点汇总
+        - menuitem "form 作文汇编" [ref=e35] [cursor=pointer]:
+          - img "form" [ref=e36]:
+            - img [ref=e37]
+          - generic [ref=e40]: 作文汇编
+        - menuitem "book 高频词库" [ref=e41] [cursor=pointer]:
+          - img "book" [ref=e42]:
+            - img [ref=e43]
+          - generic [ref=e45]: 高频词库
+        - menuitem "database 课本单词表" [ref=e46] [cursor=pointer]:
+          - img "database" [ref=e47]:
+            - img [ref=e48]
+          - generic [ref=e50]: 课本单词表
+        - menuitem "file-text 讲义转换" [ref=e51] [cursor=pointer]:
+          - img "file-text" [ref=e52]:
+            - img [ref=e53]
+          - generic [ref=e55]: 讲义转换
+    - img "left" [ref=e57] [cursor=pointer]:
+      - img [ref=e58]
+  - generic [ref=e60]:
+    - banner [ref=e61]:
+      - generic [ref=e62]:
+        - heading "北京中考英语教研资料系统" [level=4] [ref=e63]
+        - generic [ref=e138]:
+          - generic [ref=e140]: 后台导入中 1/1
+          - generic [ref=e142]: 2007年北京市中考英语试题（解析版）.docx
+          - button "查看进度" [ref=e144] [cursor=pointer]:
+            - generic [ref=e145]: 查看进度
+    - main [ref=e64]:
+      - generic [ref=e293]:
+        - generic [ref=e294]:
+          - generic [ref=e295]:
+            - tablist [ref=e296]:
+              - generic [ref=e298]:
+                - tab "全部 4 2" [selected] [ref=e300] [cursor=pointer]:
+                  - generic [ref=e301]:
+                    - generic [ref=e302]: 全部
+                    - superscript [ref=e305]:
+                      - generic [ref=e306]:
+                        - generic [ref=e307]: "4"
+                        - generic [ref=e308]: "2"
+                - tab "C篇 2 1" [ref=e310] [cursor=pointer]:
+                  - generic [ref=e311]:
+                    - generic [ref=e312]: C篇
+                    - superscript [ref=e315]:
+                      - generic [ref=e316]:
+                        - generic [ref=e317]: "2"
+                        - generic [ref=e318]: "1"
+                - tab "D篇 2 1" [ref=e320] [cursor=pointer]:
+                  - generic [ref=e321]:
+                    - generic [ref=e322]: D篇
+                    - superscript [ref=e325]:
+                      - generic [ref=e326]:
+                        - generic [ref=e327]: "2"
+                        - generic [ref=e328]: "1"
+            - generic:
+              - generic:
+                - tabpanel "全部 4 2"
+          - generic [ref=e329]:
+            - generic [ref=e330] [cursor=pointer]:
+              - generic [ref=e331]:
+                - radio "unordered-list 列表视图" [checked]
+              - generic [ref=e333]:
+                - img "unordered-list" [ref=e335]:
+                  - img [ref=e336]
+                - generic [ref=e338]: 列表视图
+            - generic [ref=e339] [cursor=pointer]:
+              - generic [ref=e340]:
+                - radio "book 讲义视图"
+              - generic [ref=e342]:
+                - img "book" [ref=e344]:
+                  - img [ref=e345]
+                - generic [ref=e347]: 讲义视图
+        - generic [ref=e350]:
+          - generic [ref=e352] [cursor=pointer]:
+            - generic [ref=e354]:
+              - combobox [ref=e356]
+              - generic: 选择年级
+            - generic:
+              - img:
+                - img
+          - generic [ref=e358] [cursor=pointer]:
+            - generic [ref=e360]:
+              - combobox [ref=e362]
+              - generic: 选择区县
+            - generic:
+              - img:
+                - img
+          - generic [ref=e364] [cursor=pointer]:
+            - generic [ref=e366]:
+              - combobox [ref=e368]
+              - generic: 选择学校
+            - generic:
+              - img:
+                - img
+          - generic [ref=e370] [cursor=pointer]:
+            - generic [ref=e372]:
+              - combobox [ref=e374]
+              - generic: 选择年份
+            - generic:
+              - img:
+                - img
+          - generic [ref=e376] [cursor=pointer]:
+            - generic [ref=e378]:
+              - combobox [ref=e380]
+              - generic: 考试类型
+            - generic:
+              - img:
+                - img
+          - generic [ref=e382] [cursor=pointer]:
+            - generic [ref=e384]:
+              - combobox [ref=e386]
+              - generic: 选择话题
+            - generic:
+              - img:
+                - img
+          - generic [ref=e389]:
+            - searchbox "搜索文章内容..." [ref=e391]
+            - button "search" [ref=e394] [cursor=pointer]:
+              - img "search" [ref=e395]:
+                - img [ref=e396]
+        - generic [ref=e402]:
+          - table [ref=e406]:
+            - rowgroup [ref=e419]:
+              - row "Select all 类型 年级 主题 年份 区县 学校 考试类型 学期 内容预览 操作" [ref=e420]:
+                - columnheader "Select all" [ref=e421]:
+                  - checkbox "Select all" [ref=e425] [cursor=pointer]
+                - columnheader "类型" [ref=e427]
+                - columnheader "年级" [ref=e428]
+                - columnheader "主题" [ref=e429]
+                - columnheader "年份" [ref=e430] [cursor=pointer]:
+                  - generic [ref=e431]:
+                    - generic [ref=e432]: 年份
+                    - generic [ref=e434]:
+                      - img [ref=e435]:
+                        - img [ref=e436]
+                      - img [ref=e438]:
+                        - img [ref=e439]
+                - columnheader "区县" [ref=e441]
+                - columnheader "学校" [ref=e442]
+                - columnheader "考试类型" [ref=e443]
+                - columnheader "学期" [ref=e444]
+                - columnheader "内容预览" [ref=e445]
+                - columnheader "操作" [ref=e446]
+            - rowgroup [ref=e447]:
+              - row "D篇 - 助人为乐 2015 - - - - Bags of Love Last year，I worked in a middle school near my mother's house，and I ... delete 删除" [ref=e448] [cursor=pointer]:
+                - cell [ref=e449]:
+                  - checkbox [ref=e452]
+                - cell "D篇" [ref=e454]:
+                  - generic [ref=e455]: D篇
+                - cell "-" [ref=e456]
+                - cell "助人为乐" [ref=e457]
+                - cell "2015" [ref=e458]
+                - cell "-" [ref=e459]
+                - cell "-" [ref=e460]
+                - cell "-" [ref=e461]
+                - cell "-" [ref=e462]
+                - cell "Bags of Love Last year，I worked in a middle school near my mother's house，and I ..." [ref=e463]
+                - cell "delete 删除" [ref=e464]:
+                  - button "delete 删除" [ref=e465]:
+                    - img "delete" [ref=e467]:
+                      - img [ref=e468]
+                    - generic [ref=e470]: 删除
+              - row "C篇 - 文化交流 2015 - - - - My favorite season… Matt / UK My favorite season is spring, because everything i... delete 删除" [ref=e471] [cursor=pointer]:
+                - cell [ref=e472]:
+                  - checkbox [ref=e475]
+                - cell "C篇" [ref=e477]:
+                  - generic [ref=e478]: C篇
+                - cell "-" [ref=e479]
+                - cell "文化交流" [ref=e480]
+                - cell "2015" [ref=e481]
+                - cell "-" [ref=e482]
+                - cell "-" [ref=e483]
+                - cell "-" [ref=e484]
+                - cell "-" [ref=e485]
+                - cell "My favorite season… Matt / UK My favorite season is spring, because everything i..." [ref=e486]
+                - cell "delete 删除" [ref=e487]:
+                  - button "delete 删除" [ref=e488]:
+                    - img "delete" [ref=e490]:
+                      - img [ref=e491]
+                    - generic [ref=e493]: 删除
+              - row "D篇 - 个人成长 2014 - - - - Have you ever wondered what goes through your mind when you choose where to sit ... delete 删除" [ref=e494] [cursor=pointer]:
+                - cell [ref=e495]:
+                  - checkbox [ref=e498]
+                - cell "D篇" [ref=e500]:
+                  - generic [ref=e501]: D篇
+                - cell "-" [ref=e502]
+                - cell "个人成长" [ref=e503]
+                - cell "2014" [ref=e504]
+                - cell "-" [ref=e505]
+                - cell "-" [ref=e506]
+                - cell "-" [ref=e507]
+                - cell "-" [ref=e508]
+                - cell "Have you ever wondered what goes through your mind when you choose where to sit ..." [ref=e509]
+                - cell "delete 删除" [ref=e510]:
+                  - button "delete 删除" [ref=e511]:
+                    - img "delete" [ref=e513]:
+                      - img [ref=e514]
+                    - generic [ref=e516]: 删除
+              - row "C篇 - 梦想成长 2014 - - - - Billy's favorite color is orange．But he can't see what orange looks like．Billy i... delete 删除" [ref=e517] [cursor=pointer]:
+                - cell [ref=e518]:
+                  - checkbox [ref=e521]
+                - cell "C篇" [ref=e523]:
+                  - generic [ref=e524]: C篇
+                - cell "-" [ref=e525]
+                - cell "梦想成长" [ref=e526]
+                - cell "2014" [ref=e527]
+                - cell "-" [ref=e528]
+                - cell "-" [ref=e529]
+                - cell "-" [ref=e530]
+                - cell "-" [ref=e531]
+                - cell "Billy's favorite color is orange．But he can't see what orange looks like．Billy i..." [ref=e532]
+                - cell "delete 删除" [ref=e533]:
+                  - button "delete 删除" [ref=e534]:
+                    - img "delete" [ref=e536]:
+                      - img [ref=e537]
+                    - generic [ref=e539]: 删除
+              - row "D篇 - 运动健康 2013 - - - - The willful blindness in hockey toward concussions (头部撞击) has dropped. Hockey Ca... delete 删除" [ref=e540] [cursor=pointer]:
+                - cell [ref=e541]:
+                  - checkbox [ref=e544]
+                - cell "D篇" [ref=e546]:
+                  - generic [ref=e547]: D篇
+                - cell "-" [ref=e548]
+                - cell "运动健康" [ref=e549]
+                - cell "2013" [ref=e550]
+                - cell "-" [ref=e551]
+                - cell "-" [ref=e552]
+                - cell "-" [ref=e553]
+                - cell "-" [ref=e554]
+                - cell "The willful blindness in hockey toward concussions (头部撞击) has dropped. Hockey Ca..." [ref=e555]
+                - cell "delete 删除" [ref=e556]:
+                  - button "delete 删除" [ref=e557]:
+                    - img "delete" [ref=e559]:
+                      - img [ref=e560]
+                    - generic [ref=e562]: 删除
+              - row "C篇 - 心理健康 2013 - - - - Assertiveness is the ability to confidently express your opinions, feelings, att... delete 删除" [ref=e563] [cursor=pointer]:
+                - cell [ref=e564]:
+                  - checkbox [ref=e567]
+                - cell "C篇" [ref=e569]:
+                  - generic [ref=e570]: C篇
+                - cell "-" [ref=e571]
+                - cell "心理健康" [ref=e572]
+                - cell "2013" [ref=e573]
+                - cell "-" [ref=e574]
+                - cell "-" [ref=e575]
+                - cell "-" [ref=e576]
+                - cell "-" [ref=e577]
+                - cell "Assertiveness is the ability to confidently express your opinions, feelings, att..." [ref=e578]
+                - cell "delete 删除" [ref=e579]:
+                  - button "delete 删除" [ref=e580]:
+                    - img "delete" [ref=e582]:
+                      - img [ref=e583]
+                    - generic [ref=e585]: 删除
+              - row "D篇 - 教育发展 2012 - - - - Reading Oliver James'Affluenza，I thought about what often happens at home．My 12﹣... delete 删除" [ref=e586] [cursor=pointer]:
+                - cell [ref=e587]:
+                  - checkbox [ref=e590]
+                - cell "D篇" [ref=e592]:
+                  - generic [ref=e593]: D篇
+                - cell "-" [ref=e594]
+                - cell "教育发展" [ref=e595]
+                - cell "2012" [ref=e596]
+                - cell "-" [ref=e597]
+                - cell "-" [ref=e598]
+                - cell "-" [ref=e599]
+                - cell "-" [ref=e600]
+                - cell "Reading Oliver James'Affluenza，I thought about what often happens at home．My 12﹣..." [ref=e601]
+                - cell "delete 删除" [ref=e602]:
+                  - button "delete 删除" [ref=e603]:
+                    - img "delete" [ref=e605]:
+                      - img [ref=e606]
+                    - generic [ref=e608]: 删除
+              - row "C篇 - 跨文化理解 2012 - - - - The right name is important in the business world．All you have to do is think of... delete 删除" [ref=e609] [cursor=pointer]:
+                - cell [ref=e610]:
+                  - checkbox [ref=e613]
+                - cell "C篇" [ref=e615]:
+                  - generic [ref=e616]: C篇
+                - cell "-" [ref=e617]
+                - cell "跨文化理解" [ref=e618]
+                - cell "2012" [ref=e619]
+                - cell "-" [ref=e620]
+                - cell "-" [ref=e621]
+                - cell "-" [ref=e622]
+                - cell "-" [ref=e623]
+                - cell "The right name is important in the business world．All you have to do is think of..." [ref=e624]
+                - cell "delete 删除" [ref=e625]:
+                  - button "delete 删除" [ref=e626]:
+                    - img "delete" [ref=e628]:
+                      - img [ref=e629]
+                    - generic [ref=e631]: 删除
+              - row "D篇 - 科技生活 2011 - - - - My summer hols wr CWOT．B4，WE USED 2go 2NY 2C my bro，his GF & thr 3：﹣@KIDS FTF．IL... delete 删除" [ref=e632] [cursor=pointer]:
+                - cell [ref=e633]:
+                  - checkbox [ref=e636]
+                - cell "D篇" [ref=e638]:
+                  - generic [ref=e639]: D篇
+                - cell "-" [ref=e640]
+                - cell "科技生活" [ref=e641]
+                - cell "2011" [ref=e642]
+                - cell "-" [ref=e643]
+                - cell "-" [ref=e644]
+                - cell "-" [ref=e645]
+                - cell "-" [ref=e646]
+                - cell "My summer hols wr CWOT．B4，WE USED 2go 2NY 2C my bro，his GF & thr 3：﹣@KIDS FTF．IL..." [ref=e647]
+                - cell "delete 删除" [ref=e648]:
+                  - button "delete 删除" [ref=e649]:
+                    - img "delete" [ref=e651]:
+                      - img [ref=e652]
+                    - generic [ref=e654]: 删除
+              - row "C篇 - 生活技能 2011 - - - - What do you do if you're stranded (处于困境的) on a lonely island？Surely you need to ... delete 删除" [ref=e655] [cursor=pointer]:
+                - cell [ref=e656]:
+                  - checkbox [ref=e659]
+                - cell "C篇" [ref=e661]:
+                  - generic [ref=e662]: C篇
+                - cell "-" [ref=e663]
+                - cell "生活技能" [ref=e664]
+                - cell "2011" [ref=e665]
+                - cell "-" [ref=e666]
+                - cell "-" [ref=e667]
+                - cell "-" [ref=e668]
+                - cell "-" [ref=e669]
+                - cell "What do you do if you're stranded (处于困境的) on a lonely island？Surely you need to ..." [ref=e670]
+                - cell "delete 删除" [ref=e671]:
+                  - button "delete 删除" [ref=e672]:
+                    - img "delete" [ref=e674]:
+                      - img [ref=e675]
+                    - generic [ref=e677]: 删除
+              - row "D篇 - 环境保护 2009 - - - - One cool April 22 morning, people started the day as usual. Yet it was not a nor... delete 删除" [ref=e678] [cursor=pointer]:
+                - cell [ref=e679]:
+                  - checkbox [ref=e682]
+                - cell "D篇" [ref=e684]:
+                  - generic [ref=e685]: D篇
+                - cell "-" [ref=e686]
+                - cell "环境保护" [ref=e687]
+                - cell "2009" [ref=e688]
+                - cell "-" [ref=e689]
+                - cell "-" [ref=e690]
+                - cell "-" [ref=e691]
+                - cell "-" [ref=e692]
+                - cell "One cool April 22 morning, people started the day as usual. Yet it was not a nor..." [ref=e693]
+                - cell "delete 删除" [ref=e694]:
+                  - button "delete 删除" [ref=e695]:
+                    - img "delete" [ref=e697]:
+                      - img [ref=e698]
+                    - generic [ref=e700]: 删除
+              - row "C篇 - 心理健康 2009 - - - - It’s 2009. You feel sick, so you go to the doctor. She checks your fever, looks ... delete 删除" [ref=e701] [cursor=pointer]:
+                - cell [ref=e702]:
+                  - checkbox [ref=e705]
+                - cell "C篇" [ref=e707]:
+                  - generic [ref=e708]: C篇
+                - cell "-" [ref=e709]
+                - cell "心理健康" [ref=e710]
+                - cell "2009" [ref=e711]
+                - cell "-" [ref=e712]
+                - cell "-" [ref=e713]
+                - cell "-" [ref=e714]
+                - cell "-" [ref=e715]
+                - cell "It’s 2009. You feel sick, so you go to the doctor. She checks your fever, looks ..." [ref=e716]
+                - cell "delete 删除" [ref=e717]:
+                  - button "delete 删除" [ref=e718]:
+                    - img "delete" [ref=e720]:
+                      - img [ref=e721]
+                    - generic [ref=e723]: 删除
+              - row "D篇 - 环境保护 2008 - - - - The Amazon rainforest is home to millions of different kinds of animals, plants,... delete 删除" [ref=e724] [cursor=pointer]:
+                - cell [ref=e725]:
+                  - checkbox [ref=e728]
+                - cell "D篇" [ref=e730]:
+                  - generic [ref=e731]: D篇
+                - cell "-" [ref=e732]
+                - cell "环境保护" [ref=e733]
+                - cell "2008" [ref=e734]
+                - cell "-" [ref=e735]
+                - cell "-" [ref=e736]
+                - cell "-" [ref=e737]
+                - cell "-" [ref=e738]
+                - cell "The Amazon rainforest is home to millions of different kinds of animals, plants,..." [ref=e739]
+                - cell "delete 删除" [ref=e740]:
+                  - button "delete 删除" [ref=e741]:
+                    - img "delete" [ref=e743]:
+                      - img [ref=e744]
+                    - generic [ref=e746]: 删除
+              - row "C篇 - 社会现象 2008 - - - - Each year Ben is glad when school is closed on Martin Luther King Jr. Day. Ben k... delete 删除" [ref=e747] [cursor=pointer]:
+                - cell [ref=e748]:
+                  - checkbox [ref=e751]
+                - cell "C篇" [ref=e753]:
+                  - generic [ref=e754]: C篇
+                - cell "-" [ref=e755]
+                - cell "社会现象" [ref=e756]
+                - cell "2008" [ref=e757]
+                - cell "-" [ref=e758]
+                - cell "-" [ref=e759]
+                - cell "-" [ref=e760]
+                - cell "-" [ref=e761]
+                - cell "Each year Ben is glad when school is closed on Martin Luther King Jr. Day. Ben k..." [ref=e762]
+                - cell "delete 删除" [ref=e763]:
+                  - button "delete 删除" [ref=e764]:
+                    - img "delete" [ref=e766]:
+                      - img [ref=e767]
+                    - generic [ref=e769]: 删除
+              - row "D篇 初二 - 2023 昌平 - 期末 下学期 China is widely known for its ancient civilisation （文明 )which has continued all ... delete 删除" [ref=e770] [cursor=pointer]:
+                - cell [ref=e771]:
+                  - checkbox [ref=e774]
+                - cell "D篇" [ref=e776]:
+                  - generic [ref=e777]: D篇
+                - cell "初二" [ref=e778]
+                - cell "-" [ref=e779]
+                - cell "2023" [ref=e780]
+                - cell "昌平" [ref=e781]
+                - cell "-" [ref=e782]
+                - cell "期末" [ref=e783]
+                - cell "下学期" [ref=e784]
+                - cell "China is widely known for its ancient civilisation （文明 )which has continued all ..." [ref=e785]
+                - cell "delete 删除" [ref=e786]:
+                  - button "delete 删除" [ref=e787]:
+                    - img "delete" [ref=e789]:
+                      - img [ref=e790]
+                    - generic [ref=e792]: 删除
+              - row "C篇 初二 - 2023 昌平 - 期末 下学期 Memory professor Jemima Cryaznovans w ers some of the most common questions abo... delete 删除" [ref=e793] [cursor=pointer]:
+                - cell [ref=e794]:
+                  - checkbox [ref=e797]
+                - cell "C篇" [ref=e799]:
+                  - generic [ref=e800]: C篇
+                - cell "初二" [ref=e801]
+                - cell "-" [ref=e802]
+                - cell "2023" [ref=e803]
+                - cell "昌平" [ref=e804]
+                - cell "-" [ref=e805]
+                - cell "期末" [ref=e806]
+                - cell "下学期" [ref=e807]
+                - cell "Memory professor Jemima Cryaznovans w ers some of the most common questions abo..." [ref=e808]
+                - cell "delete 删除" [ref=e809]:
+                  - button "delete 删除" [ref=e810]:
+                    - img "delete" [ref=e812]:
+                      - img [ref=e813]
+                    - generic [ref=e815]: 删除
+              - row "D篇 - 运动健康 2007 - - - - Americans love sports—they love to play them, to watch them on television, and t... delete 删除" [ref=e816] [cursor=pointer]:
+                - cell [ref=e817]:
+                  - checkbox [ref=e820]
+                - cell "D篇" [ref=e822]:
+                  - generic [ref=e823]: D篇
+                - cell "-" [ref=e824]
+                - cell "运动健康" [ref=e825]
+                - cell "2007" [ref=e826]
+                - cell "-" [ref=e827]
+                - cell "-" [ref=e828]
+                - cell "-" [ref=e829]
+                - cell "-" [ref=e830]
+                - cell "Americans love sports—they love to play them, to watch them on television, and t..." [ref=e831]
+                - cell "delete 删除" [ref=e832]:
+                  - button "delete 删除" [ref=e833]:
+                    - img "delete" [ref=e835]:
+                      - img [ref=e836]
+                    - generic [ref=e838]: 删除
+              - row "C篇 - 科技生活 2007 - - - - Matt Mason has seen the future—and it’s fun. Mason likes thinking about how mach... delete 删除" [ref=e839] [cursor=pointer]:
+                - cell [ref=e840]:
+                  - checkbox [ref=e843]
+                - cell "C篇" [ref=e845]:
+                  - generic [ref=e846]: C篇
+                - cell "-" [ref=e847]
+                - cell "科技生活" [ref=e848]
+                - cell "2007" [ref=e849]
+                - cell "-" [ref=e850]
+                - cell "-" [ref=e851]
+                - cell "-" [ref=e852]
+                - cell "-" [ref=e853]
+                - cell "Matt Mason has seen the future—and it’s fun. Mason likes thinking about how mach..." [ref=e854]
+                - cell "delete 删除" [ref=e855]:
+                  - button "delete 删除" [ref=e856]:
+                    - img "delete" [ref=e858]:
+                      - img [ref=e859]
+                    - generic [ref=e861]: 删除
+              - row "D篇 初三 安全意识 2022 大兴 - 二模 - Anyone who walked into a restaurant during the pandemic knows that the QR code i... delete 删除" [ref=e862] [cursor=pointer]:
+                - cell [ref=e863]:
+                  - checkbox [ref=e866]
+                - cell "D篇" [ref=e868]:
+                  - generic [ref=e869]: D篇
+                - cell "初三" [ref=e870]
+                - cell "安全意识" [ref=e871]
+                - cell "2022" [ref=e872]
+                - cell "大兴" [ref=e873]
+                - cell "-" [ref=e874]
+                - cell "二模" [ref=e875]
+                - cell "-" [ref=e876]
+                - cell "Anyone who walked into a restaurant during the pandemic knows that the QR code i..." [ref=e877]
+                - cell "delete 删除" [ref=e878]:
+                  - button "delete 删除" [ref=e879]:
+                    - img "delete" [ref=e881]:
+                      - img [ref=e882]
+                    - generic [ref=e884]: 删除
+              - row "C篇 初三 心理健康 2022 大兴 - 二模 - Teresa Faiello was driving in rush-hour traffic when “stars and blind spots” fil... delete 删除" [ref=e885] [cursor=pointer]:
+                - cell [ref=e886]:
+                  - checkbox [ref=e889]
+                - cell "C篇" [ref=e891]:
+                  - generic [ref=e892]: C篇
+                - cell "初三" [ref=e893]
+                - cell "心理健康" [ref=e894]
+                - cell "2022" [ref=e895]
+                - cell "大兴" [ref=e896]
+                - cell "-" [ref=e897]
+                - cell "二模" [ref=e898]
+                - cell "-" [ref=e899]
+                - cell "Teresa Faiello was driving in rush-hour traffic when “stars and blind spots” fil..." [ref=e900]
+                - cell "delete 删除" [ref=e901]:
+                  - button "delete 删除" [ref=e902]:
+                    - img "delete" [ref=e904]:
+                      - img [ref=e905]
+                    - generic [ref=e907]: 删除
+          - list [ref=e908]:
+            - listitem [ref=e909]: 共 42 篇
+            - listitem "上一页" [ref=e910]:
+              - button "left" [disabled] [ref=e911]:
+                - img "left" [ref=e912]:
+                  - img [ref=e913]
+            - listitem "1" [ref=e915] [cursor=pointer]:
+              - generic [ref=e916]: "1"
+            - listitem "2" [ref=e917] [cursor=pointer]:
+              - generic [ref=e918]: "2"
+            - listitem "3" [ref=e919] [cursor=pointer]:
+              - generic [ref=e920]: "3"
+            - listitem "下一页" [ref=e921] [cursor=pointer]:
+              - button "right" [ref=e922]:
+                - img "right" [ref=e923]:
+                  - img [ref=e924]
+            - listitem [ref=e926]:
+              - generic "页码" [ref=e927] [cursor=pointer]:
+                - generic [ref=e929]:
+                  - combobox "页码" [ref=e931]
+                  - generic "20 条/页" [ref=e932]
+                - generic:
+                  - img:
+                    - img

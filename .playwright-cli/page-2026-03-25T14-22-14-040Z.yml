@@ -1,0 +1,94 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - heading "中考英语教研" [level=4] [ref=e7]
+      - menu [ref=e8]:
+        - menuitem "home 首页" [ref=e9] [cursor=pointer]:
+          - img "home" [ref=e10]:
+            - img [ref=e11]
+          - generic [ref=e13]: 首页
+        - menuitem "upload 试卷导入" [ref=e14] [cursor=pointer]:
+          - img "upload" [ref=e15]:
+            - img [ref=e16]
+          - generic [ref=e19]: 试卷导入
+        - menuitem "read 阅读文章" [ref=e20] [cursor=pointer]:
+          - img "read" [ref=e21]:
+            - img [ref=e22]
+          - generic [ref=e24]: 阅读文章
+        - menuitem "edit 完形文章" [ref=e25] [cursor=pointer]:
+          - img "edit" [ref=e26]:
+            - img [ref=e27]
+          - generic [ref=e29]: 完形文章
+        - menuitem "edit 考点汇总" [ref=e30] [cursor=pointer]:
+          - img "edit" [ref=e31]:
+            - img [ref=e32]
+          - generic [ref=e34]: 考点汇总
+        - menuitem "form 作文汇编" [ref=e35] [cursor=pointer]:
+          - img "form" [ref=e36]:
+            - img [ref=e37]
+          - generic [ref=e40]: 作文汇编
+        - menuitem "book 高频词库" [ref=e41] [cursor=pointer]:
+          - img "book" [ref=e42]:
+            - img [ref=e43]
+          - generic [ref=e45]: 高频词库
+        - menuitem "database 课本单词表" [ref=e46] [cursor=pointer]:
+          - img "database" [ref=e47]:
+            - img [ref=e48]
+          - generic [ref=e50]: 课本单词表
+        - menuitem "file-text 讲义转换" [ref=e51] [cursor=pointer]:
+          - img "file-text" [ref=e52]:
+            - img [ref=e53]
+          - generic [ref=e55]: 讲义转换
+    - img "left" [ref=e57] [cursor=pointer]:
+      - img [ref=e58]
+  - generic [ref=e60]:
+    - banner [ref=e61]:
+      - heading "北京中考英语教研资料系统" [level=4] [ref=e63]
+    - main [ref=e64]:
+      - generic [ref=e65]:
+        - heading "试卷导入" [level=3] [ref=e66]
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - button "inbox 点击或拖拽文件到此区域上传 支持批量上传 .docx 格式的试卷文件（可一次选择多个文件）" [active] [ref=e71] [cursor=pointer]:
+              - generic [ref=e72]:
+                - paragraph [ref=e73]:
+                  - img "inbox" [ref=e74]:
+                    - img [ref=e75]
+                - paragraph [ref=e77]: 点击或拖拽文件到此区域上传
+                - paragraph [ref=e78]: 支持批量上传 .docx 格式的试卷文件（可一次选择多个文件）
+            - generic [ref=e119]:
+              - img "paper-clip" [ref=e121]:
+                - img [ref=e122]
+              - generic "2007年北京市中考英语试题（解析版）.docx" [ref=e124]
+              - button "delete" [ref=e126] [cursor=pointer]:
+                - img "delete" [ref=e128]:
+                  - img [ref=e129]
+          - generic [ref=e79]:
+            - button "inbox 选择文件夹" [ref=e80] [cursor=pointer]:
+              - img "inbox" [ref=e82]:
+                - img [ref=e83]
+              - generic [ref=e85]: 选择文件夹
+            - text: 点击可选择整个文件夹（自动筛选 .docx 文件）
+          - generic [ref=e89]:
+            - button "file-word 开始导入 (1 个文件)" [ref=e131] [cursor=pointer]:
+              - img "file-word" [ref=e133]:
+                - img [ref=e134]
+              - generic [ref=e136]: 开始导入 (1 个文件)
+            - button "reload 清空" [ref=e93] [cursor=pointer]:
+              - img "reload" [ref=e95]:
+                - img [ref=e96]
+              - generic [ref=e98]: 清空
+        - generic [ref=e99]:
+          - generic [ref=e102]: 使用说明
+          - alert [ref=e104]:
+            - img "info-circle" [ref=e105]:
+              - img [ref=e106]
+            - generic [ref=e108]:
+              - generic [ref=e109]: 支持的文件命名格式
+              - generic [ref=e111]:
+                - paragraph [ref=e112]: 推荐格式：年份 + 北京 + 区县 + 年级 + 学期 + 考试类型 + 英语 + 版本.docx
+                - paragraph [ref=e113]: 示例：2023北京海淀初三（上）期末英语（教师版）.docx
+                - paragraph [ref=e114]: 系统会自动解析文件名提取：年份、区县、年级、学期、考试类型等信息
+                - paragraph [ref=e115]:
+                  - strong [ref=e116]: AI解析流程：
+                  - text: 上传文件 → 解析文件名 → 上传AI服务 → AI提取C/D篇阅读和题目 → 保存数据 → AI话题分类 → 词汇提取
