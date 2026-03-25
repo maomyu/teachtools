@@ -6,6 +6,7 @@
 """
 import asyncio
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -29,21 +30,39 @@ from app.services.text_utils import normalize_cloze_blanks, align_blank_numbers_
 from app.services.image_extractor import ImageExtractor
 
 
+def normalize_paper_filename(filename: str) -> str:
+    """标准化试卷文件名，兼容历史导入前缀与空白差异。"""
+    normalized = Path(filename).name.strip()
+    if normalized.startswith("区校试卷_"):
+        parts = normalized.split("_", 4)
+        if len(parts) == 5 and parts[4]:
+            normalized = parts[4]
+
+    normalized = normalized.replace("（", "(").replace("）", ")")
+    return re.sub(r"\s+", "", normalized)
+
+
 async def get_or_create_paper(
     session,
     filename: str,
     file_path: str,
     metadata: Dict
 ) -> ExamPaper:
-    """获取或创建试卷记录"""
+    """获取试卷记录；若已存在则覆盖旧数据后重建，避免重复追加。"""
     # 检查是否已存在
-    result = await session.execute(
-        select(ExamPaper).where(ExamPaper.filename == filename)
-    )
-    paper = result.scalar_one_or_none()
+    result = await session.execute(select(ExamPaper))
+    normalized_filename = normalize_paper_filename(filename)
+    paper = None
+    for candidate in result.scalars():
+        if normalize_paper_filename(candidate.filename) == normalized_filename:
+            paper = candidate
+            break
 
     if paper:
-        return paper
+        # 旧版批量脚本会复用已有 paper 并继续追加阅读/完形/作文数据，
+        # 导致同一试卷多次导入后统计翻倍。这里改为按文件名覆盖重建。
+        await session.delete(paper)
+        await session.flush()
 
     # 创建新记录
     paper = ExamPaper(

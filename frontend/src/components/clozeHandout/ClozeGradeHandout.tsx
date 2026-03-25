@@ -18,9 +18,10 @@ import {
 import {
   ArrowLeftOutlined,
   DownloadOutlined,
+  FileWordOutlined,
 } from '@ant-design/icons'
 
-import { getClozeGradeHandout } from '@/services/clozeService'
+import { getClozeGradeHandout, getClozeGradeHandoutDocxExportUrl } from '@/services/clozeService'
 import { exportToPDF } from '@/utils/pdfExport'
 import type {
   ClozeGradeHandoutResponse,
@@ -80,6 +81,16 @@ export function ClozeGradeHandout({ grade, edition, paperIds, onBack }: ClozeGra
     }
   }
 
+  const handleExportWord = () => {
+    const url = getClozeGradeHandoutDocxExportUrl(grade, edition, paperIds)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 48 }}>
@@ -110,6 +121,9 @@ export function ClozeGradeHandout({ grade, edition, paperIds, onBack }: ClozeGra
             onClick={handleExport}
           >
             下载 PDF
+          </Button>
+          <Button icon={<FileWordOutlined />} onClick={handleExportWord}>
+            下载 Word
           </Button>
         </Space>
         <Tag color={edition === 'teacher' ? 'blue' : 'green'} style={{ fontSize: 14, padding: '4px 12px' }}>

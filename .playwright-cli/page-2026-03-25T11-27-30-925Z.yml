@@ -1,0 +1,310 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - heading "中考英语教研" [level=4] [ref=e7]
+      - menu [ref=e8]:
+        - menuitem "home 首页" [ref=e9] [cursor=pointer]:
+          - img "home" [ref=e10]:
+            - img [ref=e11]
+          - generic [ref=e13]: 首页
+        - menuitem "upload 试卷导入" [ref=e14] [cursor=pointer]:
+          - img "upload" [ref=e15]:
+            - img [ref=e16]
+          - generic [ref=e18]: 试卷导入
+        - menuitem "read 阅读文章" [ref=e19] [cursor=pointer]:
+          - img "read" [ref=e20]:
+            - img [ref=e21]
+          - generic [ref=e23]: 阅读文章
+        - menuitem "edit 完形文章" [ref=e24] [cursor=pointer]:
+          - img "edit" [ref=e25]:
+            - img [ref=e26]
+          - generic [ref=e28]: 完形文章
+        - menuitem "edit 考点汇总" [ref=e29] [cursor=pointer]:
+          - img "edit" [ref=e30]:
+            - img [ref=e31]
+          - generic [ref=e33]: 考点汇总
+        - menuitem "form 作文汇编" [ref=e34] [cursor=pointer]:
+          - img "form" [ref=e35]:
+            - img [ref=e36]
+          - generic [ref=e39]: 作文汇编
+        - menuitem "book 高频词库" [ref=e40] [cursor=pointer]:
+          - img "book" [ref=e41]:
+            - img [ref=e42]
+          - generic [ref=e44]: 高频词库
+        - menuitem "database 课本单词表" [ref=e45] [cursor=pointer]:
+          - img "database" [ref=e46]:
+            - img [ref=e47]
+          - generic [ref=e49]: 课本单词表
+        - menuitem "file-text 讲义转换" [ref=e50] [cursor=pointer]:
+          - img "file-text" [ref=e51]:
+            - img [ref=e52]
+          - generic [ref=e54]: 讲义转换
+    - img "left" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+  - generic [ref=e59]:
+    - banner [ref=e60]:
+      - heading "北京中考英语教研资料系统" [level=4] [ref=e61]
+    - main [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - strong [ref=e66]: 考点汇总
+          - generic [ref=e67]: 共 115 个考点
+        - generic [ref=e70]:
+          - generic [ref=e72]:
+            - generic [ref=e74] [cursor=pointer]: P1 核心考点
+            - generic [ref=e76] [cursor=pointer]: 语篇理解
+            - generic [ref=e78] [cursor=pointer]: 逻辑关系
+            - generic [ref=e80] [cursor=pointer]: 词汇选项
+          - generic [ref=e82]:
+            - generic [ref=e84] [cursor=pointer]:
+              - generic [ref=e86]:
+                - combobox [ref=e88]
+                - generic: 考点类型（大类/具体）
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e90] [cursor=pointer]:
+              - generic [ref=e92]:
+                - combobox [ref=e94]
+                - generic: 优先级
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e96] [cursor=pointer]:
+              - generic [ref=e98]:
+                - combobox [ref=e100]
+                - generic: 选择年级
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e103]:
+              - searchbox "搜索考点词..." [ref=e105]
+              - button "search" [ref=e108] [cursor=pointer]:
+                - img "search" [ref=e110]:
+                  - img [ref=e111]
+            - button "搜 索" [ref=e114] [cursor=pointer]:
+              - generic [ref=e115]: 搜 索
+        - generic [ref=e116]:
+          - generic [ref=e127]:
+            - table [ref=e131]:
+              - rowgroup [ref=e139]:
+                - row "考点词 类型 出现次数" [ref=e468]:
+                  - columnheader "考点词" [ref=e141]
+                  - columnheader "类型" [ref=e143]
+                  - columnheader "出现次数" [ref=e144]
+              - rowgroup [ref=e147]:
+                - row "garden 复现照应 3" [ref=e469] [cursor=pointer]:
+                  - cell "garden" [ref=e149]:
+                    - strong [ref=e151]: garden
+                  - cell "复现照应" [ref=e153]:
+                    - generic [ref=e154]: 复现照应
+                  - cell "3" [ref=e155]:
+                    - generic [ref=e156]: "3"
+                - row "quick 固定搭配 2" [ref=e470] [cursor=pointer]:
+                  - cell "quick" [ref=e166]:
+                    - strong [ref=e168]: quick
+                  - cell "固定搭配" [ref=e170]:
+                    - generic [ref=e171]: 固定搭配
+                  - cell "2" [ref=e172]:
+                    - generic [ref=e173]: "2"
+                - row "warm 生活常识 2" [ref=e471] [cursor=pointer]:
+                  - cell "warm" [ref=e182]:
+                    - strong [ref=e184]: warm
+                  - cell "生活常识" [ref=e186]:
+                    - generic [ref=e187]: 生活常识
+                  - cell "2" [ref=e188]:
+                    - generic [ref=e189]: "2"
+                - row "watch TV 并列一致 2" [ref=e472] [cursor=pointer]:
+                  - cell "watch TV" [ref=e198]:
+                    - strong [ref=e200]: watch TV
+                  - cell "并列一致" [ref=e202]:
+                    - generic [ref=e203]: 并列一致
+                  - cell "2" [ref=e204]:
+                    - generic [ref=e205]: "2"
+                - row "Again 复现照应 1" [ref=e473] [cursor=pointer]:
+                  - cell "Again" [ref=e214]:
+                    - strong [ref=e216]: Again
+                  - cell "复现照应" [ref=e218]:
+                    - generic [ref=e219]: 复现照应
+                  - cell "1" [ref=e220]:
+                    - generic [ref=e221]: "1"
+                - row "Luckily 情感态度 1" [ref=e474] [cursor=pointer]:
+                  - cell "Luckily" [ref=e228]:
+                    - strong [ref=e230]: Luckily
+                  - cell "情感态度" [ref=e232]:
+                    - generic [ref=e233]: 情感态度
+                  - cell "1" [ref=e234]:
+                    - generic [ref=e235]: "1"
+                - row "ball 复现照应 1" [ref=e475] [cursor=pointer]:
+                  - cell "ball" [ref=e242]:
+                    - strong [ref=e244]: ball
+                  - cell "复现照应" [ref=e246]:
+                    - generic [ref=e247]: 复现照应
+                  - cell "1" [ref=e248]:
+                    - generic [ref=e249]: "1"
+                - row "better 固定搭配 1" [ref=e476] [cursor=pointer]:
+                  - cell "better" [ref=e256]:
+                    - strong [ref=e258]: better
+                  - cell "固定搭配" [ref=e260]:
+                    - generic [ref=e261]: 固定搭配
+                  - cell "1" [ref=e262]:
+                    - generic [ref=e263]: "1"
+                - row "bird 复现照应 1" [ref=e477] [cursor=pointer]:
+                  - cell "bird" [ref=e270]:
+                    - strong [ref=e272]: bird
+                  - cell "复现照应" [ref=e274]:
+                    - generic [ref=e275]: 复现照应
+                  - cell "1" [ref=e276]:
+                    - generic [ref=e277]: "1"
+                - row "books 复现照应 1" [ref=e478] [cursor=pointer]:
+                  - cell "books" [ref=e284]:
+                    - strong [ref=e286]: books
+                  - cell "复现照应" [ref=e288]:
+                    - generic [ref=e289]: 复现照应
+                  - cell "1" [ref=e290]:
+                    - generic [ref=e291]: "1"
+                - row "carefully 词义辨析 1" [ref=e479] [cursor=pointer]:
+                  - cell "carefully" [ref=e298]:
+                    - strong [ref=e300]: carefully
+                  - cell "词义辨析" [ref=e302]:
+                    - generic [ref=e303]: 词义辨析
+                  - cell "1" [ref=e304]:
+                    - generic [ref=e305]: "1"
+                - row "carefully 情节顺序 1" [ref=e480] [cursor=pointer]:
+                  - cell "carefully" [ref=e312]:
+                    - strong [ref=e314]: carefully
+                  - cell "情节顺序" [ref=e316]:
+                    - generic [ref=e317]: 情节顺序
+                  - cell "1" [ref=e318]:
+                    - generic [ref=e319]: "1"
+                - row "cheerful 情感态度 1" [ref=e481] [cursor=pointer]:
+                  - cell "cheerful" [ref=e326]:
+                    - strong [ref=e328]: cheerful
+                  - cell "情感态度" [ref=e330]:
+                    - generic [ref=e331]: 情感态度
+                  - cell "1" [ref=e332]:
+                    - generic [ref=e333]: "1"
+                - row "choice 词性成分 1" [ref=e482] [cursor=pointer]:
+                  - cell "choice" [ref=e340]:
+                    - strong [ref=e342]: choice
+                  - cell "词性成分" [ref=e344]:
+                    - generic [ref=e345]: 词性成分
+                  - cell "1" [ref=e346]:
+                    - generic [ref=e347]: "1"
+                - row "clean 复现照应 1" [ref=e483] [cursor=pointer]:
+                  - cell "clean" [ref=e354]:
+                    - strong [ref=e356]: clean
+                  - cell "复现照应" [ref=e358]:
+                    - generic [ref=e359]: 复现照应
+                  - cell "1" [ref=e360]:
+                    - generic [ref=e361]: "1"
+                - row "club 复现照应 1" [ref=e484] [cursor=pointer]:
+                  - cell "club" [ref=e368]:
+                    - strong [ref=e370]: club
+                  - cell "复现照应" [ref=e372]:
+                    - generic [ref=e373]: 复现照应
+                  - cell "1" [ref=e374]:
+                    - generic [ref=e375]: "1"
+                - row "comfortable 词性成分 1" [ref=e485] [cursor=pointer]:
+                  - cell "comfortable" [ref=e382]:
+                    - strong [ref=e384]: comfortable
+                  - cell "词性成分" [ref=e386]:
+                    - generic [ref=e387]: 词性成分
+                  - cell "1" [ref=e388]:
+                    - generic [ref=e389]: "1"
+                - row "company 熟词僻义 1" [ref=e486] [cursor=pointer]:
+                  - cell "company" [ref=e396]:
+                    - strong [ref=e398]: company
+                  - cell "熟词僻义" [ref=e400]:
+                    - generic [ref=e401]: 熟词僻义
+                  - cell "1" [ref=e402]:
+                    - generic [ref=e403]: "1"
+                - row "complained 情感态度 1" [ref=e487] [cursor=pointer]:
+                  - cell "complained" [ref=e410]:
+                    - strong [ref=e412]: complained
+                  - cell "情感态度" [ref=e414]:
+                    - generic [ref=e415]: 情感态度
+                  - cell "1" [ref=e416]:
+                    - generic [ref=e417]: "1"
+                - row "confidently 情感态度 1" [ref=e488] [cursor=pointer]:
+                  - cell "confidently" [ref=e424]:
+                    - strong [ref=e426]: confidently
+                  - cell "情感态度" [ref=e428]:
+                    - generic [ref=e429]: 情感态度
+                  - cell "1" [ref=e430]:
+                    - generic [ref=e431]: "1"
+            - list [ref=e437]:
+              - listitem [ref=e438]: 共 115 个考点
+              - listitem "上一页" [ref=e439]:
+                - button "left" [disabled] [ref=e440]:
+                  - img "left" [ref=e441]:
+                    - img [ref=e442]
+              - listitem "1" [ref=e444] [cursor=pointer]:
+                - generic [ref=e445]: "1"
+              - listitem "2" [ref=e446] [cursor=pointer]:
+                - generic [ref=e447]: "2"
+              - listitem "3" [ref=e448] [cursor=pointer]:
+                - generic [ref=e449]: "3"
+              - listitem "4" [ref=e450] [cursor=pointer]:
+                - generic [ref=e451]: "4"
+              - listitem "5" [ref=e452] [cursor=pointer]:
+                - generic [ref=e453]: "5"
+              - listitem "6" [ref=e454] [cursor=pointer]:
+                - generic [ref=e455]: "6"
+              - listitem "下一页" [ref=e456] [cursor=pointer]:
+                - button "right" [ref=e457]:
+                  - img "right" [ref=e458]:
+                    - img [ref=e459]
+              - listitem [ref=e461]:
+                - generic "页码" [ref=e462] [cursor=pointer]:
+                  - generic [ref=e464]:
+                    - combobox "页码" [ref=e466]
+                    - generic "20 条/页" [ref=e467]
+                  - generic:
+                    - img:
+                      - img
+          - generic [ref=e489]:
+            - generic [ref=e490]:
+              - generic [ref=e491]:
+                - generic [ref=e492]:
+                  - strong [ref=e494]: garden
+                  - generic [ref=e495]:
+                    - generic [ref=e496]: 复现照应
+                    - generic [ref=e497]: 3 个空格
+                    - generic [ref=e498]: 花园
+                - button "关 闭" [ref=e499] [cursor=pointer]:
+                  - generic [ref=e500]: 关 闭
+              - generic [ref=e501]: 第 2 步：从这个考点的全部出现位置里，选择你要查看的试卷和空格。
+            - generic [ref=e502]:
+              - strong [ref=e504]: 出现位置 (3次)
+              - generic [ref=e505] [cursor=pointer]:
+                - generic [ref=e506]: Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage (车库). My mom and dad both drive.
+                - generic [ref=e507]:
+                  - generic [ref=e508]:
+                    - generic [ref=e510]: 第 3 空
+                    - generic [ref=e512]: 词汇
+                    - generic [ref=e513]: 2023昌平初二期末·完形
+                  - button "查看原文" [ref=e514]:
+                    - generic [ref=e515]: 查看原文
+                - generic [ref=e518]: 💡 遇到冠词+形容词+空格结构，先锁定词性；再紧盯空格后介词短语（如with.../in.../on...），它往往是解题钥匙——找出与之自然搭配的生活常识事物，就是答案。
+              - generic [ref=e519] [cursor=pointer]:
+                - generic [ref=e520]: Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. My mom and dad both drive.
+                - generic [ref=e521]:
+                  - generic [ref=e522]:
+                    - generic [ref=e524]: 第 3 空
+                    - generic [ref=e526]: 词汇
+                    - generic [ref=e527]: 2023昌平初二期末·完形
+                  - button "查看原文" [ref=e528]:
+                    - generic [ref=e529]: 查看原文
+                - generic [ref=e532]: 💡 遇到'冠词+形容词+空格'结构，先锁定名词词性；再紧盯空格后紧邻的修饰成分（如本题'with some beautiful flowers'），它往往是解题的黄金线索——找与之天然搭配、逻辑自洽的名词。
+              - generic [ref=e533] [cursor=pointer]:
+                - generic [ref=e534]: Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. My mom and dad both drive.
+                - generic [ref=e535]:
+                  - generic [ref=e536]:
+                    - generic [ref=e538]: 第 3 空
+                    - generic [ref=e540]: 词汇
+                    - generic [ref=e541]: 2022昌平初一期末·完形
+                  - button "查看原文" [ref=e542]:
+                    - generic [ref=e543]: 查看原文
+                - generic [ref=e546]: 💡 遇到冠词+形容词+空格时，先看后置修饰语（如with.../that.../which...），它常是解题钥匙；'flowers'出现，立刻联想'garden'——这是中考高频场景复现链，比死记单词更可靠。
+              - generic [ref=e548]: 💡 记忆技巧：遇到冠词+形容词+空格结构，先锁定词性；再紧盯空格后介词短语（如with.../in.../on...），它往往是解题钥匙——找出与之自然搭配的生活常识事物，就是答案。

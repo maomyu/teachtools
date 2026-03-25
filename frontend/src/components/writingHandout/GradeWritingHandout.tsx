@@ -21,9 +21,10 @@ import {
 import {
   ArrowLeftOutlined,
   DownloadOutlined,
+  FileWordOutlined,
 } from '@ant-design/icons'
 
-import { getWritingHandout } from '@/services/writingService'
+import { getWritingHandout, getWritingHandoutDocxExportUrl } from '@/services/writingService'
 import { exportToPDF } from '@/utils/pdfExport'
 import type {
   WritingGradeHandoutResponse,
@@ -179,6 +180,16 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
     }
   }
 
+  const handleExportWord = () => {
+    const url = getWritingHandoutDocxExportUrl(grade, edition, paperIds)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 48 }}>
@@ -209,6 +220,9 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
             onClick={handleExport}
           >
             下载 PDF
+          </Button>
+          <Button icon={<FileWordOutlined />} onClick={handleExportWord}>
+            下载 Word
           </Button>
         </Space>
         <Tag color={edition === 'teacher' ? 'blue' : 'green'}>

@@ -210,6 +210,8 @@ export function ClozePointsPage() {
   const [size, setSize] = useState(20)
 
   // 抽屉状态
+  const [selectedSummary, setSelectedSummary] = useState<PointSummary | null>(null)
+  const [selectedOccurrence, setSelectedOccurrence] = useState<PointOccurrence | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedClozeId, setSelectedClozeId] = useState<number | null>(null)
   const [selectedBlankNumber, setSelectedBlankNumber] = useState<number | null>(null)
@@ -271,12 +273,21 @@ export function ClozePointsPage() {
     setPage(1)
   }
 
+  const handleOpenSummary = (record: PointSummary) => {
+    setSelectedSummary(record)
+    setSelectedOccurrence(null)
+    setDrawerOpen(false)
+    setSelectedClozeId(null)
+    setSelectedBlankNumber(null)
+  }
+
   // 查看详情
   const handleViewDetail = (occurrence: PointOccurrence) => {
     // 从 source 字符串中解析出 clozeId
     // source 格式: "2024海淀区初一期中·完形"
     // 需要从后端返回中获取 cloze_id
     if (occurrence.passage_id) {
+      setSelectedOccurrence(occurrence)
       setSelectedClozeId(occurrence.passage_id)
       setSelectedBlankNumber(occurrence.blank_number)
       setDrawerOpen(true)
@@ -288,7 +299,15 @@ export function ClozePointsPage() {
     setDrawerOpen(false)
     setSelectedClozeId(null)
     setSelectedBlankNumber(null)
+    setSelectedOccurrence(null)
   }
+
+  const handleCloseSummaryDrawer = () => {
+    setSelectedSummary(null)
+    handleCloseDrawer()
+  }
+
+  const getRecordKey = (record: PointSummary) => `${record.word}-${record.point_type}`
 
   // 表格列定义
   const columns: ColumnsType<PointSummary> = [
@@ -381,7 +400,7 @@ export function ClozePointsPage() {
 
   // 响应式列（抽屉打开时只显示精简字段，且更紧凑）
   const visibleColumns = useMemo(() => {
-    if (drawerOpen) {
+    if (selectedSummary || drawerOpen) {
       return columns
         .filter(col => !SECONDARY_COLUMN_KEYS.includes(col.key as string))
         .map(col => ({
@@ -390,7 +409,157 @@ export function ClozePointsPage() {
         }))
     }
     return columns
-  }, [drawerOpen, columns])
+  }, [selectedSummary, drawerOpen, columns])
+
+  const renderOccurrenceAnalysis = (occ: PointOccurrence, summaryWord: string) => {
+    if (!occ.analysis && !(occ as any).explanation) {
+      return null
+    }
+
+    return (
+      <div style={{ marginTop: 8, padding: '8px 12px', background: '#fff', borderRadius: 4 }}>
+        {occ.analysis && (
+          <>
+            {(occ.point_type === '固定搭配' || (occ as any).primary_point?.code === 'C2') && occ.analysis.phrase && (
+              <>
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ color: '#52c41a' }}>短语：</Text>
+                  <Text code>{occ.analysis.phrase}</Text>
+                  {occ.analysis.confusion_words?.[0] && (
+                    <Text type="secondary"> - {occ.analysis.confusion_words[0].meaning}</Text>
+                  )}
+                </div>
+                {occ.analysis.similar_phrases && occ.analysis.similar_phrases.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>相似短语：</Text>
+                    <Space size={4} wrap>
+                      {occ.analysis.similar_phrases.map((phrase, i) => (
+                        <Tag key={i} style={{ fontSize: 11 }}>{phrase}</Tag>
+                      ))}
+                    </Space>
+                  </div>
+                )}
+              </>
+            )}
+
+            {(occ.point_type === '词义辨析' || (occ as any).primary_point?.code === 'D1') && occ.analysis.word_analysis && (
+              <>
+                {occ.analysis.dictionary_source && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      词典来源：{occ.analysis.dictionary_source}
+                    </Text>
+                  </div>
+                )}
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>三维度分析：</Text>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: '#f5f5f5' }}>
+                          <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left', whiteSpace: 'nowrap' }}>单词</th>
+                          <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>释义</th>
+                          <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用对象</th>
+                          <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用场景</th>
+                          <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>正负态度</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(occ.analysis.word_analysis).map(([word, data]) => (
+                          <tr key={word} style={{ background: word === summaryWord ? '#e6f7ff' : 'white' }}>
+                            <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8', whiteSpace: 'nowrap' }}>
+                              <Text strong={word === summaryWord}>{word}</Text>
+                            </td>
+                            <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8', maxWidth: 200 }}>
+                              <Text type="secondary" style={{ fontSize: 10 }}>{data.definition}</Text>
+                            </td>
+                            <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                              {data.dimensions?.使用对象 || '-'}
+                            </td>
+                            <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                              {data.dimensions?.使用场景 || '-'}
+                            </td>
+                            <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                              {data.dimensions?.正负态度 || '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {(occ.point_type === '熟词僻义' || (occ as any).primary_point?.code === 'D2') && occ.analysis.textbook_meaning && (
+              <>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>课本出处：</Text>
+                  <Text style={{ fontSize: 11 }}>{occ.analysis.textbook_source}</Text>
+                </div>
+                <div style={{ marginBottom: 8, display: 'flex', gap: 16 }}>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>课本释义：</Text>
+                    <Text style={{ fontSize: 11 }}>{occ.analysis.textbook_meaning}</Text>
+                  </div>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>语境释义：</Text>
+                    <Text style={{ fontSize: 11, color: '#722ed1' }}>{occ.analysis.context_meaning}</Text>
+                  </div>
+                </div>
+                {occ.analysis.similar_words && occ.analysis.similar_words.length > 0 && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>其他熟词僻义示例：</Text>
+                    <div style={{ marginTop: 4 }}>
+                      {occ.analysis.similar_words.map((item, i) => (
+                        <Tag key={i} color="purple" style={{ fontSize: 10, marginBottom: 4 }}>
+                          {item.word}: {item.textbook} → {item.rare}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {occ.analysis.confusion_words && occ.analysis.confusion_words.length > 0 &&
+              occ.point_type !== '固定搭配' && (occ as any).primary_point?.code !== 'C2' && (
+              <div style={{ marginTop: 8 }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>易混淆词：</Text>
+                <div style={{ marginTop: 4 }}>
+                  {occ.analysis.confusion_words.map((item, i) => (
+                    <div key={i} style={{ marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid #faad14' }}>
+                      <Text strong style={{ fontSize: 11 }}>{item.word}</Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}> - {item.meaning}</Text>
+                      {item.reason && (
+                        <Text type="danger" style={{ fontSize: 10, marginLeft: 8 }}>
+                          ({item.reason})
+                        </Text>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {occ.analysis.tips && (
+              <div style={{ marginTop: 8, padding: '4px 8px', background: '#fffbe6', borderRadius: 4 }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>💡 {occ.analysis.tips}</Text>
+              </div>
+            )}
+          </>
+        )}
+
+        {!occ.analysis && (occ as any).explanation && (
+          <div style={{ marginTop: 8 }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              解析: {(occ as any).explanation}
+            </Text>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff' }}>
@@ -516,23 +685,17 @@ export function ClozePointsPage() {
         <div style={{
           flex: 1,
           minWidth: 0,
-          paddingRight: drawerOpen ? 16 : 0,
+          paddingRight: selectedSummary || drawerOpen ? 16 : 0,
           transition: 'padding-right 0.3s ease-in-out'
         }}>
           <Table
             columns={visibleColumns}
             dataSource={pointsList}
-            rowKey={(record) => `${record.word}-${record.point_type}`}
+            rowKey={getRecordKey}
             loading={loading}
             onRow={(record) => ({
-              onClick: () => {
-                if (record.occurrences?.[0]?.passage_id) {
-                  setSelectedClozeId(record.occurrences[0].passage_id)
-                  setSelectedBlankNumber(record.occurrences[0].blank_number)
-                  setDrawerOpen(true)
-                }
-              },
-              style: { cursor: record.occurrences?.[0]?.passage_id ? 'pointer' : 'default' },
+              onClick: () => handleOpenSummary(record),
+              style: { cursor: record.occurrences?.length ? 'pointer' : 'default' },
             })}
             pagination={{
               current: page,
@@ -545,225 +708,113 @@ export function ClozePointsPage() {
                 setSize(s)
               },
             }}
-            expandable={{
-              expandedRowRender: (record) => (
-                <div style={{ padding: '8px 16px' }}>
-                  <Text strong style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
-                    出现位置 ({record.occurrences?.length || 0}次):
-                  </Text>
-                  {record.occurrences?.map((occ, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        padding: '12px 16px',
-                        marginBottom: 12,
-                        background: '#fafafa',
-                        borderRadius: 4,
-                        borderLeft: '3px solid #1890ff',
-                      }}
-                    >
-                      {/* 句子和出处 */}
-                      <div style={{ marginBottom: 8 }}>
-                        <Text style={{ fontSize: 13 }}>{occ.sentence}</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Space>
-                          <Tag color="blue" style={{ fontSize: 11 }}>第 {occ.blank_number} 空</Tag>
-                          <Tag
-                            color={getPointColor(occ.point_type, (occ as any).primary_point)}
-                            style={{ fontSize: 11 }}
-                          >
-                            {getPointLabel(occ.point_type, (occ as any).primary_point)}
-                          </Tag>
-                          <Text type="secondary" style={{ fontSize: 11 }}>{occ.source}</Text>
-                        </Space>
-                        {occ.passage_id && (
-                          <Button
-                            type="link"
-                            size="small"
-                            onClick={() => handleViewDetail(occ)}
-                          >
-                            查看原文
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* 根据考点类型展示不同的分析内容 */}
-                      {occ.analysis && (
-                        <div style={{ marginTop: 8, padding: '8px 12px', background: '#fff', borderRadius: 4 }}>
-                          {/* 固定搭配 (v1: 固定搭配, v2: C2) */}
-                          {(occ.point_type === '固定搭配' || (occ as any).primary_point?.code === 'C2') && occ.analysis.phrase && (
-                            <>
-                              <div style={{ marginBottom: 8 }}>
-                                <Text strong style={{ color: '#52c41a' }}>短语：</Text>
-                                <Text code>{occ.analysis.phrase}</Text>
-                                {occ.analysis.confusion_words?.[0] && (
-                                  <Text type="secondary"> - {occ.analysis.confusion_words[0].meaning}</Text>
-                                )}
-                              </div>
-                              {occ.analysis.similar_phrases && occ.analysis.similar_phrases.length > 0 && (
-                                <div style={{ marginBottom: 8 }}>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>相似短语：</Text>
-                                  <Space size={4} wrap>
-                                    {occ.analysis.similar_phrases.map((phrase, i) => (
-                                      <Tag key={i} style={{ fontSize: 11 }}>{phrase}</Tag>
-                                    ))}
-                                  </Space>
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                          {/* 词义辨析 - 三维度分析 (v1: 词义辨析, v2: D1) */}
-                          {(occ.point_type === '词义辨析' || (occ as any).primary_point?.code === 'D1') && occ.analysis.word_analysis && (
-                            <>
-                              {occ.analysis.dictionary_source && (
-                                <div style={{ marginBottom: 8 }}>
-                                  <Text type="secondary" style={{ fontSize: 11 }}>
-                                    词典来源：{occ.analysis.dictionary_source}
-                                  </Text>
-                                </div>
-                              )}
-                              <div style={{ marginBottom: 8 }}>
-                                <Text strong style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>三维度分析：</Text>
-                                <div style={{ overflowX: 'auto' }}>
-                                  <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
-                                    <thead>
-                                      <tr style={{ background: '#f5f5f5' }}>
-                                        <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left', whiteSpace: 'nowrap' }}>单词</th>
-                                        <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>释义</th>
-                                        <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用对象</th>
-                                        <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>使用场景</th>
-                                        <th style={{ padding: '4px 8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>正负态度</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {Object.entries(occ.analysis.word_analysis).map(([word, data]) => (
-                                        <tr key={word} style={{ background: word === record.word ? '#e6f7ff' : 'white' }}>
-                                          <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8', whiteSpace: 'nowrap' }}>
-                                            <Text strong={word === record.word}>{word}</Text>
-                                          </td>
-                                          <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8', maxWidth: 200 }}>
-                                            <Text type="secondary" style={{ fontSize: 10 }}>{data.definition}</Text>
-                                          </td>
-                                          <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
-                                            {data.dimensions?.使用对象 || '-'}
-                                          </td>
-                                          <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
-                                            {data.dimensions?.使用场景 || '-'}
-                                          </td>
-                                          <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
-                                            {data.dimensions?.正负态度 || '-'}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </>
-                          )}
-
-                          {/* 熟词僻义 (v1: 熟词僻义, v2: D2) */}
-                          {(occ.point_type === '熟词僻义' || (occ as any).primary_point?.code === 'D2') && occ.analysis.textbook_meaning && (
-                            <>
-                              <div style={{ marginBottom: 8 }}>
-                                <Text type="secondary" style={{ fontSize: 11 }}>课本出处：</Text>
-                                <Text style={{ fontSize: 11 }}>{occ.analysis.textbook_source}</Text>
-                              </div>
-                              <div style={{ marginBottom: 8, display: 'flex', gap: 16 }}>
-                                <div>
-                                  <Text type="secondary" style={{ fontSize: 11 }}>课本释义：</Text>
-                                  <Text style={{ fontSize: 11 }}>{occ.analysis.textbook_meaning}</Text>
-                                </div>
-                                <div>
-                                  <Text type="secondary" style={{ fontSize: 11 }}>语境释义：</Text>
-                                  <Text style={{ fontSize: 11, color: '#722ed1' }}>{occ.analysis.context_meaning}</Text>
-                                </div>
-                              </div>
-                              {occ.analysis.similar_words && occ.analysis.similar_words.length > 0 && (
-                                <div>
-                                  <Text type="secondary" style={{ fontSize: 11 }}>其他熟词僻义示例：</Text>
-                                  <div style={{ marginTop: 4 }}>
-                                    {occ.analysis.similar_words.map((item, i) => (
-                                      <Tag key={i} color="purple" style={{ fontSize: 10, marginBottom: 4 }}>
-                                        {item.word}: {item.textbook} → {item.rare}
-                                      </Tag>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                          {/* 易混淆词（通用展示，非固定搭配时） */}
-                          {occ.analysis.confusion_words && occ.analysis.confusion_words.length > 0 &&
-                            occ.point_type !== '固定搭配' && (occ as any).primary_point?.code !== 'C2' && (
-                            <div style={{ marginTop: 8 }}>
-                              <Text type="secondary" style={{ fontSize: 11 }}>易混淆词：</Text>
-                              <div style={{ marginTop: 4 }}>
-                                {occ.analysis.confusion_words.map((item, i) => (
-                                  <div key={i} style={{ marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid #faad14' }}>
-                                    <Text strong style={{ fontSize: 11 }}>{item.word}</Text>
-                                    <Text type="secondary" style={{ fontSize: 11 }}> - {item.meaning}</Text>
-                                    {item.reason && (
-                                      <Text type="danger" style={{ fontSize: 10, marginLeft: 8 }}>
-                                        ({item.reason})
-                                      </Text>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 记忆技巧 */}
-                          {occ.analysis.tips && (
-                            <div style={{ marginTop: 8, padding: '4px 8px', background: '#fffbe6', borderRadius: 4 }}>
-                              <Text type="secondary" style={{ fontSize: 11 }}>💡 {occ.analysis.tips}</Text>
-                            </div>
-                          )}
-
-                          {/* 解析（兼容旧数据） */}
-                          {!occ.analysis && occ.explanation && (
-                            <div style={{ marginTop: 8 }}>
-                              <Text type="secondary" style={{ fontSize: 11 }}>
-                                解析: {occ.explanation}
-                              </Text>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* 兼容旧数据：没有 analysis 对象但有 explanation */}
-                      {!occ.analysis && occ.explanation && (
-                        <div style={{ marginTop: 4 }}>
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            解析: {occ.explanation}
-                          </Text>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {/* 聚合后的提示 */}
-                  {record.tips && (
-                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbe6', borderRadius: 4 }}>
-                      <Text type="secondary" style={{ fontSize: 12 }}>💡 记忆技巧：{record.tips}</Text>
-                    </div>
-                  )}
-                </div>
-              ),
-              rowExpandable: (record) => (record.occurrences?.length || 0) > 0,
-            }}
           />
         </div>
+
+        {/* 中间: 出现位置抽屉 */}
+        {selectedSummary && (
+          <div
+            style={{
+              width: 'clamp(340px, 32vw, 480px)',
+              flexShrink: 0,
+              height: '100%',
+              overflow: 'hidden',
+              borderLeft: '3px solid #1677ff',
+              background: '#fcfdff',
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'slideIn 0.25s ease-out',
+            }}
+          >
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                <div style={{ minWidth: 0 }}>
+                  <Text strong style={{ fontSize: 16 }}>{selectedSummary.word}</Text>
+                  <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <Tag color={getPointColor(selectedSummary.point_type, (selectedSummary as any).primary_point)}>
+                      {getPointLabel(selectedSummary.point_type, (selectedSummary as any).primary_point)}
+                    </Tag>
+                    <Tag color="blue">{selectedSummary.frequency} 个空格</Tag>
+                    {selectedSummary.definition && <Tag>{selectedSummary.definition}</Tag>}
+                  </div>
+                </div>
+                <Button size="small" onClick={handleCloseSummaryDrawer}>关闭</Button>
+              </div>
+              <Text type="secondary" style={{ marginTop: 10, display: 'block', fontSize: 12 }}>
+                第 2 步：从这个考点的全部出现位置里，选择你要查看的试卷和空格。
+              </Text>
+            </div>
+
+            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+              <Text strong style={{ fontSize: 12, marginBottom: 10, display: 'block' }}>
+                出现位置 ({selectedSummary.occurrences?.length || 0}次)
+              </Text>
+
+              {selectedSummary.occurrences?.map((occ, idx) => {
+                const isSelected =
+                  selectedOccurrence?.passage_id === occ.passage_id
+                  && selectedOccurrence?.blank_number === occ.blank_number
+                  && selectedOccurrence?.source === occ.source
+
+                return (
+                  <div
+                    key={`${occ.source}-${occ.blank_number}-${idx}`}
+                    onClick={() => handleViewDetail(occ)}
+                    style={{
+                      padding: '12px 14px',
+                      marginBottom: 12,
+                      background: isSelected ? '#e6f4ff' : '#fafafa',
+                      borderRadius: 8,
+                      border: `1px solid ${isSelected ? '#91caff' : '#f0f0f0'}`,
+                      cursor: occ.passage_id ? 'pointer' : 'default',
+                    }}
+                  >
+                    <div style={{ marginBottom: 8 }}>
+                      <Text style={{ fontSize: 13 }}>{occ.sentence}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <Space size={[6, 6]} wrap>
+                        <Tag color="blue" style={{ fontSize: 11 }}>第 {occ.blank_number} 空</Tag>
+                        <Tag
+                          color={getPointColor(occ.point_type, (occ as any).primary_point)}
+                          style={{ fontSize: 11 }}
+                        >
+                          {getPointLabel(occ.point_type, (occ as any).primary_point)}
+                        </Tag>
+                        <Text type="secondary" style={{ fontSize: 11 }}>{occ.source}</Text>
+                      </Space>
+                      {occ.passage_id && (
+                        <Button
+                          type="link"
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleViewDetail(occ)
+                          }}
+                        >
+                          查看原文
+                        </Button>
+                      )}
+                    </div>
+                    {renderOccurrenceAnalysis(occ, selectedSummary.word)}
+                  </div>
+                )
+              })}
+
+              {selectedSummary.tips && (
+                <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbe6', borderRadius: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>💡 记忆技巧：{selectedSummary.tips}</Text>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 右侧: 详情抽屉 */}
         {drawerOpen && selectedClozeId && (
           <div
             style={{
-              width: '70%',
+              width: 'clamp(420px, 42vw, 760px)',
               flexShrink: 0,
               height: '100%',
               overflow: 'hidden',

@@ -14,8 +14,11 @@
 旧类型映射: 固定搭配→C2, 词义辨析→D1, 熟词僻义→D2
 """
 import json
+from io import BytesIO
 from typing import Optional, List, Dict
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.orm import selectinload
@@ -26,6 +29,7 @@ from app.models.paper import ExamPaper
 from app.models.vocabulary_cloze import VocabularyCloze
 from app.models.vocabulary import Vocabulary
 from app.models.reading import ReadingPassage
+from app.services.handout_docx_exporter import HandoutDocxExporter
 from app.schemas.cloze import (
     ClozeListResponse,
     ClozeDetailResponse,
@@ -215,23 +219,28 @@ async def list_cloze(
         selectinload(ClozePassage.paper)
     )
 
+    needs_paper_join = any([grade, exam_type, semester, region, school, year])
+
     # 筛选条件
+    if needs_paper_join:
+        query = query.join(ExamPaper)
     if grade:
-        query = query.join(ExamPaper).where(ExamPaper.grade == grade)
+        query = query.where(ExamPaper.grade == grade)
     if region:
-        query = query.join(ExamPaper).where(ExamPaper.region == region)
+        query = query.where(ExamPaper.region == region)
     if school:
-        query = query.join(ExamPaper).where(ExamPaper.school == school)
+        query = query.where(ExamPaper.school == school)
     if year:
-        query = query.join(ExamPaper).where(ExamPaper.year == year)
+        query = query.where(ExamPaper.year == year)
     if topic:
         query = query.where(ClozePassage.primary_topic == topic)
     if exam_type:
-        query = query.join(ExamPaper).where(ExamPaper.exam_type == exam_type)
+        query = query.where(ExamPaper.exam_type == exam_type)
     if semester:
-        query = query.join(ExamPaper).where(ExamPaper.semester == semester)
+        query = query.where(ExamPaper.semester == semester)
     if point_type:
         query = query.join(ClozePoint).where(ClozePoint.point_type == point_type)
+        query = query.distinct()
 
     # 计数
     count_query = select(func.count()).select_from(query.subquery())
@@ -926,12 +935,14 @@ async def analyze_blank_point_v5(
         # 更新旧类型（向后兼容）
         if point.primary_point_code in NEW_CODE_TO_LEGACY:
             point.point_type = NEW_CODE_TO_LEGACY[point.primary_point_code]
+            point.legacy_point_type = point.point_type
 
     # 更新 V5 置信度字段
     point.confidence = analysis_result.confidence
     point.confidence_reason = analysis_result.confidence_reason
 
     # 更新解析字段
+    point.sentence = context
     if analysis_result.translation:
         point.translation = analysis_result.translation
     if analysis_result.explanation:
@@ -1058,28 +1069,30 @@ async def get_cloze_grade_handout(
     [POS]: cloze.py 的年级讲义端点
     [PROTOCOL]: 变更时更新此头部
     """
-    # 获取主题统计（按考频排序）
-    topics = await _get_cloze_topic_stats_for_grade(db, grade, paper_ids)
+    return await _build_cloze_grade_handout_payload(db, grade, edition, paper_ids)
 
-    # 获取每个主题的内容
-    content = []
-    for topic_info in topics:
-        topic = topic_info["topic"]
-        topic_content = {
-            "topic": topic,
-            "part1_article_sources": await _get_cloze_article_sources(db, grade, topic, paper_ids),
-            "part2_vocabulary": await _get_topic_vocabulary_with_source(db, grade, topic, paper_ids),
-            "part3_points_by_type": await _get_points_by_type(db, grade, topic, paper_ids),
-            "part4_passages": await _get_cloze_passages_with_points(db, grade, topic, edition, paper_ids)
+
+@router.get("/handouts/{grade}/export/docx")
+async def export_cloze_grade_handout_docx(
+    grade: str,
+    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    paper_ids: Optional[List[int]] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """导出某年级完形讲义 Word 版本。"""
+    payload = await _build_cloze_grade_handout_payload(db, grade, edition, paper_ids)
+    exporter = HandoutDocxExporter()
+    file_bytes = exporter.build_cloze_grade_docx(payload, paper_ids=paper_ids)
+    filename = exporter.build_filename(f"{grade}完形填空讲义", edition, paper_ids)
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        BytesIO(file_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
         }
-        content.append(topic_content)
-
-    return {
-        "grade": grade,
-        "edition": edition,
-        "topics": topics,
-        "content": content
-    }
+    )
 
 
 @router.get("/handouts/{grade}/topics")
@@ -1177,6 +1190,35 @@ async def _get_cloze_topic_stats_for_grade(db: AsyncSession, grade: str, paper_i
         })
 
     return topics
+
+
+async def _build_cloze_grade_handout_payload(
+    db: AsyncSession,
+    grade: str,
+    edition: str,
+    paper_ids: Optional[List[int]] = None
+):
+    """构建年级完形讲义的统一数据结构。"""
+    topics = await _get_cloze_topic_stats_for_grade(db, grade, paper_ids)
+
+    content = []
+    for topic_info in topics:
+        topic = topic_info["topic"]
+        topic_content = {
+            "topic": topic,
+            "part1_article_sources": await _get_cloze_article_sources(db, grade, topic, paper_ids),
+            "part2_vocabulary": await _get_topic_vocabulary_with_source(db, grade, topic, paper_ids),
+            "part3_points_by_type": await _get_points_by_type(db, grade, topic, paper_ids),
+            "part4_passages": await _get_cloze_passages_with_points(db, grade, topic, edition, paper_ids)
+        }
+        content.append(topic_content)
+
+    return {
+        "grade": grade,
+        "edition": edition,
+        "topics": topics,
+        "content": content
+    }
 
 
 async def _get_cloze_article_sources(db: AsyncSession, grade: str, topic: str, paper_ids: Optional[List[int]] = None):

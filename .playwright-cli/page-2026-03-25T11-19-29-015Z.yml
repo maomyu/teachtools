@@ -1,0 +1,397 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - heading "中考英语教研" [level=4] [ref=e7]
+      - menu [ref=e8]:
+        - menuitem "home 首页" [ref=e9] [cursor=pointer]:
+          - img "home" [ref=e10]:
+            - img [ref=e11]
+          - generic [ref=e13]: 首页
+        - menuitem "upload 试卷导入" [ref=e14] [cursor=pointer]:
+          - img "upload" [ref=e15]:
+            - img [ref=e16]
+          - generic [ref=e18]: 试卷导入
+        - menuitem "read 阅读文章" [ref=e19] [cursor=pointer]:
+          - img "read" [ref=e20]:
+            - img [ref=e21]
+          - generic [ref=e23]: 阅读文章
+        - menuitem "edit 完形文章" [ref=e24] [cursor=pointer]:
+          - img "edit" [ref=e25]:
+            - img [ref=e26]
+          - generic [ref=e28]: 完形文章
+        - menuitem "edit 考点汇总" [ref=e29] [cursor=pointer]:
+          - img "edit" [ref=e30]:
+            - img [ref=e31]
+          - generic [ref=e33]: 考点汇总
+        - menuitem "form 作文汇编" [ref=e34] [cursor=pointer]:
+          - img "form" [ref=e35]:
+            - img [ref=e36]
+          - generic [ref=e39]: 作文汇编
+        - menuitem "book 高频词库" [ref=e40] [cursor=pointer]:
+          - img "book" [ref=e41]:
+            - img [ref=e42]
+          - generic [ref=e44]: 高频词库
+        - menuitem "database 课本单词表" [ref=e45] [cursor=pointer]:
+          - img "database" [ref=e46]:
+            - img [ref=e47]
+          - generic [ref=e49]: 课本单词表
+        - menuitem "file-text 讲义转换" [ref=e50] [cursor=pointer]:
+          - img "file-text" [ref=e51]:
+            - img [ref=e52]
+          - generic [ref=e54]: 讲义转换
+    - img "left" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+  - generic [ref=e59]:
+    - banner [ref=e60]:
+      - heading "北京中考英语教研资料系统" [level=4] [ref=e61]
+    - main [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - strong [ref=e66]: 考点汇总
+          - generic [ref=e67]: 共 115 个考点
+        - generic [ref=e70]:
+          - generic [ref=e72]:
+            - generic [ref=e74] [cursor=pointer]: P1 核心考点
+            - generic [ref=e76] [cursor=pointer]: 语篇理解
+            - generic [ref=e78] [cursor=pointer]: 逻辑关系
+            - generic [ref=e80] [cursor=pointer]: 词汇选项
+          - generic [ref=e82]:
+            - generic [ref=e84] [cursor=pointer]:
+              - generic [ref=e86]:
+                - combobox [ref=e88]
+                - generic: 考点类型（大类/具体）
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e90] [cursor=pointer]:
+              - generic [ref=e92]:
+                - combobox [ref=e94]
+                - generic: 优先级
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e96] [cursor=pointer]:
+              - generic [ref=e98]:
+                - combobox [ref=e100]
+                - generic: 选择年级
+              - generic:
+                - img:
+                  - img
+            - generic [ref=e103]:
+              - searchbox "搜索考点词..." [ref=e105]
+              - button "search" [ref=e108] [cursor=pointer]:
+                - img "search" [ref=e110]:
+                  - img [ref=e111]
+            - button "搜 索" [ref=e114] [cursor=pointer]:
+              - generic [ref=e115]: 搜 索
+        - generic [ref=e127]:
+          - table [ref=e131]:
+            - rowgroup [ref=e140]:
+              - row "考点词 释义 类型 出现次数 例句 出处" [ref=e141]:
+                - columnheader [ref=e142]
+                - columnheader "考点词" [ref=e143]
+                - columnheader "释义" [ref=e144]
+                - columnheader "类型" [ref=e145]
+                - columnheader "出现次数" [ref=e146]
+                - columnheader "例句" [ref=e147]
+                - columnheader "出处" [ref=e148]
+            - rowgroup [ref=e149]:
+              - row "展开行 garden 花园 复现照应 3 Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage (车库). My mom and dad both drive. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. My mom and dad both drive. +1 更多... 2023昌平初二期末·完形" [ref=e150] [cursor=pointer]:
+                - cell "展开行" [ref=e151]:
+                  - button "展开行" [ref=e153]
+                - cell "garden" [ref=e154]:
+                  - strong [ref=e156]: garden
+                - cell "花园" [ref=e157]
+                - cell "复现照应" [ref=e158]:
+                  - generic [ref=e159]: 复现照应
+                - cell "3" [ref=e160]:
+                  - generic [ref=e161]: "3"
+                - cell "Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage (车库). My mom and dad both drive. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. My mom and dad both drive. +1 更多..." [ref=e162]:
+                  - generic [ref=e163]:
+                    - generic [ref=e165]: Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage (车库). My mom and dad both drive.
+                    - generic [ref=e167]: Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. My mom and dad both drive.
+                    - generic [ref=e168]: +1 更多...
+                - cell "2023昌平初二期末·完形" [ref=e169]
+              - row "展开行 quick 顺畅的；毫不费力的；（事情）很容易完成的 固定搭配 2 I have a bicycle and a skateboard. My sister and I are both good skateboarders. We live on a quiet street. It's always (4) to come back to our great house after school every day. I have a bicycle and a skateboard. My sister and I are both good skateboarders. We live on a quiet street. It's always (4) to come back to our great house after school every day. 2023昌平初二期末·完形" [ref=e170] [cursor=pointer]:
+                - cell "展开行" [ref=e171]:
+                  - button "展开行" [ref=e173]
+                - cell "quick" [ref=e174]:
+                  - strong [ref=e176]: quick
+                - cell "顺畅的；毫不费力的；（事情）很容易完成的" [ref=e177]
+                - cell "固定搭配" [ref=e178]:
+                  - generic [ref=e179]: 固定搭配
+                - cell "2" [ref=e180]:
+                  - generic [ref=e181]: "2"
+                - cell "I have a bicycle and a skateboard. My sister and I are both good skateboarders. We live on a quiet street. It's always (4) to come back to our great house after school every day. I have a bicycle and a skateboard. My sister and I are both good skateboarders. We live on a quiet street. It's always (4) to come back to our great house after school every day." [ref=e182]:
+                  - generic [ref=e183]:
+                    - generic [ref=e185]: I have a bicycle and a skateboard. My sister and I are both good skateboarders. We live on a quiet street. It's always (4) to come back to our great house after school every day.
+                    - generic [ref=e187]: I have a bicycle and a skateboard. My sister and I are both good skateboarders. We live on a quiet street. It's always (4) to come back to our great house after school every day.
+                - cell "2023昌平初二期末·完形" [ref=e188]
+              - row "展开行 warm 暖和的；温暖的 生活常识 2 It has three bedrooms and three bathrooms. It also has a big fireplace. The fireplace keeps the house very (1) in winter. It has a kitchen, a dining room and a living room. The living room has a pretty sofa and a big TV. It has three bedrooms and three bathrooms. It also has a big fireplace. The fireplace keeps the house very (1) in winter. It has a kitchen, a dining room and a living room. The living room has a pretty sofa and a big TV. 2023昌平初二期末·完形" [ref=e189] [cursor=pointer]:
+                - cell "展开行" [ref=e190]:
+                  - button "展开行" [ref=e192]
+                - cell "warm" [ref=e193]:
+                  - strong [ref=e195]: warm
+                - cell "暖和的；温暖的" [ref=e196]
+                - cell "生活常识" [ref=e197]:
+                  - generic [ref=e198]: 生活常识
+                - cell "2" [ref=e199]:
+                  - generic [ref=e200]: "2"
+                - cell "It has three bedrooms and three bathrooms. It also has a big fireplace. The fireplace keeps the house very (1) in winter. It has a kitchen, a dining room and a living room. The living room has a pretty sofa and a big TV. It has three bedrooms and three bathrooms. It also has a big fireplace. The fireplace keeps the house very (1) in winter. It has a kitchen, a dining room and a living room. The living room has a pretty sofa and a big TV." [ref=e201]:
+                  - generic [ref=e202]:
+                    - generic [ref=e204]: It has three bedrooms and three bathrooms. It also has a big fireplace. The fireplace keeps the house very (1) in winter. It has a kitchen, a dining room and a living room. The living room has a pretty sofa and a big TV.
+                    - generic [ref=e206]: It has three bedrooms and three bathrooms. It also has a big fireplace. The fireplace keeps the house very (1) in winter. It has a kitchen, a dining room and a living room. The living room has a pretty sofa and a big TV.
+                - cell "2023昌平初二期末·完形" [ref=e207]
+              - row "展开行 watch TV 看电视 并列一致 2 The living room has a pretty sofa and a big TV. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. The living room has a pretty sofa and a big TV. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. 2023昌平初二期末·完形" [ref=e208] [cursor=pointer]:
+                - cell "展开行" [ref=e209]:
+                  - button "展开行" [ref=e211]
+                - cell "watch TV" [ref=e212]:
+                  - strong [ref=e214]: watch TV
+                - cell "看电视" [ref=e215]
+                - cell "并列一致" [ref=e216]:
+                  - generic [ref=e217]: 并列一致
+                - cell "2" [ref=e218]:
+                  - generic [ref=e219]: "2"
+                - cell "The living room has a pretty sofa and a big TV. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage. The living room has a pretty sofa and a big TV. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage." [ref=e220]:
+                  - generic [ref=e221]:
+                    - generic [ref=e223]: The living room has a pretty sofa and a big TV. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage.
+                    - generic [ref=e225]: The living room has a pretty sofa and a big TV. Our living room is our family room. We (2) and play games together there. There's a small (3) with some beautiful flowers in front of our house. We have a two-car garage.
+                - cell "2023昌平初二期末·完形" [ref=e226]
+              - row "展开行 Again 又一次；再次 复现照应 1 An accident had happened on the left side. The truck had (2) a car, but the driver was gone. Jessie thought that the people inside must be badly (3) and she should help them as much as she could. Not thinking of the (4), Jessie hurried to the other side of the road, though few people dared（敢）cross such a busy road. Looking into the car, she saw five people —two women and three children. 2007NoneNone·完形" [ref=e227] [cursor=pointer]:
+                - cell "展开行" [ref=e228]:
+                  - button "展开行" [ref=e230]
+                - cell "Again" [ref=e231]:
+                  - strong [ref=e233]: Again
+                - cell "又一次；再次" [ref=e234]
+                - cell "复现照应" [ref=e235]:
+                  - generic [ref=e236]: 复现照应
+                - cell "1" [ref=e237]:
+                  - generic [ref=e238]: "1"
+                - cell "An accident had happened on the left side. The truck had (2) a car, but the driver was gone. Jessie thought that the people inside must be badly (3) and she should help them as much as she could. Not thinking of the (4), Jessie hurried to the other side of the road, though few people dared（敢）cross such a busy road. Looking into the car, she saw five people —two women and three children." [ref=e239]:
+                  - generic [ref=e242]: An accident had happened on the left side. The truck had (2) a car, but the driver was gone. Jessie thought that the people inside must be badly (3) and she should help them as much as she could. Not thinking of the (4), Jessie hurried to the other side of the road, though few people dared（敢）cross such a busy road. Looking into the car, she saw five people —two women and three children.
+                - cell "2007NoneNone·完形" [ref=e243]
+              - row "展开行 Luckily 幸运的是 情感态度 1 Martha was ready to show the world that she would not be broken and nothing was going to stop her from being a respected( 受人尊敬的 ) member of society. She found a way of (16) a hair product but there wasn’t much money she made. (17), the little money she had would go a long way. At the age of 16, Martha managed to put herself through high school. After high school, her uncle put her through college where she studied science for 2 years. 2022朝阳初二期末·完形" [ref=e244] [cursor=pointer]:
+                - cell "展开行" [ref=e245]:
+                  - button "展开行" [ref=e247]
+                - cell "Luckily" [ref=e248]:
+                  - strong [ref=e250]: Luckily
+                - cell "幸运的是" [ref=e251]
+                - cell "情感态度" [ref=e252]:
+                  - generic [ref=e253]: 情感态度
+                - cell "1" [ref=e254]:
+                  - generic [ref=e255]: "1"
+                - cell "Martha was ready to show the world that she would not be broken and nothing was going to stop her from being a respected( 受人尊敬的 ) member of society. She found a way of (16) a hair product but there wasn’t much money she made. (17), the little money she had would go a long way. At the age of 16, Martha managed to put herself through high school. After high school, her uncle put her through college where she studied science for 2 years." [ref=e256]:
+                  - generic [ref=e259]: Martha was ready to show the world that she would not be broken and nothing was going to stop her from being a respected( 受人尊敬的 ) member of society. She found a way of (16) a hair product but there wasn’t much money she made. (17), the little money she had would go a long way. At the age of 16, Martha managed to put herself through high school. After high school, her uncle put her through college where she studied science for 2 years.
+                - cell "2022朝阳初二期末·完形" [ref=e260]
+              - row "展开行 ball 球 复现照应 1 But after a few weeks, I had about five of ten shots landing in the basket. I still wasn’t very good. But I was so tall that if someone took a shot I was usually the first one to get the (18) after it came down from the net. I became pretty good at (19) the ball into the net. The season came and went. 2023延庆初一期末·完形" [ref=e261] [cursor=pointer]:
+                - cell "展开行" [ref=e262]:
+                  - button "展开行" [ref=e264]
+                - cell "ball" [ref=e265]:
+                  - strong [ref=e267]: ball
+                - cell "球" [ref=e268]
+                - cell "复现照应" [ref=e269]:
+                  - generic [ref=e270]: 复现照应
+                - cell "1" [ref=e271]:
+                  - generic [ref=e272]: "1"
+                - cell "But after a few weeks, I had about five of ten shots landing in the basket. I still wasn’t very good. But I was so tall that if someone took a shot I was usually the first one to get the (18) after it came down from the net. I became pretty good at (19) the ball into the net. The season came and went." [ref=e273]:
+                  - generic [ref=e276]: But after a few weeks, I had about five of ten shots landing in the basket. I still wasn’t very good. But I was so tall that if someone took a shot I was usually the first one to get the (18) after it came down from the net. I became pretty good at (19) the ball into the net. The season came and went.
+                - cell "2023延庆初一期末·完形" [ref=e277]
+              - row "展开行 better 好转；向好的方向转变 固定搭配 1 At the age of 16, Martha managed to put herself through high school. After high school, her uncle put her through college where she studied science for 2 years. At 22, she graduated and worked for the Red Cross and her life changed for the (18). A few years later, one of the best companies in her country heard about her ability( 能力 ) and graduate hard work and asked her to work for them. Today, Martha is one of the most (19) women in her family. 2022朝阳初二期末·完形" [ref=e278] [cursor=pointer]:
+                - cell "展开行" [ref=e279]:
+                  - button "展开行" [ref=e281]
+                - cell "better" [ref=e282]:
+                  - strong [ref=e284]: better
+                - cell "好转；向好的方向转变" [ref=e285]
+                - cell "固定搭配" [ref=e286]:
+                  - generic [ref=e287]: 固定搭配
+                - cell "1" [ref=e288]:
+                  - generic [ref=e289]: "1"
+                - cell "At the age of 16, Martha managed to put herself through high school. After high school, her uncle put her through college where she studied science for 2 years. At 22, she graduated and worked for the Red Cross and her life changed for the (18). A few years later, one of the best companies in her country heard about her ability( 能力 ) and graduate hard work and asked her to work for them. Today, Martha is one of the most (19) women in her family." [ref=e290]:
+                  - generic [ref=e293]: At the age of 16, Martha managed to put herself through high school. After high school, her uncle put her through college where she studied science for 2 years. At 22, she graduated and worked for the Red Cross and her life changed for the (18). A few years later, one of the best companies in her country heard about her ability( 能力 ) and graduate hard work and asked her to work for them. Today, Martha is one of the most (19) women in her family.
+                - cell "2022朝阳初二期末·完形" [ref=e294]
+              - row "展开行 bird 鸟 复现照应 1 “You are both in school and I am at work all day. Pets like cats and dogs need lots of attention,” Mum suggested we think of other kinds of pets. We decided on a (9). The next weekend, we saw a small parrot at a pet shop. His name was Rio, and he knew how to talk. 2022东城初二期末·完形" [ref=e295] [cursor=pointer]:
+                - cell "展开行" [ref=e296]:
+                  - button "展开行" [ref=e298]
+                - cell "bird" [ref=e299]:
+                  - strong [ref=e301]: bird
+                - cell "鸟" [ref=e302]
+                - cell "复现照应" [ref=e303]:
+                  - generic [ref=e304]: 复现照应
+                - cell "1" [ref=e305]:
+                  - generic [ref=e306]: "1"
+                - cell "“You are both in school and I am at work all day. Pets like cats and dogs need lots of attention,” Mum suggested we think of other kinds of pets. We decided on a (9). The next weekend, we saw a small parrot at a pet shop. His name was Rio, and he knew how to talk." [ref=e307]:
+                  - generic [ref=e310]: “You are both in school and I am at work all day. Pets like cats and dogs need lots of attention,” Mum suggested we think of other kinds of pets. We decided on a (9). The next weekend, we saw a small parrot at a pet shop. His name was Rio, and he knew how to talk.
+                - cell "2022东城初二期末·完形" [ref=e311]
+              - 'row "展开行 books 课本；教科书；书籍（此处特指学生上课使用的教材） 复现照应 1 Today is Thursday. He has many _9_: English, art, science, math, PE and history. His mother puts a lot of _10_ and his lunch box in his big schoolbag. His first class is English, and he likes his English teacher very much. His English teacher says he is a _11_ student. 2022大兴初一期末·完形" [ref=e312] [cursor=pointer]':
+                - cell "展开行" [ref=e313]:
+                  - button "展开行" [ref=e315]
+                - cell "books" [ref=e316]:
+                  - strong [ref=e318]: books
+                - cell "课本；教科书；书籍（此处特指学生上课使用的教材）" [ref=e319]
+                - cell "复现照应" [ref=e320]:
+                  - generic [ref=e321]: 复现照应
+                - cell "1" [ref=e322]:
+                  - generic [ref=e323]: "1"
+                - 'cell "Today is Thursday. He has many _9_: English, art, science, math, PE and history. His mother puts a lot of _10_ and his lunch box in his big schoolbag. His first class is English, and he likes his English teacher very much. His English teacher says he is a _11_ student." [ref=e324]':
+                  - generic [ref=e327]: "Today is Thursday. He has many _9_: English, art, science, math, PE and history. His mother puts a lot of _10_ and his lunch box in his big schoolbag. His first class is English, and he likes his English teacher very much. His English teacher says he is a _11_ student."
+                - cell "2022大兴初一期末·完形" [ref=e328]
+              - row "展开行 carefully 细致地；小心地 词义辨析 1 “Maybe he does not like me anymore,” I said to Mum. “Maybe he knows Sam is taking care of him, and you are not,” Mum said. That night I (16) changed clean newspaper for Rio and gave him some food. The very next day I asked Sam if I could care for Rio for the next three weeks. 2022东城初二期末·完形" [ref=e329] [cursor=pointer]:
+                - cell "展开行" [ref=e330]:
+                  - button "展开行" [ref=e332]
+                - cell "carefully" [ref=e333]:
+                  - strong [ref=e335]: carefully
+                - cell "细致地；小心地" [ref=e336]
+                - cell "词义辨析" [ref=e337]:
+                  - generic [ref=e338]: 词义辨析
+                - cell "1" [ref=e339]:
+                  - generic [ref=e340]: "1"
+                - cell "“Maybe he does not like me anymore,” I said to Mum. “Maybe he knows Sam is taking care of him, and you are not,” Mum said. That night I (16) changed clean newspaper for Rio and gave him some food. The very next day I asked Sam if I could care for Rio for the next three weeks." [ref=e341]:
+                  - generic [ref=e344]: “Maybe he does not like me anymore,” I said to Mum. “Maybe he knows Sam is taking care of him, and you are not,” Mum said. That night I (16) changed clean newspaper for Rio and gave him some food. The very next day I asked Sam if I could care for Rio for the next three weeks.
+                - cell "2022东城初二期末·完形" [ref=e345]
+              - row "展开行 carefully 谨慎地；细致地；小心地 情节顺序 1 Slowly the nervousness was gone. He gently put down his pole, and began to stretch （伸展） out his arms and upper body. And then, he (18) picked up his pole. He knew it was his time to fly. As he began sprinting （冲刺） down the runway, something felt wonderfully different, yet familiar （熟悉的） . 2022朝阳初三二模·完形" [ref=e346] [cursor=pointer]:
+                - cell "展开行" [ref=e347]:
+                  - button "展开行" [ref=e349]
+                - cell "carefully" [ref=e350]:
+                  - strong [ref=e352]: carefully
+                - cell "谨慎地；细致地；小心地" [ref=e353]
+                - cell "情节顺序" [ref=e354]:
+                  - generic [ref=e355]: 情节顺序
+                - cell "1" [ref=e356]:
+                  - generic [ref=e357]: "1"
+                - cell "Slowly the nervousness was gone. He gently put down his pole, and began to stretch （伸展） out his arms and upper body. And then, he (18) picked up his pole. He knew it was his time to fly. As he began sprinting （冲刺） down the runway, something felt wonderfully different, yet familiar （熟悉的） ." [ref=e358]:
+                  - generic [ref=e361]: Slowly the nervousness was gone. He gently put down his pole, and began to stretch （伸展） out his arms and upper body. And then, he (18) picked up his pole. He knew it was his time to fly. As he began sprinting （冲刺） down the runway, something felt wonderfully different, yet familiar （熟悉的） .
+                - cell "2022朝阳初三二模·完形" [ref=e362]
+              - row "展开行 cheerful 兴高采烈的；愉快的；容光焕发的 情感态度 1 George grew up in an environment where winning was the most valuable thing , and he expec ted to succeed , too. George was good at running and he called everyone from the nearby __ 13 __ for a race. A large group of people came to see this exciting event. When the race started , G e orge ran among the boys from around the villages . 2023昌平初二期末·完形" [ref=e363] [cursor=pointer]:
+                - cell "展开行" [ref=e364]:
+                  - button "展开行" [ref=e366]
+                - cell "cheerful" [ref=e367]:
+                  - strong [ref=e369]: cheerful
+                - cell "兴高采烈的；愉快的；容光焕发的" [ref=e370]
+                - cell "情感态度" [ref=e371]:
+                  - generic [ref=e372]: 情感态度
+                - cell "1" [ref=e373]:
+                  - generic [ref=e374]: "1"
+                - cell "George grew up in an environment where winning was the most valuable thing , and he expec ted to succeed , too. George was good at running and he called everyone from the nearby __ 13 __ for a race. A large group of people came to see this exciting event. When the race started , G e orge ran among the boys from around the villages ." [ref=e375]:
+                  - generic [ref=e378]: George grew up in an environment where winning was the most valuable thing , and he expec ted to succeed , too. George was good at running and he called everyone from the nearby __ 13 __ for a race. A large group of people came to see this exciting event. When the race started , G e orge ran among the boys from around the villages .
+                - cell "2023昌平初二期末·完形" [ref=e379]
+              - row "展开行 choice （被选中的）理想对象 词性成分 1 The next weekend, we saw a small parrot at a pet shop. His name was Rio, and he knew how to talk. When he said “Hello there,” Sam and I knew Rio was a perfect (10) for us. Mum agreed we could take Rio home if we (11) to take good care of him. As soon as we got home, Mum showed us how to line (铺) the bottom of Rio’s cage with newspaper. 2022东城初二期末·完形" [ref=e380] [cursor=pointer]:
+                - cell "展开行" [ref=e381]:
+                  - button "展开行" [ref=e383]
+                - cell "choice" [ref=e384]:
+                  - strong [ref=e386]: choice
+                - cell "（被选中的）理想对象" [ref=e387]
+                - cell "词性成分" [ref=e388]:
+                  - generic [ref=e389]: 词性成分
+                - cell "1" [ref=e390]:
+                  - generic [ref=e391]: "1"
+                - cell "The next weekend, we saw a small parrot at a pet shop. His name was Rio, and he knew how to talk. When he said “Hello there,” Sam and I knew Rio was a perfect (10) for us. Mum agreed we could take Rio home if we (11) to take good care of him. As soon as we got home, Mum showed us how to line (铺) the bottom of Rio’s cage with newspaper." [ref=e392]:
+                  - generic [ref=e395]: The next weekend, we saw a small parrot at a pet shop. His name was Rio, and he knew how to talk. When he said “Hello there,” Sam and I knew Rio was a perfect (10) for us. Mum agreed we could take Rio home if we (11) to take good care of him. As soon as we got home, Mum showed us how to line (铺) the bottom of Rio’s cage with newspaper.
+                - cell "2022东城初二期末·完形" [ref=e396]
+              - row "展开行 clean 干净的；清洁的 复现照应 1 As soon as we got home, Mum showed us how to line (铺) the bottom of Rio’s cage with newspaper. “You have to change the paper every other day,” she told us. “Rio should always have a (12) cage. You also have to give him fresh food and water every day. ” Rio was a very smart bird. 2022东城初二期末·完形" [ref=e397] [cursor=pointer]:
+                - cell "展开行" [ref=e398]:
+                  - button "展开行" [ref=e400]
+                - cell "clean" [ref=e401]:
+                  - strong [ref=e403]: clean
+                - cell "干净的；清洁的" [ref=e404]
+                - cell "复现照应" [ref=e405]:
+                  - generic [ref=e406]: 复现照应
+                - cell "1" [ref=e407]:
+                  - generic [ref=e408]: "1"
+                - cell "As soon as we got home, Mum showed us how to line (铺) the bottom of Rio’s cage with newspaper. “You have to change the paper every other day,” she told us. “Rio should always have a (12) cage. You also have to give him fresh food and water every day. ” Rio was a very smart bird." [ref=e409]:
+                  - generic [ref=e412]: As soon as we got home, Mum showed us how to line (铺) the bottom of Rio’s cage with newspaper. “You have to change the paper every other day,” she told us. “Rio should always have a (12) cage. You also have to give him fresh food and water every day. ” Rio was a very smart bird.
+                - cell "2022东城初二期末·完形" [ref=e413]
+              - row "展开行 club 社团；俱乐部 复现照应 1 The Care Club Jennifer and her sister Katie get to know in school how they should care for(关怀, 关心)other people. This gives them a great idea. \"Let’s start a new (13) at school called the care club. \" Katie says, \"Care can stand for caring and respecting(尊重) everyone. \" Jennifer also thinks it is a good idea. 2022通州初一期末·完形" [ref=e414] [cursor=pointer]:
+                - cell "展开行" [ref=e415]:
+                  - button "展开行" [ref=e417]
+                - cell "club" [ref=e418]:
+                  - strong [ref=e420]: club
+                - cell "社团；俱乐部" [ref=e421]
+                - cell "复现照应" [ref=e422]:
+                  - generic [ref=e423]: 复现照应
+                - cell "1" [ref=e424]:
+                  - generic [ref=e425]: "1"
+                - cell "The Care Club Jennifer and her sister Katie get to know in school how they should care for(关怀, 关心)other people. This gives them a great idea. \"Let’s start a new (13) at school called the care club. \" Katie says, \"Care can stand for caring and respecting(尊重) everyone. \" Jennifer also thinks it is a good idea." [ref=e426]:
+                  - generic [ref=e429]: The Care Club Jennifer and her sister Katie get to know in school how they should care for(关怀, 关心)other people. This gives them a great idea. "Let’s start a new (13) at school called the care club. " Katie says, "Care can stand for caring and respecting(尊重) everyone. " Jennifer also thinks it is a good idea.
+                - cell "2022通州初一期末·完形" [ref=e430]
+              - row "展开行 comfortable 自在的；能坦然接受自己的；心理上舒适的 词性成分 1 I never thought about how I (1) in a swimsuit. Then one day, when I was swimming over to the ladder to make my way out of the pool, I saw a cute, thin girl standing at the top of the ladder. So I swam (2), waiting patiently （耐心地） for her to move. Instead of moving, she stared （注视） at me for a while and said, “They don’t allow beached whales in this pool. “Then she laughed and walked away. 2022海淀初二期末·完形" [ref=e431] [cursor=pointer]:
+                - cell "展开行" [ref=e432]:
+                  - button "展开行" [ref=e434]
+                - cell "comfortable" [ref=e435]:
+                  - strong [ref=e437]: comfortable
+                - cell "自在的；能坦然接受自己的；心理上舒适的" [ref=e438]
+                - cell "词性成分" [ref=e439]:
+                  - generic [ref=e440]: 词性成分
+                - cell "1" [ref=e441]:
+                  - generic [ref=e442]: "1"
+                - cell "I never thought about how I (1) in a swimsuit. Then one day, when I was swimming over to the ladder to make my way out of the pool, I saw a cute, thin girl standing at the top of the ladder. So I swam (2), waiting patiently （耐心地） for her to move. Instead of moving, she stared （注视） at me for a while and said, “They don’t allow beached whales in this pool. “Then she laughed and walked away." [ref=e443]:
+                  - generic [ref=e446]: I never thought about how I (1) in a swimsuit. Then one day, when I was swimming over to the ladder to make my way out of the pool, I saw a cute, thin girl standing at the top of the ladder. So I swam (2), waiting patiently （耐心地） for her to move. Instead of moving, she stared （注视） at me for a while and said, “They don’t allow beached whales in this pool. “Then she laughed and walked away.
+                - cell "2022海淀初二期末·完形" [ref=e447]
+              - row "展开行 company 陪伴；作伴 熟词僻义 1 So much for my perfect hideaway. “The game was almost over when I noticed you leave. I thought you might like some (15). ” That’s the last thing I want. I feel I don’t have any privacy at home. 2022东城初三二模·完形" [ref=e448] [cursor=pointer]:
+                - cell "展开行" [ref=e449]:
+                  - button "展开行" [ref=e451]
+                - cell "company" [ref=e452]:
+                  - strong [ref=e454]: company
+                - cell "陪伴；作伴" [ref=e455]
+                - cell "熟词僻义" [ref=e456]:
+                  - generic [ref=e457]: 熟词僻义
+                - cell "1" [ref=e458]:
+                  - generic [ref=e459]: "1"
+                - cell "So much for my perfect hideaway. “The game was almost over when I noticed you leave. I thought you might like some (15). ” That’s the last thing I want. I feel I don’t have any privacy at home." [ref=e460]:
+                  - generic [ref=e463]: So much for my perfect hideaway. “The game was almost over when I noticed you leave. I thought you might like some (15). ” That’s the last thing I want. I feel I don’t have any privacy at home.
+                - cell "2022东城初三二模·完形" [ref=e464]
+              - row "展开行 complained 抱怨；发牢骚 情感态度 1 ” I was surprised to see my brother James standing behind me. “Don’t you have a basketball game to watch? ” I (14). So much for my perfect hideaway. “The game was almost over when I noticed you leave. 2022东城初三二模·完形" [ref=e465] [cursor=pointer]:
+                - cell "展开行" [ref=e466]:
+                  - button "展开行" [ref=e468]
+                - cell "complained" [ref=e469]:
+                  - strong [ref=e471]: complained
+                - cell "抱怨；发牢骚" [ref=e472]
+                - cell "情感态度" [ref=e473]:
+                  - generic [ref=e474]: 情感态度
+                - cell "1" [ref=e475]:
+                  - generic [ref=e476]: "1"
+                - cell "” I was surprised to see my brother James standing behind me. “Don’t you have a basketball game to watch? ” I (14). So much for my perfect hideaway. “The game was almost over when I noticed you leave." [ref=e477]:
+                  - generic [ref=e480]: ” I was surprised to see my brother James standing behind me. “Don’t you have a basketball game to watch? ” I (14). So much for my perfect hideaway. “The game was almost over when I noticed you leave.
+                - cell "2022东城初三二模·完形" [ref=e481]
+              - row "展开行 confidently 自信地 情感态度 1 George grew up in an environment where winning was the most valuable thing , and he expec ted to succeed , too. George was good at running and he called everyone from the nearby __ 13 __ for a race. A large group of people came to see this exciting event. When the race started , G e orge ran among the boys from around the villages . 2023昌平初二期末·完形" [ref=e482] [cursor=pointer]:
+                - cell "展开行" [ref=e483]:
+                  - button "展开行" [ref=e485]
+                - cell "confidently" [ref=e486]:
+                  - strong [ref=e488]: confidently
+                - cell "自信地" [ref=e489]
+                - cell "情感态度" [ref=e490]:
+                  - generic [ref=e491]: 情感态度
+                - cell "1" [ref=e492]:
+                  - generic [ref=e493]: "1"
+                - cell "George grew up in an environment where winning was the most valuable thing , and he expec ted to succeed , too. George was good at running and he called everyone from the nearby __ 13 __ for a race. A large group of people came to see this exciting event. When the race started , G e orge ran among the boys from around the villages ." [ref=e494]:
+                  - generic [ref=e497]: George grew up in an environment where winning was the most valuable thing , and he expec ted to succeed , too. George was good at running and he called everyone from the nearby __ 13 __ for a race. A large group of people came to see this exciting event. When the race started , G e orge ran among the boys from around the villages .
+                - cell "2023昌平初二期末·完形" [ref=e498]
+          - list [ref=e499]:
+            - listitem [ref=e500]: 共 115 个考点
+            - listitem "上一页" [ref=e501]:
+              - button "left" [disabled] [ref=e502]:
+                - img "left" [ref=e503]:
+                  - img [ref=e504]
+            - listitem "1" [ref=e506] [cursor=pointer]:
+              - generic [ref=e507]: "1"
+            - listitem "2" [ref=e508] [cursor=pointer]:
+              - generic [ref=e509]: "2"
+            - listitem "3" [ref=e510] [cursor=pointer]:
+              - generic [ref=e511]: "3"
+            - listitem "4" [ref=e512] [cursor=pointer]:
+              - generic [ref=e513]: "4"
+            - listitem "5" [ref=e514] [cursor=pointer]:
+              - generic [ref=e515]: "5"
+            - listitem "6" [ref=e516] [cursor=pointer]:
+              - generic [ref=e517]: "6"
+            - listitem "下一页" [ref=e518] [cursor=pointer]:
+              - button "right" [ref=e519]:
+                - img "right" [ref=e520]:
+                  - img [ref=e521]
+            - listitem [ref=e523]:
+              - generic "页码" [ref=e524] [cursor=pointer]:
+                - generic [ref=e526]:
+                  - combobox "页码" [ref=e528]
+                  - generic "20 条/页" [ref=e529]
+                - generic:
+                  - img:
+                    - img

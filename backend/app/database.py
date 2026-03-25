@@ -1,7 +1,7 @@
 """
 数据库连接和会话管理
 """
-from sqlalchemy import text
+from sqlalchemy import text, event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -13,6 +13,14 @@ engine = create_async_engine(
     echo=settings.LOG_LEVEL == "DEBUG",
     future=True
 )
+
+
+if settings.DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 # 创建异步会话工厂
 async_session = async_sessionmaker(

@@ -168,6 +168,16 @@ export async function getClozeGradeHandout(
   return response.data
 }
 
+export function getClozeGradeHandoutDocxExportUrl(
+  grade: string,
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
+): string {
+  const params = buildHandoutParams(edition, paperIds)
+  const query = params ? `?${params.toString()}` : ''
+  return `/api/cloze/handouts/${grade}/export/docx${query}`
+}
+
 // ============================================================================
 //  考点类型定义 API（V2 新增）
 // ============================================================================

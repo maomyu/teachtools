@@ -17,7 +17,7 @@ import {
   Space,
   Divider,
   Alert,
-  Input,
+  Image,
   Result,
   Select,
   Row,
@@ -36,6 +36,7 @@ import {
   uploadHandout,
   getProcessEventSourceUrl,
   getDownloadUrl,
+  getWatermarkPreviewUrl,
 } from '@/services/handoutService'
 
 const { Title, Text, Paragraph } = Typography
@@ -51,9 +52,9 @@ interface ProcessState {
 
 export function HandoutConverterPage() {
   const [file, setFile] = useState<UploadFile | null>(null)
-  const [watermarkText, setWatermarkText] = useState('学生版')
   const [watermarkDensity, setWatermarkDensity] = useState<'sparse' | 'medium' | 'dense'>('medium')
   const [watermarkSize, setWatermarkSize] = useState<'small' | 'medium' | 'large'>('medium')
+  const watermarkPreviewUrl = getWatermarkPreviewUrl()
   const [processState, setProcessState] = useState<ProcessState>({
     status: 'idle',
     taskId: null,
@@ -136,7 +137,6 @@ export function HandoutConverterPage() {
     const eventSource = new EventSource(
       getProcessEventSourceUrl(
         processState.taskId,
-        watermarkText,
         watermarkDensity,
         watermarkSize
       )
@@ -187,7 +187,7 @@ export function HandoutConverterPage() {
       eventSource.close()
       message.error('连接中断，请重试')
     }
-  }, [processState.taskId, watermarkText, watermarkDensity, watermarkSize])
+  }, [processState.taskId, watermarkDensity, watermarkSize])
 
   // 下载 PDF
   const handleDownload = () => {
@@ -219,7 +219,7 @@ export function HandoutConverterPage() {
               教师版讲义转学生版
             </Title>
             <Text type="secondary">
-              上传教师版 Word 讲义，AI 将自动识别并删除答案，生成带水印的学生版 PDF
+              上传教师版 Word 讲义，系统将自动删除答案部分，并生成带图片水印的学生版 PDF
             </Text>
           </div>
 
@@ -254,19 +254,36 @@ export function HandoutConverterPage() {
             <div style={{ marginTop: 12 }}>
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                 <Row gutter={16}>
-                  <Col span={8}>
+                  <Col xs={24} md={12}>
                     <div>
-                      <Text type="secondary" style={{ fontSize: 12 }}>水印文字</Text>
-                      <Input
-                        placeholder="水印文字"
-                        value={watermarkText}
-                        onChange={(e) => setWatermarkText(e.target.value)}
-                        style={{ marginTop: 4 }}
-                        disabled={processState.status === 'processing'}
-                      />
+                      <Text type="secondary" style={{ fontSize: 12 }}>固定图片水印</Text>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: 12,
+                          border: '1px solid #f0f0f0',
+                          borderRadius: 8,
+                          background: '#fff',
+                        }}
+                      >
+                        <Image
+                          src={watermarkPreviewUrl}
+                          alt="讲义图片水印预览"
+                          preview={false}
+                          style={{
+                            width: '100%',
+                            maxWidth: 320,
+                            objectFit: 'contain',
+                            display: 'block',
+                          }}
+                        />
+                        <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                          当前会自动使用这张图片做底层水印，不再叠加文字。
+                        </Text>
+                      </div>
                     </div>
                   </Col>
-                  <Col span={8}>
+                  <Col xs={24} md={6}>
                     <div>
                       <Text type="secondary" style={{ fontSize: 12 }}>水印密度</Text>
                       <Select
@@ -282,7 +299,7 @@ export function HandoutConverterPage() {
                       />
                     </div>
                   </Col>
-                  <Col span={8}>
+                  <Col xs={24} md={6}>
                     <div>
                       <Text type="secondary" style={{ fontSize: 12 }}>水印大小</Text>
                       <Select

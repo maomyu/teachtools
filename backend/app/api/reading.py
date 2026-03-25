@@ -6,8 +6,11 @@
 [POS]: backend/app/api 的阅读路由
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
+from io import BytesIO
 from typing import List, Optional, Dict, Any
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -17,6 +20,7 @@ from app.models.reading import ReadingPassage, Question
 from app.models.paper import ExamPaper
 from app.models.vocabulary import Vocabulary, VocabularyPassage
 from app.models.cloze import ClozePassage
+from app.services.handout_docx_exporter import HandoutDocxExporter
 from app.schemas.reading import (
     PassageResponse,
     PassageListResponse,
@@ -464,27 +468,30 @@ async def get_grade_handout(
     [POS]: reading.py 的年级讲义端点
     [PROTOCOL]: 变更时更新此头部
     """
-    # 获取主题统计（按考频排序）
-    topics = await _get_topic_stats_for_grade(db, grade, paper_ids)
+    return await _build_grade_handout_payload(db, grade, edition, paper_ids)
 
-    # 获取每个主题的内容
-    content = []
-    for topic_info in topics:
-        topic = topic_info["topic"]
-        topic_content = {
-            "topic": topic,
-            "part1_article_sources": await _get_article_sources(db, grade, topic, paper_ids),
-            "part2_vocabulary": await _get_topic_vocabulary_with_source(db, grade, topic, paper_ids),
-            "part3_passages": await _get_topic_passages(db, grade, topic, edition, paper_ids)
+
+@router.get("/handouts/{grade}/export/docx")
+async def export_grade_handout_docx(
+    grade: str,
+    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    paper_ids: Optional[List[int]] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """导出某年级阅读讲义 Word 版本。"""
+    payload = await _build_grade_handout_payload(db, grade, edition, paper_ids)
+    exporter = HandoutDocxExporter()
+    file_bytes = exporter.build_reading_grade_docx(payload, paper_ids=paper_ids)
+    filename = exporter.build_filename(f"{grade}阅读CD篇讲义", edition, paper_ids)
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        BytesIO(file_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
         }
-        content.append(topic_content)
-
-    return {
-        "grade": grade,
-        "edition": edition,
-        "topics": topics,
-        "content": content
-    }
+    )
 
 
 async def _get_topic_stats_for_grade(db: AsyncSession, grade: str, paper_ids: Optional[List[int]] = None):
@@ -521,6 +528,34 @@ async def _get_topic_stats_for_grade(db: AsyncSession, grade: str, paper_ids: Op
         })
 
     return topics
+
+
+async def _build_grade_handout_payload(
+    db: AsyncSession,
+    grade: str,
+    edition: str,
+    paper_ids: Optional[List[int]] = None
+):
+    """构建年级阅读讲义的统一数据结构。"""
+    topics = await _get_topic_stats_for_grade(db, grade, paper_ids)
+
+    content = []
+    for topic_info in topics:
+        topic = topic_info["topic"]
+        topic_content = {
+            "topic": topic,
+            "part1_article_sources": await _get_article_sources(db, grade, topic, paper_ids),
+            "part2_vocabulary": await _get_topic_vocabulary_with_source(db, grade, topic, paper_ids),
+            "part3_passages": await _get_topic_passages(db, grade, topic, edition, paper_ids)
+        }
+        content.append(topic_content)
+
+    return {
+        "grade": grade,
+        "edition": edition,
+        "topics": topics,
+        "content": content
+    }
 
 
 @router.get("/handouts/{grade}/topics")

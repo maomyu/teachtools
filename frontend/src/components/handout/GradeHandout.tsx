@@ -19,11 +19,12 @@ import {
 import {
   ArrowLeftOutlined,
   DownloadOutlined,
+  FileWordOutlined,
 } from '@ant-design/icons'
 
 import { QuestionOptions, parseOptionContent } from '@/components/common/QuestionOptions'
 import { RichTextWithImages } from '@/components/common/RichTextWithImages'
-import { getGradeHandout } from '@/services/readingService'
+import { getGradeHandout, getGradeHandoutDocxExportUrl } from '@/services/readingService'
 import { exportToPDF } from '@/utils/pdfExport'
 import type {
   GradeHandoutResponse,
@@ -108,6 +109,16 @@ export function GradeHandout({ grade, edition, paperIds, onBack }: GradeHandoutP
     }
   }
 
+  const handleExportWord = () => {
+    const url = getGradeHandoutDocxExportUrl(grade, edition, paperIds)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 48 }}>
@@ -138,6 +149,9 @@ export function GradeHandout({ grade, edition, paperIds, onBack }: GradeHandoutP
             onClick={handleExport}
           >
             下载 PDF
+          </Button>
+          <Button icon={<FileWordOutlined />} onClick={handleExportWord}>
+            下载 Word
           </Button>
         </Space>
         <Tag color={edition === 'teacher' ? 'blue' : 'green'} style={{ fontSize: 14, padding: '4px 12px' }}>

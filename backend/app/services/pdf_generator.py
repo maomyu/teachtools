@@ -6,18 +6,73 @@ PDF 生成服务
 import subprocess
 import io
 import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
 
+from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+
+RESAMPLING_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
 
 
 class PDFGenerator:
     """PDF 生成服务"""
+
+    DEFAULT_WATERMARK_IMAGE = Path(__file__).resolve().parents[2] / "data" / "local" / "watermarks" / "handout_watermark.png"
+    LEGACY_WATERMARK_IMAGE = Path(__file__).resolve().parents[2] / "static" / "watermarks" / "handout_watermark.png"
+
+    @staticmethod
+    def _get_libreoffice_executable() -> str:
+        """返回可用的 LibreOffice 可执行文件路径。"""
+        candidates = []
+
+        for cmd_name in ("libreoffice", "soffice"):
+            resolved = shutil.which(cmd_name)
+            if resolved:
+                candidates.append(resolved)
+
+        caskroom_root = Path("/opt/homebrew/Caskroom/libreoffice")
+        if caskroom_root.exists():
+            for app_path in sorted(caskroom_root.glob("*/LibreOffice.app/Contents/MacOS/soffice"), reverse=True):
+                candidates.append(str(app_path))
+
+        candidates.extend([
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice.bin",
+        ])
+
+        checked = []
+        for candidate in candidates:
+            if candidate in checked:
+                continue
+            checked.append(candidate)
+
+            if not os.path.exists(candidate):
+                continue
+
+            try:
+                result = subprocess.run(
+                    [candidate, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    return candidate
+            except Exception:
+                continue
+
+        raise RuntimeError(
+            "LibreOffice 未正确安装或命令链接已损坏。"
+            " 当前检测到的 soffice 包装脚本不可用，请重新安装或重新链接 LibreOffice。"
+        )
 
     @staticmethod
     async def convert_docx_to_pdf(docx_path: str, output_dir: Optional[str] = None) -> str:
@@ -34,48 +89,30 @@ class PDFGenerator:
         if output_dir is None:
             output_dir = str(Path(docx_path).parent)
 
-        # LibreOffice 无头模式转换
-        # 尝试多个可能的命令名称
-        libreoffice_cmds = ['libreoffice', 'soffice']
-        last_error = None
+        libreoffice_exec = PDFGenerator._get_libreoffice_executable()
+        cmd = [
+            libreoffice_exec,
+            '--headless',
+            '--convert-to', 'pdf',
+            '--outdir', output_dir,
+            docx_path
+        ]
 
-        for cmd_name in libreoffice_cmds:
-            cmd = [
-                cmd_name,
-                '--headless',
-                '--convert-to', 'pdf',
-                '--outdir', output_dir,
-                docx_path
-            ]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2分钟超时
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("PDF 转换超时")
 
-            try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=120  # 2分钟超时
-                )
-
-                if result.returncode == 0:
-                    break  # 成功，退出循环
-                else:
-                    last_error = RuntimeError(f"PDF 转换失败 ({cmd_name}): {result.stderr}")
-
-            except FileNotFoundError:
-                last_error = FileNotFoundError(f"命令 {cmd_name} 未找到")
-                continue  # 尝试下一个命令
-            except subprocess.TimeoutExpired:
-                raise RuntimeError("PDF 转换超时")
-        else:
-            # 所有命令都失败了
-            if isinstance(last_error, FileNotFoundError):
-                raise RuntimeError(
-                    "LibreOffice 未安装。请安装: \n"
-                    "macOS: brew install libreoffice\n"
-                    "Ubuntu: apt-get install libreoffice-writer"
-                )
-            else:
-                raise last_error
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            stdout = (result.stdout or "").strip()
+            detail = stderr or stdout or "未知错误"
+            raise RuntimeError(f"PDF 转换失败 ({libreoffice_exec}): {detail}")
 
         # 返回 PDF 路径
         pdf_path = docx_path.replace('.docx', '.pdf')
@@ -90,17 +127,19 @@ class PDFGenerator:
         watermark_text: str = "学生版",
         output_path: Optional[str] = None,
         density: str = "medium",
-        size: str = "medium"
+        size: str = "medium",
+        watermark_image_path: Optional[str] = None,
     ) -> str:
         """
         添加水印到 PDF（水印在底层，不遮挡文字）
 
         Args:
             pdf_path: 原 PDF 路径
-            watermark_text: 水印文字
+            watermark_text: 兼容旧调用保留的文字参数，图片水印可用时会被忽略
             output_path: 输出路径（可选）
             density: 水印密度 (sparse/medium/dense)
             size: 水印大小 (small/medium/large)
+            watermark_image_path: 水印图片路径（可选，默认使用内置图片）
 
         Returns:
             带水印的 PDF 路径
@@ -109,7 +148,12 @@ class PDFGenerator:
             output_path = pdf_path.replace('.pdf', '_watermarked.pdf')
 
         # 创建水印 PDF
-        watermark_pdf_path = PDFGenerator._create_watermark_pdf(watermark_text, density, size)
+        watermark_pdf_path = PDFGenerator._create_watermark_pdf(
+            watermark_text,
+            density,
+            size,
+            watermark_image_path,
+        )
 
         try:
             # 合并水印到原 PDF（水印在底层）
@@ -141,10 +185,135 @@ class PDFGenerator:
     def _create_watermark_pdf(
         text: str,
         density: str = "medium",
-        size: str = "medium"
+        size: str = "medium",
+        watermark_image_path: Optional[str] = None,
+    ) -> str:
+        """创建水印 PDF 模板，优先使用图片水印。"""
+        image_path = PDFGenerator._resolve_watermark_image_path(watermark_image_path)
+        if image_path is not None:
+            return PDFGenerator._create_image_watermark_pdf(image_path, density, size)
+
+        return PDFGenerator._create_text_watermark_pdf(text, density, size)
+
+    @staticmethod
+    def _resolve_watermark_image_path(watermark_image_path: Optional[str] = None) -> Optional[Path]:
+        """解析可用的图片水印路径。"""
+        candidates = []
+        if watermark_image_path:
+            candidates.append(Path(watermark_image_path))
+        candidates.append(PDFGenerator.DEFAULT_WATERMARK_IMAGE)
+        candidates.append(PDFGenerator.LEGACY_WATERMARK_IMAGE)
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        return None
+
+    @staticmethod
+    def _create_temp_watermark_path() -> str:
+        """创建临时水印文件路径。"""
+        fd, watermark_path = tempfile.mkstemp(prefix="handout_watermark_", suffix=".pdf")
+        os.close(fd)
+        return watermark_path
+
+    @staticmethod
+    def _create_image_watermark_pdf(
+        image_path: Path,
+        density: str = "medium",
+        size: str = "medium",
     ) -> str:
         """
-        创建水印 PDF 模板
+        创建图片水印 PDF 模板。
+
+        这里会裁掉原图透明边缘，并整体降低透明度，避免深色 Logo 压住正文。
+        """
+        density_config = {
+            'sparse': {'x_count': 2, 'y_count': 4, 'x_gap': 120, 'y_gap': 120},
+            'medium': {'x_count': 3, 'y_count': 5, 'x_gap': 80, 'y_gap': 92},
+            'dense': {'x_count': 4, 'y_count': 6, 'x_gap': 55, 'y_gap': 74},
+        }
+
+        size_config = {
+            'small': 170,
+            'medium': 220,
+            'large': 270,
+        }
+
+        config = density_config.get(density, density_config['medium'])
+        image_width = size_config.get(size, size_config['medium'])
+        opacity = 0.11
+        watermark_path = PDFGenerator._create_temp_watermark_path()
+
+        with Image.open(image_path) as source:
+            processed = source.convert("RGBA")
+            alpha_bbox = processed.getchannel("A").getbbox()
+            if alpha_bbox:
+                processed = processed.crop(alpha_bbox)
+
+            if processed.width > 900:
+                scale = 900 / processed.width
+                processed = processed.resize(
+                    (int(processed.width * scale), int(processed.height * scale)),
+                    RESAMPLING_LANCZOS,
+                )
+
+            red, green, blue, alpha = processed.split()
+            alpha = alpha.point(lambda value: int(value * opacity))
+            processed = Image.merge("RGBA", (red, green, blue, alpha))
+            watermark_image = ImageReader(processed)
+
+            packet = io.BytesIO()
+            c = canvas.Canvas(packet, pagesize=A4)
+            width, height = A4
+
+            image_height = image_width * (processed.height / processed.width)
+            x_step = image_width + config['x_gap']
+            y_step = image_height + config['y_gap']
+
+            c.saveState()
+            c.translate(width / 2, height / 2)
+            c.rotate(28)
+
+            x_offset = (config['x_count'] - 1) / 2
+            y_offset = (config['y_count'] - 1) / 2
+
+            for i in range(config['x_count']):
+                for j in range(config['y_count']):
+                    x = (i - x_offset) * x_step - image_width / 2
+                    y = (j - y_offset) * y_step - image_height / 2
+                    c.drawImage(
+                        watermark_image,
+                        x,
+                        y,
+                        width=image_width,
+                        height=image_height,
+                        mask='auto',
+                    )
+
+            c.restoreState()
+            c.save()
+
+            packet.seek(0)
+            with open(watermark_path, 'wb') as f:
+                f.write(packet.read())
+
+        print(
+            "[PDFGenerator] 图片水印 PDF 已创建 "
+            f"(图片={image_path.name}, 密度={density}, 大小={size}): {watermark_path}"
+        )
+        return watermark_path
+
+    @staticmethod
+    def _create_text_watermark_pdf(
+        text: str,
+        density: str = "medium",
+        size: str = "medium",
+    ) -> str:
+        """
+        创建文字水印 PDF 模板。
+
+        仅作为图片资源缺失时的兜底方案保留。
 
         Args:
             text: 水印文字
@@ -171,7 +340,7 @@ class PDFGenerator:
         config = density_config.get(density, density_config['medium'])
         font_size = size_config.get(size, size_config['medium'])
 
-        watermark_path = '/tmp/handout_watermark.pdf'
+        watermark_path = PDFGenerator._create_temp_watermark_path()
 
         packet = io.BytesIO()
         c = canvas.Canvas(packet, pagesize=A4)
@@ -246,19 +415,12 @@ class PDFGenerator:
     def check_libreoffice() -> bool:
         """检查 LibreOffice 是否可用"""
         try:
+            exec_path = PDFGenerator._get_libreoffice_executable()
             result = subprocess.run(
-                ['libreoffice', '--version'],
+                [exec_path, '--version'],
                 capture_output=True,
                 text=True
             )
             return result.returncode == 0
-        except FileNotFoundError:
-            try:
-                result = subprocess.run(
-                    ['soffice', '--version'],
-                    capture_output=True,
-                    text=True
-                )
-                return result.returncode == 0
-            except FileNotFoundError:
-                return False
+        except Exception:
+            return False

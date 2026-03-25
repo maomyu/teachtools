@@ -6,7 +6,9 @@
 [POS]: backend/app/api 的作文路由
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
+from io import BytesIO
 from typing import List, Optional
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +32,7 @@ from app.schemas.writing import (
     WritingHandoutDetailResponse,
     WritingGradeHandoutResponse,
 )
+from app.services.handout_docx_exporter import HandoutDocxExporter
 from app.services.writing_service import WritingService
 
 router = APIRouter()
@@ -190,12 +193,42 @@ async def get_writing_handout(
         grade: 年级
         edition: teacher/student
     """
-    service = WritingService(db)
+    return await _build_writing_grade_handout_payload(db, grade, edition, paper_ids)
 
-    # 获取话题统计
+
+@router.get("/handouts/{grade}/export/docx")
+async def export_writing_grade_handout_docx(
+    grade: str,
+    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    paper_ids: Optional[List[int]] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """导出某年级作文讲义 Word 版本。"""
+    payload = await _build_writing_grade_handout_payload(db, grade, edition, paper_ids)
+    exporter = HandoutDocxExporter()
+    file_bytes = exporter.build_writing_grade_docx(payload.model_dump(), paper_ids=paper_ids)
+    filename = exporter.build_filename(f"{grade}作文讲义", edition, paper_ids)
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        BytesIO(file_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        }
+    )
+
+
+async def _build_writing_grade_handout_payload(
+    db: AsyncSession,
+    grade: str,
+    edition: str,
+    paper_ids: Optional[List[int]] = None
+) -> WritingGradeHandoutResponse:
+    """构建年级作文讲义的统一数据结构。"""
+    service = WritingService(db)
     topics = await service.get_topic_stats_for_grade(grade, paper_ids=paper_ids)
 
-    # 获取每个话题的讲义内容
     content = []
     for topic_info in topics:
         topic_content = await service.get_topic_handout_content(

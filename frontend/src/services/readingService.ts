@@ -137,3 +137,13 @@ export async function getGradeHandout(
   )
   return response.data
 }
+
+export function getGradeHandoutDocxExportUrl(
+  grade: string,
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
+): string {
+  const params = buildHandoutParams(edition, paperIds)
+  const query = params ? `?${params.toString()}` : ''
+  return `/api/passages/handouts/${grade}/export/docx${query}`
+}

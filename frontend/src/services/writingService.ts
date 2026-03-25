@@ -228,3 +228,13 @@ export async function getWritingHandoutDetail(
   )
   return response.data
 }
+
+export function getWritingHandoutDocxExportUrl(
+  grade: string,
+  edition: 'teacher' | 'student' = 'teacher',
+  paperIds?: number[]
+): string {
+  const params = buildHandoutParams(edition, paperIds)
+  const query = params ? `?${params.toString()}` : ''
+  return `/api/writings/handouts/${grade}/export/docx${query}`
+}

@@ -44,7 +44,7 @@ from app.models.reading import ReadingPassage, Question
 from app.models.vocabulary import Vocabulary, VocabularyPassage
 from app.models.cloze import ClozePassage, ClozePoint, ClozeSecondaryPoint, ClozeRejectionPoint
 from app.models.vocabulary_cloze import VocabularyCloze
-from app.models.writing import WritingTask
+from app.models.writing import WritingTask, WritingSample
 from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse
 from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser, WritingExtractResult
@@ -56,6 +56,39 @@ from app.services.image_extractor import ImageExtractor
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def normalize_paper_filename(filename: str) -> str:
+    """标准化试卷文件名，兼容历史导入前缀与空白差异。"""
+    normalized = os.path.basename(filename).strip()
+    if normalized.startswith("区校试卷_"):
+        parts = normalized.split("_", 4)
+        if len(parts) == 5 and parts[4]:
+            normalized = parts[4]
+
+    normalized = normalized.replace("（", "(").replace("）", ")")
+    return re.sub(r"\s+", "", normalized)
+
+
+async def find_existing_paper_by_filename(
+    db: AsyncSession,
+    filename: str
+) -> Optional[ExamPaper]:
+    """按原始文件名或标准化文件名查找已存在试卷。"""
+    result = await db.execute(
+        select(ExamPaper).where(ExamPaper.filename == filename)
+    )
+    paper = result.scalar_one_or_none()
+    if paper:
+        return paper
+
+    normalized_filename = normalize_paper_filename(filename)
+    result = await db.execute(select(ExamPaper))
+    for candidate in result.scalars():
+        if normalize_paper_filename(candidate.filename) == normalized_filename:
+            return candidate
+
+    return None
 
 
 # ============================================================================
@@ -319,10 +352,7 @@ async def upload_paper_with_progress(
             # 创建数据库会话
             async with async_session_factory() as db:
                 # 检查是否已存在
-                result = await db.execute(
-                    select(ExamPaper).where(ExamPaper.filename == file.filename)
-                )
-                existing_paper = result.scalar_one_or_none()
+                existing_paper = await find_existing_paper_by_filename(db, file.filename)
 
                 if existing_paper:
                     if not force:
@@ -385,7 +415,19 @@ async def upload_paper_with_progress(
                     await db.execute(
                         delete(ClozePassage).where(ClozePassage.paper_id == existing_paper.id)
                     )
-                    # 4. 删除试卷
+                    # 4. 删除作文题与范文
+                    writing_task_ids = await db.execute(
+                        select(WritingTask.id).where(WritingTask.paper_id == existing_paper.id)
+                    )
+                    writing_task_id_list = [w[0] for w in writing_task_ids.all()]
+                    if writing_task_id_list:
+                        await db.execute(
+                            delete(WritingSample).where(WritingSample.task_id.in_(writing_task_id_list))
+                        )
+                        await db.execute(
+                            delete(WritingTask).where(WritingTask.id.in_(writing_task_id_list))
+                        )
+                    # 5. 删除试卷
                     await db.delete(existing_paper)
                     await db.flush()
 
@@ -1193,6 +1235,17 @@ async def delete_paper(paper_id: int, db: AsyncSession = Depends(get_db)):
     )
     cloze_id_list = [c[0] for c in cloze_ids.all()]
     if cloze_id_list:
+        cloze_point_ids = await db.execute(
+            select(ClozePoint.id).where(ClozePoint.cloze_id.in_(cloze_id_list))
+        )
+        cloze_point_id_list = [p[0] for p in cloze_point_ids.all()]
+        if cloze_point_id_list:
+            await db.execute(
+                delete(ClozeSecondaryPoint).where(ClozeSecondaryPoint.cloze_point_id.in_(cloze_point_id_list))
+            )
+            await db.execute(
+                delete(ClozeRejectionPoint).where(ClozeRejectionPoint.cloze_point_id.in_(cloze_point_id_list))
+            )
         await db.execute(
             delete(VocabularyCloze).where(VocabularyCloze.cloze_id.in_(cloze_id_list))
         )
@@ -1200,7 +1253,20 @@ async def delete_paper(paper_id: int, db: AsyncSession = Depends(get_db)):
             delete(ClozePoint).where(ClozePoint.cloze_id.in_(cloze_id_list))
         )
 
-    # 3. 删除文章和完形
+    # 3. 删除作文题与范文
+    writing_task_ids = await db.execute(
+        select(WritingTask.id).where(WritingTask.paper_id == paper_id)
+    )
+    writing_task_id_list = [w[0] for w in writing_task_ids.all()]
+    if writing_task_id_list:
+        await db.execute(
+            delete(WritingSample).where(WritingSample.task_id.in_(writing_task_id_list))
+        )
+        await db.execute(
+            delete(WritingTask).where(WritingTask.id.in_(writing_task_id_list))
+        )
+
+    # 4. 删除文章和完形
     await db.execute(
         delete(ReadingPassage).where(ReadingPassage.paper_id == paper_id)
     )
@@ -1208,7 +1274,7 @@ async def delete_paper(paper_id: int, db: AsyncSession = Depends(get_db)):
         delete(ClozePassage).where(ClozePassage.paper_id == paper_id)
     )
 
-    # 4. 删除试卷
+    # 5. 删除试卷
     await db.delete(paper)
     await db.commit()
 

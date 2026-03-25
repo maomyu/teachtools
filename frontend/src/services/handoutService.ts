@@ -47,18 +47,24 @@ export async function uploadHandout(file: File): Promise<UploadResponse> {
  */
 export function getProcessEventSourceUrl(
   taskId: string,
-  watermarkText: string = '学生版',
   watermarkDensity: 'sparse' | 'medium' | 'dense' = 'medium',
   watermarkSize: 'small' | 'medium' | 'large' = 'medium'
 ): string {
   const baseURL = import.meta.env.VITE_API_BASE_URL || ''
   const params = new URLSearchParams({
     task_id: taskId,
-    watermark_text: watermarkText,
     watermark_density: watermarkDensity,
     watermark_size: watermarkSize,
   })
   return `${baseURL}/api/handout/process?${params.toString()}`
+}
+
+/**
+ * 获取固定图片水印预览 URL
+ */
+export function getWatermarkPreviewUrl(): string {
+  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+  return `${baseURL}/api/handout/watermark-image`
 }
 
 /**

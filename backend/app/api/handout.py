@@ -24,6 +24,22 @@ router = APIRouter()
 task_status: dict = {}
 
 
+@router.get("/watermark-image")
+async def get_handout_watermark_image():
+    """获取讲义图片水印预览。"""
+    converter = HandoutConverter()
+    image_path = converter.watermark_image_path
+
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="水印图片不存在")
+
+    return FileResponse(
+        image_path,
+        media_type="image/png",
+        filename=image_path.name,
+    )
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_handout(file: UploadFile = File(...)):
     """
@@ -77,7 +93,7 @@ async def process_handout(
 
     Args:
         task_id: 任务 ID
-        watermark_text: 水印文字
+        watermark_text: 兼容旧调用保留的文字参数，图片水印启用时会被忽略
         watermark_density: 水印密度 (sparse/medium/dense)
         watermark_size: 水印大小 (small/medium/large)
 

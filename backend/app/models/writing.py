@@ -60,7 +60,7 @@ class WritingTask(Base):
     # ─────────────────────────────────────────────────────────────────────────
     #                              关系
     # ─────────────────────────────────────────────────────────────────────────
-    paper = relationship("ExamPaper")
+    paper = relationship("ExamPaper", back_populates="writing_tasks")
     samples = relationship("WritingSample", back_populates="task", cascade="all, delete-orphan")
 
     __table_args__ = (

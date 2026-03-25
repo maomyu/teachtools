@@ -20,10 +20,30 @@ class HandoutConverter:
     def __init__(self):
         self.docx_processor = DocxProcessor()
         self.pdf_generator = PDFGenerator()
+        self.local_watermark_dir = settings.BASE_DIR / 'data' / 'local' / 'watermarks'
+        self.local_watermark_dir.mkdir(parents=True, exist_ok=True)
+        self.watermark_image_path = self.local_watermark_dir / 'handout_watermark.png'
+        self._ensure_local_watermark_image()
 
         # 临时文件目录
         self.temp_dir = Path(settings.BASE_DIR) / 'data' / 'temp' / 'handout'
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ensure_local_watermark_image(self) -> None:
+        """确保图片水印存在于本地目录。"""
+        if self.watermark_image_path.exists():
+            return
+
+        fallback_paths = [
+            settings.BASE_DIR / 'static' / 'watermarks' / 'handout_watermark.png',
+            PDFGenerator.DEFAULT_WATERMARK_IMAGE,
+        ]
+
+        for fallback_path in fallback_paths:
+            if fallback_path.exists():
+                shutil.copy2(fallback_path, self.watermark_image_path)
+                print(f"[HandoutConverter] 已复制本地水印图片: {self.watermark_image_path}")
+                return
 
     async def convert(
         self,
@@ -36,7 +56,7 @@ class HandoutConverter:
 
         Args:
             file_path: 原始 DOCX 文件路径
-            watermark_text: 水印文字
+            watermark_text: 兼容旧调用保留的文字参数，图片水印可用时会被忽略
             progress_callback: 进度回调函数 (progress: int, message: str)
 
         Returns:
@@ -63,7 +83,7 @@ class HandoutConverter:
 
         Args:
             file_path: 原文件路径
-            watermark_text: 水印文字
+            watermark_text: 兼容旧调用保留的文字参数，图片水印可用时会被忽略
             progress_callback: 进度回调
             watermark_density: 水印密度 (sparse/medium/dense)
             watermark_size: 水印大小 (small/medium/large)
@@ -120,13 +140,17 @@ class HandoutConverter:
         if progress_callback:
             await progress_callback(85, "正在添加水印...")
 
-        print(f"[HandoutConverter] 添加水印 (密度={watermark_density}, 大小={watermark_size})...")
+        print(
+            "[HandoutConverter] 添加图片水印 "
+            f"(密度={watermark_density}, 大小={watermark_size}, 图片={self.watermark_image_path})..."
+        )
         final_pdf = self.pdf_generator.add_watermark(
             pdf_path,
             watermark_text,
             str(self.temp_dir / f"{task_id}_final.pdf"),
             watermark_density,
-            watermark_size
+            watermark_size,
+            str(self.watermark_image_path),
         )
         print(f"[HandoutConverter] 最终 PDF: {final_pdf}")
 
