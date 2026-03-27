@@ -5,13 +5,12 @@
 """
 import os
 import json
-import httpx
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from pathlib import Path
 from docx import Document
 
 from app.config import settings
+from app.services.dashscope_runtime import async_chat_completion, async_upload_file
 
 
 @dataclass
@@ -311,30 +310,16 @@ class LLMDocumentParser:
 
     async def _call_chat_completion(self, messages: List[Dict[str, str]], max_tokens: int) -> str:
         """统一调用 DashScope 聊天补全接口。"""
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-
-            payload = {
-                "model": "qwen-long",
-                "messages": messages,
-                "temperature": 0.1,
-                "max_tokens": max_tokens
-            }
-
-            response = await client.post(
-                self.API_URL,
-                headers=headers,
-                json=payload
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"API调用失败: {response.status_code} - {response.text}")
-
-            result = response.json()
-            return result['choices'][0]['message']['content']
+        result = await async_chat_completion(
+            api_key=self.api_key,
+            model="qwen-long",
+            messages=messages,
+            operation="llm_parser.chat_completion",
+            temperature=0.1,
+            max_tokens=max_tokens,
+            timeout_seconds=120.0,
+        )
+        return result['choices'][0]['message']['content']
 
     async def upload_file(self, file_path: str) -> str:
         """
@@ -346,24 +331,14 @@ class LLMDocumentParser:
         Returns:
             fileid: 文件ID
         """
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            with open(file_path, 'rb') as f:
-                files = {'file': (Path(file_path).name, f, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
-                data = {'purpose': 'file-extract'}  # 必须指定purpose (file-extract或batch)
-                headers = {'Authorization': f'Bearer {self.api_key}'}
-
-                response = await client.post(
-                    self.UPLOAD_URL,
-                    headers=headers,
-                    files=files,
-                    data=data
-                )
-
-            if response.status_code != 200:
-                raise Exception(f"上传文件失败: {response.text}")
-
-            result = response.json()
-            return result['id']
+        result = await async_upload_file(
+            api_key=self.api_key,
+            file_path=file_path,
+            purpose="file-extract",
+            operation="llm_parser.upload_file",
+            timeout_seconds=120.0,
+        )
+        return result['id']
 
     async def parse_document(self, file_path: str, use_fileid: bool = True) -> LLMParseResult:
         """
@@ -398,20 +373,8 @@ class LLMDocumentParser:
     def _parse_llm_response(self, content: str) -> LLMParseResult:
         """解析LLM返回的JSON内容"""
         try:
-            # 尝试提取JSON部分
-            json_str = content
-
-            # 如果有markdown代码块，提取其中的JSON
-            if '```json' in content:
-                start = content.find('```json') + 7
-                end = content.find('```', start)
-                json_str = content[start:end].strip()
-            elif '```' in content:
-                start = content.find('```') + 3
-                end = content.find('```', start)
-                json_str = content[start:end].strip()
-
-            data = json.loads(json_str)
+            json_str = self._extract_json_payload(content)
+            data = self._load_json_payload(json_str)
 
             return LLMParseResult(
                 success=True,
@@ -427,6 +390,83 @@ class LLMDocumentParser:
                 error=f"JSON解析失败: {str(e)}",
                 raw_response=content
             )
+
+    def _extract_json_payload(self, content: str) -> str:
+        """从模型返回内容中提取 JSON 主体。"""
+        json_str = content.strip()
+
+        if '```json' in content:
+            start = content.find('```json') + 7
+            end = content.find('```', start)
+            json_str = content[start:end].strip()
+        elif '```' in content:
+            start = content.find('```') + 3
+            end = content.find('```', start)
+            json_str = content[start:end].strip()
+
+        return json_str.lstrip("\ufeff")
+
+    def _sanitize_json_string(self, json_str: str) -> str:
+        """
+        修复模型常见的脏 JSON：
+        - 字符串中的裸换行/回车/制表符
+        - 其他未转义控制字符
+        """
+        chars: List[str] = []
+        in_string = False
+        escaped = False
+
+        for ch in json_str:
+            if in_string:
+                if escaped:
+                    chars.append(ch)
+                    escaped = False
+                    continue
+
+                if ch == "\\":
+                    chars.append(ch)
+                    escaped = True
+                    continue
+
+                if ch == '"':
+                    chars.append(ch)
+                    in_string = False
+                    continue
+
+                if ch == "\n":
+                    chars.append("\\n")
+                    continue
+                if ch == "\r":
+                    chars.append("\\r")
+                    continue
+                if ch == "\t":
+                    chars.append("\\t")
+                    continue
+                if ord(ch) < 0x20:
+                    chars.append(f"\\u{ord(ch):04x}")
+                    continue
+
+                chars.append(ch)
+                continue
+
+            chars.append(ch)
+            if ch == '"':
+                in_string = True
+
+        return "".join(chars)
+
+    def _load_json_payload(self, json_str: str) -> Dict:
+        """优先直解，失败后做一次轻量 JSON 修复。"""
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as original_error:
+            sanitized = self._sanitize_json_string(json_str)
+            if sanitized != json_str:
+                try:
+                    return json.loads(sanitized)
+                except json.JSONDecodeError:
+                    pass
+            raise original_error
 
     async def parse_document_with_fileid(self, fileid: str, file_path: Optional[str] = None) -> LLMParseResult:
         """
@@ -499,18 +539,8 @@ class LLMDocumentParser:
     def _parse_writing_response(self, content: str) -> "WritingExtractResult":
         """解析作文提取响应"""
         try:
-            # 提取 JSON
-            json_str = content
-            if '```json' in content:
-                start = content.find('```json') + 7
-                end = content.find('```', start)
-                json_str = content[start:end].strip()
-            elif '```' in content:
-                start = content.find('```') + 3
-                end = content.find('```', start)
-                json_str = content[start:end].strip()
-
-            data = json.loads(json_str)
+            json_str = self._extract_json_payload(content)
+            data = self._load_json_payload(json_str)
 
             # 验证是否找到作文
             if not data.get('found', True):

@@ -541,7 +541,11 @@ I am writing to share my admiration for...
 
         for attempt in range(MAX_RETRIES):
             # 调用 AI 生成
-            result_text = self.ai_service.chat(prompt)
+            result_text = await self.ai_service.chat_async(
+                prompt,
+                system_prompt="你是北京中考英语写作教学专家。",
+                operation="writing_service.generate_sample",
+            )
 
             if not result_text:
                 raise ValueError("AI 生成范文失败：返回内容为空")
@@ -578,7 +582,11 @@ I am writing to share my admiration for...
             translation_prompt = f"""请将以下英文范文翻译成中文，保持段落对应，语言通顺自然：
 
 {english_essay}"""
-            chinese_translation = self.ai_service.chat(translation_prompt)
+            chinese_translation = await self.ai_service.chat_async(
+                translation_prompt,
+                system_prompt="你是专业英汉翻译，要求忠实、自然、通顺。",
+                operation="writing_service.translate_sample",
+            )
             if chinese_translation:
                 logger.info(f"翻译生成成功: {len(chinese_translation)} 字符")
 
@@ -680,7 +688,7 @@ I am writing to share my admiration for...
             return template
 
         # 生成新模板（增强版，包含句型库、词汇表等）
-        template_data = self.ai_service.generate_writing_template(writing_type, application_type)
+        template_data = await self.ai_service.generate_writing_template_async(writing_type, application_type)
 
         template = WritingTemplate(
             writing_type=writing_type,

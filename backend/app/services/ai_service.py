@@ -6,10 +6,9 @@
 import json
 import re
 from typing import Dict, List, Optional
-import dashscope
-from dashscope import Generation
 
 from app.config import settings
+from app.services.dashscope_runtime import async_chat_completion, sync_generation_call
 
 
 # 话题列表配置
@@ -38,8 +37,40 @@ class QwenService:
         if not self.api_key:
             raise ValueError("请配置DASHSCOPE_API_KEY")
 
-        dashscope.api_key = self.api_key
         self.model = "qwen-turbo"  # 可选: qwen-plus, qwen-max
+
+    def _call_generation_text(self, prompt: str, operation: str) -> str:
+        response = sync_generation_call(
+            api_key=self.api_key,
+            model=self.model,
+            prompt=prompt,
+            result_format='message',
+            operation=operation,
+        )
+        return response.output.choices[0].message.content
+
+    async def chat_async(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str = "You are a helpful assistant.",
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        operation: str = "qwen_service.chat_async",
+    ) -> str:
+        result = await async_chat_completion(
+            api_key=self.api_key,
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            operation=operation,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_seconds=120.0,
+        )
+        return result["choices"][0]["message"]["content"]
 
     def classify_topic(
         self,
@@ -91,32 +122,21 @@ class QwenService:
 """
 
         try:
-            response = Generation.call(
-                model=self.model,
-                prompt=prompt,
-                result_format='message'
+            result_text = self._call_generation_text(
+                prompt,
+                "qwen_service.classify_topic",
             )
-
-            if response.status_code == 200:
-                result_text = response.output.choices[0].message.content
-                # 提取JSON
-                json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-                if json_match:
-                    return json.loads(json_match.group())
-                else:
-                    return {
-                        "primary_topic": None,
-                        "secondary_topics": [],
-                        "confidence": 0.0,
-                        "error": "无法解析AI响应"
-                    }
-
-            return {
-                "primary_topic": None,
-                "secondary_topics": [],
-                "confidence": 0.0,
-                "error": f"AI调用失败: {response.message}"
-            }
+            # 提取JSON
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
+            else:
+                return {
+                    "primary_topic": None,
+                    "secondary_topics": [],
+                    "confidence": 0.0,
+                    "error": "无法解析AI响应"
+                }
 
         except Exception as e:
             return {
@@ -170,43 +190,26 @@ class QwenService:
 """
 
         try:
-            response = Generation.call(
-                model=self.model,
-                prompt=prompt,
-                result_format='message'
+            result_text = self._call_generation_text(
+                prompt,
+                "qwen_service.extract_cloze_points",
             )
-
-            if response.status_code == 200:
-                result_text = response.output.choices[0].message.content
-                json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
-                if json_match:
-                    return json.loads(json_match.group())
-                return []
-
+            json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
             return []
 
         except Exception as e:
             print(f"完形考点分析失败: {e}")
             return []
 
-    def generate_writing_template(
+    def _build_writing_template_prompt(
         self,
         writing_type: str,
-        application_type: Optional[str] = None
-    ) -> Dict:
-        """
-        生成作文模板（方法论驱动版 v3）
-
-        Args:
-            writing_type: 文体类型（应用文/记叙文）
-            application_type: 应用文子类型（书信/通知/邀请等）
-
-        Returns:
-            模板内容（包含句型库、词汇表等）
-        """
+        application_type: Optional[str] = None,
+    ) -> str:
         application_hint = f"\n应用文子类型：{application_type}" if application_type else ""
-
-        prompt = f"""你是北京中考英语写作教学专家。请为以下文体生成专业模板。
+        return f"""你是北京中考英语写作教学专家。请为以下文体生成专业模板。
 
 ## 文体类型
 文体：{writing_type}{application_hint}
@@ -403,33 +406,63 @@ class QwenService:
 
 请直接输出 JSON，不要有其他解释。"""
 
-        try:
-            response = Generation.call(
-                model=self.model,
-                prompt=prompt,
-                result_format='message'
-            )
-
-            if response.status_code == 200:
-                result_text = response.output.choices[0].message.content
-                json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group())
-                    # 将数组字段转为 JSON 字符串存储
-                    for key in ['opening_sentences', 'closing_sentences', 'transition_words',
-                                'advanced_vocabulary', 'grammar_points', 'scoring_criteria']:
-                        if key in result and isinstance(result[key], (list, dict)):
-                            result[key] = json.dumps(result[key], ensure_ascii=False)
-                    return result
-                return {}
-
+    def _parse_template_result(self, result_text: str) -> Dict:
+        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+        if not json_match:
             return {}
+        result = json.loads(json_match.group())
+        for key in ['opening_sentences', 'closing_sentences', 'transition_words',
+                    'advanced_vocabulary', 'grammar_points', 'scoring_criteria']:
+            if key in result and isinstance(result[key], (list, dict)):
+                result[key] = json.dumps(result[key], ensure_ascii=False)
+        return result
+
+    def generate_writing_template(
+        self,
+        writing_type: str,
+        application_type: Optional[str] = None
+    ) -> Dict:
+        """
+        生成作文模板（方法论驱动版 v3）
+
+        Args:
+            writing_type: 文体类型（应用文/记叙文）
+            application_type: 应用文子类型（书信/通知/邀请等）
+
+        Returns:
+            模板内容（包含句型库、词汇表等）
+        """
+        prompt = self._build_writing_template_prompt(writing_type, application_type)
+
+        try:
+            result_text = self._call_generation_text(
+                prompt,
+                "qwen_service.generate_writing_template",
+            )
+            return self._parse_template_result(result_text)
 
         except Exception as e:
             print(f"作文模板生成失败: {e}")
             return {}
 
-    def generate_answer_explanation(
+    async def generate_writing_template_async(
+        self,
+        writing_type: str,
+        application_type: Optional[str] = None,
+    ) -> Dict:
+        prompt = self._build_writing_template_prompt(writing_type, application_type)
+        try:
+            result_text = await self.chat_async(
+                prompt,
+                system_prompt="你是北京中考英语写作教学专家。",
+                operation="qwen_service.generate_writing_template_async",
+            )
+            return self._parse_template_result(result_text)
+        except Exception as e:
+            print(f"作文模板生成失败: {e}")
+            return {}
+
+    def _build_answer_explanation_prompt(
         self,
         question_text: str,
         options: Dict[str, str],
@@ -437,19 +470,6 @@ class QwenService:
         passage_content: str = "",
         existing_explanation: str = "",
     ) -> str:
-        """
-        生成或优化阅读理解答案解析
-
-        Args:
-            question_text: 题目内容
-            options: 选项 {"A": "...", "B": "...", "C": "...", "D": "..."}
-            correct_answer: 正确答案 (A/B/C/D)
-            passage_content: 文章内容（可选，用于上下文）
-            existing_explanation: 原题已有答案/解析（可选）
-
-        Returns:
-            答案解析文本
-        """
         # 格式化选项
         options_text = "\n".join([
             f"{key}. {value}"
@@ -469,7 +489,7 @@ class QwenService:
         explanation_preview = existing_explanation.strip() or "无"
 
         if not correct_answer.strip():
-            prompt = f"""你是一位经验丰富的初中英语老师。请根据以下英语阅读开放题，输出一版适合教师版使用的最终参考答案。
+            return f"""你是一位经验丰富的初中英语老师。请根据以下英语阅读开放题，输出一版适合教师版使用的最终参考答案。
 
 {passage_preview}
 题目：{question_text}
@@ -486,8 +506,7 @@ class QwenService:
 参考翻译（中文）：...
 5. 如有必要，可在末尾补一句“作答说明：...”，但整体保持简洁。
 6. 直接输出最终内容，不要额外标题。"""
-        else:
-            prompt = f"""你是一位经验丰富的初中英语老师。请根据以下阅读理解题目，输出一版更清晰、更完整、更适合教学使用的最终答案说明。
+        return f"""你是一位经验丰富的初中英语老师。请根据以下阅读理解题目，输出一版更清晰、更完整、更适合教学使用的最终答案说明。
 
 {passage_preview}
 题目：{question_text}
@@ -508,17 +527,53 @@ class QwenService:
 5. 如果这是一道图片选项题，请基于题干、文章结构、上下文和正确答案标签输出“参考解析”，不要假装看到了图片细节。
 6. 输出 60-140 字中文，直接输出最终内容，不要标题。"""
 
+    def generate_answer_explanation(
+        self,
+        question_text: str,
+        options: Dict[str, str],
+        correct_answer: str,
+        passage_content: str = "",
+        existing_explanation: str = "",
+    ) -> str:
+        prompt = self._build_answer_explanation_prompt(
+            question_text=question_text,
+            options=options,
+            correct_answer=correct_answer,
+            passage_content=passage_content,
+            existing_explanation=existing_explanation,
+        )
         try:
-            response = Generation.call(
-                model=self.model,
-                prompt=prompt,
-                result_format='message'
-            )
-
-            if response.status_code == 200:
-                return response.output.choices[0].message.content.strip()
+            return self._call_generation_text(
+                prompt,
+                "qwen_service.generate_answer_explanation",
+            ).strip()
+        except Exception as e:
+            print(f"答案解析生成失败: {e}")
             return ""
 
+    async def generate_answer_explanation_async(
+        self,
+        question_text: str,
+        options: Dict[str, str],
+        correct_answer: str,
+        passage_content: str = "",
+        existing_explanation: str = "",
+    ) -> str:
+        prompt = self._build_answer_explanation_prompt(
+            question_text=question_text,
+            options=options,
+            correct_answer=correct_answer,
+            passage_content=passage_content,
+            existing_explanation=existing_explanation,
+        )
+        try:
+            return (
+                await self.chat_async(
+                    prompt,
+                    system_prompt="你是一位经验丰富的初中英语老师。",
+                    operation="qwen_service.generate_answer_explanation_async",
+                )
+            ).strip()
         except Exception as e:
             print(f"答案解析生成失败: {e}")
             return ""
@@ -534,16 +589,10 @@ class QwenService:
             AI回复的文本内容
         """
         try:
-            response = Generation.call(
-                model=self.model,
-                prompt=prompt,
-                result_format='message'
+            return self._call_generation_text(
+                prompt,
+                "qwen_service.chat",
             )
-
-            if response.status_code == 200:
-                return response.output.choices[0].message.content
-            return ""
-
         except Exception as e:
             print(f"AI chat调用失败: {e}")
             return ""

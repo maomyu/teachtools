@@ -9,6 +9,7 @@ import json
 import asyncio
 import logging
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, async_session_factory
+from app.config import settings
 from app.services.text_utils import normalize_cloze_blanks, align_blank_numbers_with_content
 
 
@@ -39,6 +41,93 @@ def strip_image_tokens(text: str) -> str:
     return re.sub(r"\s*\[IMAGE(?::[^\]]+)?\]", "", text).strip()
 
 
+def has_non_empty_options(options: Dict[str, Any] | None) -> bool:
+    """判断题目选项里是否存在有效文本或图片占位。"""
+    if not options:
+        return False
+    for key in ("A", "B", "C", "D"):
+        value = options.get(key)
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if value:
+            return True
+    return False
+
+
+def count_non_empty_options(options: Dict[str, Any] | None) -> int:
+    """统计非空选项数量。"""
+    if not options:
+        return 0
+    count = 0
+    for key in ("A", "B", "C", "D"):
+        value = options.get(key)
+        if not isinstance(value, str):
+            continue
+        if value.strip():
+            count += 1
+    return count
+
+
+def count_text_options(options: Dict[str, Any] | None) -> int:
+    """统计包含真实文本而非纯图片占位的选项数量。"""
+    if not options:
+        return 0
+    count = 0
+    for key in ("A", "B", "C", "D"):
+        value = options.get(key)
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value:
+            continue
+        if re.fullmatch(r"\[IMAGE(?::[^\]]+)?\]", value):
+            continue
+        count += 1
+    return count
+
+
+def looks_like_open_ended_question(question_text: str) -> bool:
+    """基于题干语气粗略识别开放题。"""
+    normalized = strip_image_tokens(question_text or "").strip()
+    if not normalized:
+        return False
+    return bool(
+        re.match(
+            r"(?i)^(what|why|how|when|where|who|whom|whose|which|is|are|was|were|do|does|did|can|could|would|will|should|please)\b",
+            normalized,
+        )
+    )
+
+
+def infer_question_type_from_payload(question_data: Dict[str, Any]) -> str:
+    """根据解析结果推断题型。"""
+    options = question_data.get("options", {})
+    correct_answer = (question_data.get("correct_answer") or "").strip().upper()
+    option_count = count_non_empty_options(options)
+    text_option_count = count_text_options(options)
+    question_text = question_data.get("question_text", "")
+
+    if question_data.get("is_open_ended"):
+        return "open_ended"
+
+    if (
+        looks_like_open_ended_question(question_text)
+        and text_option_count == 0
+        and (correct_answer not in {"A", "B", "C", "D"} or option_count < 2)
+    ):
+        return "open_ended"
+
+    if (
+        not question_data.get("has_image_options")
+        and option_count == 0
+        and correct_answer not in {"A", "B", "C", "D"}
+    ):
+        return "open_ended"
+
+    return "multiple_choice"
+
+
 from app.models.paper import ExamPaper
 from app.models.reading import ReadingPassage, Question
 from app.models.vocabulary import Vocabulary, VocabularyPassage
@@ -56,6 +145,19 @@ from app.services.image_extractor import ImageExtractor
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+SQLITE_WRITE_LOCK: asyncio.Lock | None = (
+    asyncio.Lock() if settings.DATABASE_URL.startswith("sqlite") else None
+)
+
+
+@asynccontextmanager
+async def sqlite_write_section():
+    if SQLITE_WRITE_LOCK is None:
+        yield
+        return
+
+    async with SQLITE_WRITE_LOCK:
+        yield
 
 
 def normalize_paper_filename(filename: str) -> str:
@@ -170,6 +272,7 @@ def validate_llm_result_options(llm_result) -> tuple[bool, list]:
 
 # AI解析最大重试次数
 MAX_AI_RETRIES = 3
+CLOZE_ANALYSIS_CONCURRENCY = 6
 
 
 # ============================================================================
@@ -284,6 +387,13 @@ class ProgressReporter:
         """获取当前运行的步骤"""
         for step in self.steps.values():
             if step.status == StepStatus.RUNNING:
+                return step.id
+        return None
+
+    def _get_next_pending_step(self) -> Optional[str]:
+        """获取第一个待执行步骤，用于在步骤切换间隙标记异常。"""
+        for step in self.steps.values():
+            if step.status == StepStatus.PENDING:
                 return step.id
         return None
 
@@ -501,14 +611,18 @@ async def upload_paper_with_progress(
                         except Exception as image_error:
                             logger.warning(f"图片提取失败（不影响导入）: {image_error}")
 
-                        # 验证选项是否有效
+                        # 选项校验只作为告警，不再阻断整份试卷导入。
+                        # 部分试卷的阅读题是图片选项或老格式，LLM 很容易返回空选项；
+                        # 这类情况后续仍然可以正常保存文章、完形和作文内容。
                         is_valid, errors = validate_llm_result_options(llm_result)
                         if not is_valid:
                             last_error = "; ".join(errors)
-                            logger.warning(f"选项验证失败 (尝试 {retry_attempt + 1}/{MAX_AI_RETRIES}): {last_error}")
-                            continue
+                            logger.warning(
+                                f"选项验证失败 (尝试 {retry_attempt + 1}/{MAX_AI_RETRIES})，"
+                                f"将按空选项继续导入: {last_error}"
+                            )
 
-                        # 解析成功且选项有效
+                        # 解析成功，进入后续保存流程
                         break
 
                     # 检查最终结果
@@ -592,6 +706,7 @@ async def upload_paper_with_progress(
                         passage.has_questions = True
                         for q_data in questions_data:
                             options = q_data.get("options", {})
+                            question_type = infer_question_type_from_payload(q_data)
                             question = Question(
                                 passage_id=passage.id,
                                 question_number=q_data.get("question_number"),
@@ -601,7 +716,8 @@ async def upload_paper_with_progress(
                                 option_c=options.get("C"),
                                 option_d=options.get("D"),
                                 correct_answer=q_data.get("correct_answer"),
-                                answer_explanation=q_data.get("answer_explanation")
+                                answer_explanation=q_data.get("answer_explanation"),
+                                question_type=question_type,
                             )
                             db.add(question)
                             saved_questions.append((question, passage.content))
@@ -627,6 +743,9 @@ async def upload_paper_with_progress(
                         )
                         yield emit()
 
+                        if question.question_type == "open_ended":
+                            continue
+
                         # 构建选项字典（过滤图片选项）
                         options_dict = {}
                         for opt_key, opt_val in [
@@ -645,7 +764,7 @@ async def upload_paper_with_progress(
 
                         # 调用AI优化/补全解析。即使原题已有答案或解析，也继续增强。
                         try:
-                            explanation = ai_service.generate_answer_explanation(
+                            explanation = await ai_service.generate_answer_explanation_async(
                                 question_text=strip_image_tokens(question.question_text),
                                 options=options_dict,
                                 correct_answer=question.correct_answer or "",
@@ -735,11 +854,9 @@ async def upload_paper_with_progress(
                         primary_topic = None
                         try:
                             topic_classifier = WritingTopicClassifier()
-                            # 使用同步方法（在线程池中运行避免阻塞）
-                            topic_result = await asyncio.to_thread(
-                                topic_classifier.classify_sync,
+                            topic_result = await topic_classifier.classify(
                                 content=writing_result.content,
-                                requirements=writing_result.requirements or ""
+                                requirements=writing_result.requirements or "",
                             )
                             if topic_result.success:
                                 primary_topic = topic_result.primary_topic
@@ -801,119 +918,138 @@ async def upload_paper_with_progress(
                             select(ClozePoint).where(ClozePoint.cloze_id == cloze_passage.id)
                         )
                         points = result.scalars().all()
-
-                        for i, point in enumerate(points):
-                            if point.correct_word and point.options:
-                                reporter.update_step("cloze_analyze",
-                                    progress=int((i + 1) / len(points) * 100),
-                                    message=f"分析第{point.blank_number}空...")
-                                yield emit()
-
-                                # 解析选项
-                                options = json.loads(point.options) if isinstance(point.options, str) else point.options
-
-                                # 提取上下文
-                                context = analyzer.extract_context(
-                                    cloze_passage.content,
-                                    point.blank_number
+                        textbook_info_by_word = {}
+                        eligible_points = []
+                        for point in points:
+                            if not (point.correct_word and point.options):
+                                continue
+                            eligible_points.append(point)
+                            word_key = point.correct_word.lower()
+                            if word_key not in textbook_info_by_word:
+                                textbook_info_by_word[word_key] = await analyzer.lookup_textbook_definition(
+                                    point.correct_word,
+                                    db,
                                 )
 
-                                # AI分析考点（传入 db_session 支持课本释义查询）
+                        local_semaphore = asyncio.Semaphore(CLOZE_ANALYSIS_CONCURRENCY)
+
+                        async def analyze_single_point(point: ClozePoint) -> dict[str, Any]:
+                            options = json.loads(point.options) if isinstance(point.options, str) else point.options
+                            context = analyzer.extract_context(
+                                cloze_passage.content,
+                                point.blank_number
+                            )
+                            async with local_semaphore:
                                 analysis_result = await analyzer.analyze_point(
                                     blank_number=point.blank_number,
                                     correct_word=point.correct_word,
                                     options=options,
                                     context=context,
-                                    db_session=db  # 支持课本单词表查询
+                                    textbook_info=textbook_info_by_word.get(point.correct_word.lower()),
+                                )
+                            return {
+                                "point": point,
+                                "context": context,
+                                "analysis_result": analysis_result,
+                            }
+
+                        analysis_payloads: list[dict[str, Any]] = []
+                        tasks = [asyncio.create_task(analyze_single_point(point)) for point in eligible_points]
+                        total_tasks = len(tasks)
+
+                        for finished_count, task in enumerate(asyncio.as_completed(tasks), start=1):
+                            payload = await task
+                            analysis_payloads.append(payload)
+                            reporter.update_step(
+                                "cloze_analyze",
+                                progress=int(finished_count / total_tasks * 100) if total_tasks else 100,
+                                message=f"已分析 {finished_count}/{total_tasks} 个空...",
+                            )
+                            yield emit()
+
+                        for payload in sorted(
+                            analysis_payloads,
+                            key=lambda item: item["point"].blank_number or 0,
+                        ):
+                            point = payload["point"]
+                            context = payload["context"]
+                            analysis_result = payload["analysis_result"]
+
+                            if not analysis_result.success:
+                                continue
+
+                            # === V2 考点分类系统 ===
+                            if analysis_result.primary_point:
+                                point.primary_point_code = analysis_result.primary_point.get("code")
+                                if point.primary_point_code in NEW_CODE_TO_LEGACY:
+                                    point.point_type = NEW_CODE_TO_LEGACY[point.primary_point_code]
+                                    point.legacy_point_type = point.point_type
+
+                            point.translation = analysis_result.translation
+                            point.explanation = analysis_result.explanation
+                            point.sentence = context
+
+                            if analysis_result.confusion_words:
+                                point.confusion_words = json.dumps(
+                                    analysis_result.confusion_words, ensure_ascii=False
                                 )
 
-                                if analysis_result.success:
-                                    # === V2 考点分类系统 ===
-                                    # 保存主考点编码
-                                    if analysis_result.primary_point:
-                                        point.primary_point_code = analysis_result.primary_point.get("code")
-                                        # 向后兼容：映射到旧类型
-                                        if point.primary_point_code in NEW_CODE_TO_LEGACY:
-                                            point.point_type = NEW_CODE_TO_LEGACY[point.primary_point_code]
-                                            point.legacy_point_type = point.point_type
+                            if analysis_result.tips:
+                                point.tips = analysis_result.tips
 
-                                    # 基础字段
-                                    point.translation = analysis_result.translation
-                                    point.explanation = analysis_result.explanation
-                                    point.sentence = context  # 保存上下文句子
+                            if analysis_result.phrase:
+                                point.phrase = analysis_result.phrase
+                            if analysis_result.similar_phrases:
+                                point.similar_phrases = json.dumps(
+                                    analysis_result.similar_phrases, ensure_ascii=False
+                                )
 
-                                    # 易混淆词
-                                    if analysis_result.confusion_words:
-                                        point.confusion_words = json.dumps(
-                                            analysis_result.confusion_words, ensure_ascii=False
-                                        )
+                            if analysis_result.word_analysis:
+                                point.word_analysis = json.dumps(
+                                    analysis_result.word_analysis, ensure_ascii=False
+                                )
+                            if analysis_result.dictionary_source:
+                                point.dictionary_source = analysis_result.dictionary_source
 
-                                    # 通用字段
-                                    if analysis_result.tips:
-                                        point.tips = analysis_result.tips
+                            if analysis_result.is_rare_meaning:
+                                point.is_rare_meaning = True
+                            if analysis_result.textbook_meaning:
+                                point.textbook_meaning = analysis_result.textbook_meaning
+                            if analysis_result.textbook_source:
+                                point.textbook_source = analysis_result.textbook_source
+                            if analysis_result.context_meaning:
+                                point.context_meaning = analysis_result.context_meaning
+                            if analysis_result.similar_words:
+                                point.similar_words = json.dumps(
+                                    analysis_result.similar_words, ensure_ascii=False
+                                )
 
-                                    # 固定搭配专用
-                                    if analysis_result.phrase:
-                                        point.phrase = analysis_result.phrase
-                                    if analysis_result.similar_phrases:
-                                        point.similar_phrases = json.dumps(
-                                            analysis_result.similar_phrases, ensure_ascii=False
-                                        )
+                            if analysis_result.secondary_points:
+                                for idx, sp in enumerate(analysis_result.secondary_points):
+                                    point_code = sp.get("code") or sp.get("point_code") or "D1"
+                                    sec_point = ClozeSecondaryPoint(
+                                        cloze_point_id=point.id,
+                                        point_code=point_code,
+                                        explanation=sp.get("explanation"),
+                                        sort_order=idx
+                                    )
+                                    db.add(sec_point)
 
-                                    # 词义辨析专用
-                                    if analysis_result.word_analysis:
-                                        point.word_analysis = json.dumps(
-                                            analysis_result.word_analysis, ensure_ascii=False
-                                        )
-                                    if analysis_result.dictionary_source:
-                                        point.dictionary_source = analysis_result.dictionary_source
+                            if analysis_result.rejection_points:
+                                for rp in analysis_result.rejection_points:
+                                    rejection_code = rp.get("rejection_code") or rp.get("code") or rp.get("point_code") or "D1"
+                                    rejection_reason = rp.get("rejection_reason") or rp.get("explanation") or ""
+                                    rej_point = ClozeRejectionPoint(
+                                        cloze_point_id=point.id,
+                                        option_word=rp.get("option_word"),
+                                        point_code=rejection_code,
+                                        rejection_code=rejection_code,
+                                        explanation=rejection_reason,
+                                        rejection_reason=rejection_reason
+                                    )
+                                    db.add(rej_point)
 
-                                    # 熟词僻义专用（作为附加标签）
-                                    if analysis_result.is_rare_meaning:
-                                        point.is_rare_meaning = True
-                                    if analysis_result.textbook_meaning:
-                                        point.textbook_meaning = analysis_result.textbook_meaning
-                                    if analysis_result.textbook_source:
-                                        point.textbook_source = analysis_result.textbook_source
-                                    if analysis_result.context_meaning:
-                                        point.context_meaning = analysis_result.context_meaning
-                                    if analysis_result.similar_words:
-                                        point.similar_words = json.dumps(
-                                            analysis_result.similar_words, ensure_ascii=False
-                                        )
-
-                                    # 保存辅助考点（V2 多标签）
-                                    if analysis_result.secondary_points:
-                                        for idx, sp in enumerate(analysis_result.secondary_points):
-                                            point_code = sp.get("code") or sp.get("point_code") or "D1"
-                                            sec_point = ClozeSecondaryPoint(
-                                                cloze_point_id=point.id,
-                                                point_code=point_code,
-                                                explanation=sp.get("explanation"),
-                                                sort_order=idx
-                                            )
-                                            db.add(sec_point)
-
-                                    # 保存排错点（V5 字段：rejection_code / rejection_reason）
-                                    if analysis_result.rejection_points:
-                                        for rp in analysis_result.rejection_points:
-                                            # 优先取 rejection_code，fallback 到 code/point_code
-                                            rejection_code = rp.get("rejection_code") or rp.get("code") or rp.get("point_code") or "D1"
-                                            # 优先取 rejection_reason，fallback 到 explanation
-                                            rejection_reason = rp.get("rejection_reason") or rp.get("explanation") or ""
-                                            rej_point = ClozeRejectionPoint(
-                                                cloze_point_id=point.id,
-                                                option_word=rp.get("option_word"),
-                                                point_code=rejection_code,
-                                                rejection_code=rejection_code,
-                                                explanation=rejection_reason,
-                                                rejection_reason=rejection_reason
-                                            )
-                                            db.add(rej_point)
-
-                                    analyzed_count += 1
-                                else:
-                                    pass  # 分析失败，不更新
+                            analyzed_count += 1
 
                         reporter.complete_step("cloze_analyze", f"已分析{analyzed_count}个考点")
                         await db.commit()
@@ -1134,7 +1270,7 @@ async def upload_paper_with_progress(
 
         except Exception as e:
             # 标记当前步骤为失败
-            current = reporter._get_current_step()
+            current = reporter._get_current_step() or reporter._get_next_pending_step()
             if current:
                 reporter.fail_step(current, str(e))
             yield emit()

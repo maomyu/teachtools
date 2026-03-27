@@ -175,7 +175,11 @@ async def normalize_with_ai(content: str, expected_count: int) -> str:
 
 注意：只返回 JSON，不要有其他内容。"""
 
-        response = qwen.chat(prompt)
+        response = await qwen.chat_async(
+            prompt,
+            system_prompt="你是一个擅长识别完形填空空格标记的英语试卷处理助手，必须严格输出 JSON。",
+            operation="text_utils.normalize_with_ai",
+        )
 
         # 尝试解析 JSON
         # 处理可能的 markdown 代码块

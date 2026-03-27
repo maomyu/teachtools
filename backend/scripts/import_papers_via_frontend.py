@@ -19,12 +19,15 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
+import re
 import sqlite3
 import sys
 import time
 import traceback
-from dataclasses import dataclass
+from functools import lru_cache
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -37,13 +40,25 @@ except ImportError as exc:  # pragma: no cover - CLI import guard
         "或使用 backend/.venv/bin/python 运行此脚本。"
     ) from exc
 
+try:
+    from docx import Document
+except ImportError as exc:  # pragma: no cover - CLI import guard
+    raise SystemExit(
+        "缺少依赖 python-docx，请先安装 backend/requirements.txt。"
+    ) from exc
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_IMPORT_DIR = REPO_ROOT / "试卷库" / "docx-解析版"
 DEFAULT_DB_PATH = REPO_ROOT / "backend" / "database" / "teaching.db"
 DEFAULT_LOG_DIR = REPO_ROOT / "logs"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_CHECKPOINT_FILE = REPO_ROOT / "data" / "import_checkpoint.json"
 UPLOAD_PATH = "/api/papers/upload-with-progress"
+READING_SECTION_KEYWORDS = ("阅读理解", "阅读下列短文", "阅读短文", "阅读表达", "阅读还原")
+CLOZE_SECTION_KEYWORDS = ("完形填空", "完型填空")
+WRITING_SECTION_KEYWORDS = ("书面表达", "文段表达", "作文", "写作")
+ANSWER_SHEET_KEYWORDS = ("参考答案", "答案及评分标准", "答案及评分参考", "英语答案")
 
 
 @dataclass
@@ -55,6 +70,59 @@ class UploadAttemptResult:
     result: dict[str, Any] | None
     steps: list[dict[str, Any]]
     duration_seconds: float
+
+
+@dataclass
+class ImportCheckpoint:
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, checkpoint_path: Path) -> "ImportCheckpoint":
+        if not checkpoint_path.exists():
+            return cls()
+        try:
+            data = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            records = data.get("records", {})
+            if isinstance(records, dict):
+                return cls(records=records)
+        except Exception:
+            pass
+        return cls()
+
+    def save(self, checkpoint_path: Path) -> None:
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "records": self.records,
+        }
+        tmp_path = checkpoint_path.with_suffix(f"{checkpoint_path.suffix}.tmp")
+        tmp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp_path.replace(checkpoint_path)
+
+    def should_skip(self, file_path: Path) -> bool:
+        key = str(file_path.resolve())
+        record = self.records.get(key)
+        if not record:
+            return False
+        return (
+            record.get("status") == "success"
+            and record.get("signature") == file_signature(file_path)
+        )
+
+    def update_with_result(self, file_path: Path, result: dict[str, Any]) -> None:
+        key = str(file_path.resolve())
+        self.records[key] = {
+            "filename": file_path.name,
+            "status": result.get("final_status"),
+            "signature": file_signature(file_path),
+            "attempts_used": result.get("attempts_used"),
+            "failure_reason": result.get("failure_reason"),
+            "paper_id": result.get("paper_id"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,6 +174,12 @@ def parse_args() -> argparse.Namespace:
         help="单次请求总超时秒数，默认: 1800",
     )
     parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=3,
+        help="并发导入的试卷数，默认: 3",
+    )
+    parser.add_argument(
         "--log-dir",
         type=Path,
         default=DEFAULT_LOG_DIR,
@@ -115,6 +189,17 @@ def parse_args() -> argparse.Namespace:
         "--no-force",
         action="store_true",
         help="关闭 force=true。默认行为与前端一致，始终强制重新导入。",
+    )
+    parser.add_argument(
+        "--checkpoint-file",
+        type=Path,
+        default=DEFAULT_CHECKPOINT_FILE,
+        help=f"断点续传 checkpoint 文件，默认: {DEFAULT_CHECKPOINT_FILE}",
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="禁用断点续传，忽略已有 checkpoint。",
     )
     return parser.parse_args()
 
@@ -130,6 +215,14 @@ def discover_files(import_dir: Path, pattern: str, limit: int | None) -> list[Pa
     if limit is not None:
         files = files[:limit]
     return files
+
+
+def file_signature(file_path: Path) -> dict[str, int]:
+    stat = file_path.stat()
+    return {
+        "size": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+    }
 
 
 def ensure_backend_alive(client: httpx.Client, base_url: str) -> None:
@@ -274,6 +367,42 @@ def has_any_option(question_row: sqlite3.Row) -> bool:
     return False
 
 
+def count_non_empty_db_options(question_row: sqlite3.Row) -> int:
+    count = 0
+    for key in ("option_a", "option_b", "option_c", "option_d"):
+        value = question_row[key]
+        if isinstance(value, str) and value.strip():
+            count += 1
+    return count
+
+
+def count_text_db_options(question_row: sqlite3.Row) -> int:
+    count = 0
+    for key in ("option_a", "option_b", "option_c", "option_d"):
+        value = question_row[key]
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value:
+            continue
+        if re.fullmatch(r"\[IMAGE(?::[^\]]+)?\]", value):
+            continue
+        count += 1
+    return count
+
+
+def looks_like_open_ended_question(question_text: str | None) -> bool:
+    normalized = re.sub(r"\s*\[IMAGE(?::[^\]]+)?\]", "", question_text or "").strip()
+    if not normalized:
+        return False
+    return bool(
+        re.match(
+            r"(?i)^(what|why|how|when|where|who|whom|whose|which|is|are|was|were|do|does|did|can|could|would|will|should|please)\b",
+            normalized,
+        )
+    )
+
+
 def safe_json_loads(text: str | None) -> Any:
     if not text:
         return None
@@ -283,13 +412,130 @@ def safe_json_loads(text: str | None) -> Any:
         return None
 
 
+def infer_question_type(question_row: sqlite3.Row) -> str:
+    stored_type = (question_row["question_type"] or "").strip()
+    if stored_type:
+        return stored_type
+
+    correct_answer = (question_row["correct_answer"] or "").strip().upper()
+    option_count = count_non_empty_db_options(question_row)
+    text_option_count = count_text_db_options(question_row)
+    if (
+        looks_like_open_ended_question(question_row["question_text"])
+        and text_option_count == 0
+        and (correct_answer not in {"A", "B", "C", "D"} or option_count < 2)
+    ):
+        return "open_ended"
+    if not has_any_option(question_row) and correct_answer not in {"A", "B", "C", "D"}:
+        return "open_ended"
+    return "multiple_choice"
+
+
+def has_meaningful_json_options(options: Any) -> bool:
+    if not isinstance(options, dict):
+        return False
+    for value in options.values():
+        if isinstance(value, str) and value.strip():
+            return True
+    return False
+
+
+def is_open_form_cloze_point(point_row: sqlite3.Row, options: Any) -> bool:
+    correct_word = (point_row["correct_word"] or "").strip()
+    correct_answer = (point_row["correct_answer"] or "").strip().upper()
+    if not correct_word:
+        return False
+    if correct_answer in {"A", "B", "C", "D"}:
+        return False
+    return isinstance(options, dict) and not has_meaningful_json_options(options)
+
+
+@lru_cache(maxsize=1024)
+def load_docx_text(file_path: str) -> str:
+    path = Path(file_path)
+    if not path.exists():
+        return ""
+    try:
+        document = Document(str(path))
+    except Exception:
+        return ""
+    return "\n".join(
+        paragraph.text.strip()
+        for paragraph in document.paragraphs
+        if paragraph.text and paragraph.text.strip()
+    )
+
+
+def infer_source_expectations(source_file_path: Path | None) -> dict[str, Any]:
+    filename = source_file_path.name if source_file_path else ""
+    normalized_filename = filename.replace("（", "(").replace("）", ")").replace(" ", "")
+
+    if source_file_path is None:
+        return {
+            "is_non_english": False,
+            "is_answer_sheet": False,
+            "is_reading_only": False,
+            "expects_reading": True,
+            "expects_cloze": True,
+            "expects_writing": True,
+        }
+
+    text = load_docx_text(str(source_file_path))
+    source_body = text.split("参考答案", 1)[0] if "参考答案" in text else text
+    normalized_text = re.sub(r"\s+", "", text)
+    normalized_source_body = re.sub(r"\s+", "", source_body)
+    head_text = normalized_text[:2000]
+
+    is_non_english = ("英语" not in normalized_filename) or ("历史" in normalized_filename)
+    is_reading_only = "英语(阅读)" in normalized_filename
+    is_answer_sheet = (
+        not is_reading_only
+        and any(keyword in head_text for keyword in ANSWER_SHEET_KEYWORDS)
+    )
+
+    has_reading_structure = bool(
+        re.search(r"阅读理解.*?(?:^|\n)[A-D](?:\s*\n|\s)", source_body, re.DOTALL | re.MULTILINE)
+    )
+
+    expects_reading = (
+        not is_non_english
+        and not is_answer_sheet
+        and any(keyword in normalized_source_body for keyword in READING_SECTION_KEYWORDS)
+        and has_reading_structure
+    )
+    expects_cloze = (
+        not is_non_english
+        and not is_reading_only
+        and not is_answer_sheet
+        and any(keyword in normalized_source_body for keyword in CLOZE_SECTION_KEYWORDS)
+    )
+    expects_writing = (
+        not is_non_english
+        and not is_reading_only
+        and not is_answer_sheet
+        and any(keyword in normalized_source_body for keyword in WRITING_SECTION_KEYWORDS)
+    )
+
+    return {
+        "is_non_english": is_non_english,
+        "is_answer_sheet": is_answer_sheet,
+        "is_reading_only": is_reading_only,
+        "expects_reading": expects_reading,
+        "expects_cloze": expects_cloze,
+        "expects_writing": expects_writing,
+    }
+
+
 def verify_paper_in_db(
     conn: sqlite3.Connection,
     filename: str,
     upload_result: dict[str, Any] | None,
+    source_file_path: Path | None = None,
 ) -> dict[str, Any]:
     issues: list[str] = []
     checks: dict[str, Any] = {}
+    source_expectations = infer_source_expectations(source_file_path)
+    checks["source_expectations"] = source_expectations
 
     paper = fetch_one(
         conn,
@@ -341,13 +587,14 @@ def verify_paper_in_db(
         (paper_id,),
     )
     checks["reading_passages_count"] = len(reading_passages)
-    if not reading_passages:
+    if source_expectations["expects_reading"] and not reading_passages:
         issues.append("未找到 reading_passages 记录")
 
     total_questions = 0
     total_vocab_passage = 0
+    total_open_ended_questions = 0
     reading_details: list[dict[str, Any]] = []
-    for passage in reading_passages:
+    for passage in reading_passages if source_expectations["expects_reading"] else []:
         passage_id = int(passage["id"])
         questions = fetch_all(
             conn,
@@ -386,12 +633,16 @@ def verify_paper_in_db(
 
         for question in questions:
             q_num = question["question_number"] or question["id"]
+            question_type = infer_question_type(question)
+            if question_type == "open_ended":
+                total_open_ended_questions += 1
             if not (question["question_text"] or "").strip():
                 passage_issues.append(f"{passage['passage_type']}篇第{q_num}题 question_text 为空")
-            if not (question["correct_answer"] or "").strip():
-                passage_issues.append(f"{passage['passage_type']}篇第{q_num}题 correct_answer 为空")
-            if not has_any_option(question):
-                passage_issues.append(f"{passage['passage_type']}篇第{q_num}题四个选项都为空")
+            if question_type != "open_ended":
+                if not (question["correct_answer"] or "").strip():
+                    passage_issues.append(f"{passage['passage_type']}篇第{q_num}题 correct_answer 为空")
+                if not has_any_option(question):
+                    passage_issues.append(f"{passage['passage_type']}篇第{q_num}题四个选项都为空")
             if not (question["answer_explanation"] or "").strip():
                 passage_issues.append(f"{passage['passage_type']}篇第{q_num}题 answer_explanation 为空")
 
@@ -401,6 +652,9 @@ def verify_paper_in_db(
                 "passage_type": passage["passage_type"],
                 "questions_count": len(questions),
                 "vocabulary_passage_count": vocab_count,
+                "open_ended_questions_count": sum(
+                    1 for question in questions if infer_question_type(question) == "open_ended"
+                ),
                 "issues": passage_issues,
             }
         )
@@ -408,6 +662,7 @@ def verify_paper_in_db(
 
     checks["reading_details"] = reading_details
     checks["questions_count"] = total_questions
+    checks["open_ended_questions_count"] = total_open_ended_questions
     checks["vocabulary_passage_count"] = total_vocab_passage
 
     expected_passages = None
@@ -435,13 +690,14 @@ def verify_paper_in_db(
         (paper_id,),
     )
     checks["cloze_passages_count"] = len(cloze_passages)
-    if not cloze_passages:
+    if source_expectations["expects_cloze"] and not cloze_passages:
         issues.append("未找到 cloze_passages 记录")
 
     cloze_details: list[dict[str, Any]] = []
     total_cloze_points = 0
     total_vocab_cloze = 0
-    for cloze in cloze_passages:
+    total_open_form_cloze_points = 0
+    for cloze in cloze_passages if source_expectations["expects_cloze"] else []:
         cloze_id = int(cloze["id"])
         points = fetch_all(
             conn,
@@ -481,14 +737,19 @@ def verify_paper_in_db(
         for point in points:
             blank_number = point["blank_number"] or point["id"]
             options = safe_json_loads(point["options"])
+            open_form = is_open_form_cloze_point(point, options)
+            if open_form:
+                total_open_form_cloze_points += 1
             if not point["blank_number"]:
                 cloze_issues.append(f"完形空{blank_number} blank_number 为空")
-            if not (point["correct_answer"] or "").strip():
-                cloze_issues.append(f"完形空{blank_number} correct_answer 为空")
             if not (point["correct_word"] or "").strip():
                 cloze_issues.append(f"完形空{blank_number} correct_word 为空")
-            if not options or not isinstance(options, dict):
+            if not isinstance(options, dict):
                 cloze_issues.append(f"完形空{blank_number} options 不是有效 JSON")
+            elif not open_form and not has_meaningful_json_options(options):
+                cloze_issues.append(f"完形空{blank_number} options 不是有效 JSON")
+            if not open_form and not (point["correct_answer"] or "").strip():
+                cloze_issues.append(f"完形空{blank_number} correct_answer 为空")
             if not ((point["primary_point_code"] or "").strip() or (point["point_type"] or "").strip()):
                 cloze_issues.append(f"完形空{blank_number} 没有主考点")
             if not (point["translation"] or "").strip():
@@ -503,6 +764,9 @@ def verify_paper_in_db(
                 "cloze_id": cloze_id,
                 "points_count": len(points),
                 "vocabulary_cloze_count": vocab_count,
+                "open_form_points_count": sum(
+                    1 for point in points if is_open_form_cloze_point(point, safe_json_loads(point["options"]))
+                ),
                 "issues": cloze_issues,
             }
         )
@@ -510,6 +774,7 @@ def verify_paper_in_db(
 
     checks["cloze_details"] = cloze_details
     checks["cloze_points_count"] = total_cloze_points
+    checks["open_form_cloze_points_count"] = total_open_form_cloze_points
     checks["vocabulary_cloze_count"] = total_vocab_cloze
 
     writing_tasks = fetch_all(
@@ -523,11 +788,11 @@ def verify_paper_in_db(
         (paper_id,),
     )
     checks["writing_tasks_count"] = len(writing_tasks)
-    if not writing_tasks:
+    if source_expectations["expects_writing"] and not writing_tasks:
         issues.append("未找到 writing_tasks 记录")
 
     writing_details: list[dict[str, Any]] = []
-    for task in writing_tasks:
+    for task in writing_tasks if source_expectations["expects_writing"] else []:
         task_id = int(task["id"])
         samples = fetch_all(
             conn,
@@ -630,7 +895,12 @@ def process_file(
         }
 
         if upload.ok:
-            verification = verify_paper_in_db(conn, file_path.name, upload.result)
+            verification = verify_paper_in_db(
+                conn,
+                file_path.name,
+                upload.result,
+                source_file_path=file_path,
+            )
             attempt_record["verification"] = verification
             if verification["ok"]:
                 file_record["attempts"].append(attempt_record)
@@ -649,7 +919,8 @@ def process_file(
         file_record["attempts_used"] = attempt
 
         if attempt < retries:
-            time.sleep(sleep_seconds)
+            retry_delay = sleep_seconds * (2 ** (attempt - 1))
+            time.sleep(retry_delay)
 
     last_attempt = file_record["attempts"][-1]
     file_record["failure_reason"] = last_attempt.get("upload_error") or "未知失败"
@@ -665,9 +936,34 @@ def process_file(
     return file_record
 
 
+def process_file_in_worker(
+    *,
+    file_path: Path,
+    db_path: Path,
+    base_url: str,
+    retries: int,
+    sleep_seconds: float,
+    force: bool,
+    timeout: httpx.Timeout,
+) -> dict[str, Any]:
+    with httpx.Client(timeout=timeout, trust_env=False) as client:
+        with connect_db(db_path) as conn:
+            return process_file(
+                client=client,
+                conn=conn,
+                file_path=file_path,
+                base_url=base_url,
+                retries=retries,
+                sleep_seconds=sleep_seconds,
+                force=force,
+            )
+
+
 def summarize(run_records: list[dict[str, Any]]) -> dict[str, Any]:
     success = [r for r in run_records if r["final_status"] == "success"]
+    skipped = [r for r in run_records if r["final_status"] == "skipped"]
     failed = [r for r in run_records if r["final_status"] != "success"]
+    failed = [r for r in failed if r["final_status"] != "skipped"]
     validation_failed = [
         r for r in failed
         if r.get("final_checks") and not r["final_checks"].get("ok", False)
@@ -676,6 +972,7 @@ def summarize(run_records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "total_files": len(run_records),
         "success_count": len(success),
+        "skipped_count": len(skipped),
         "failed_count": len(failed),
         "validation_failed_count": len(validation_failed),
         "failed_files": [r["filename"] for r in failed],
@@ -687,12 +984,34 @@ def main() -> int:
     import_dir = args.import_dir.resolve()
     db_path = args.db_path.resolve()
     log_dir = args.log_dir.resolve()
+    checkpoint_path = args.checkpoint_file.resolve()
     force = not args.no_force
 
     files = discover_files(import_dir, args.pattern, args.limit)
     if not files:
         print(f"没有找到可导入的 docx 文件: {import_dir}")
         return 1
+
+    checkpoint = ImportCheckpoint() if args.no_resume else ImportCheckpoint.load(checkpoint_path)
+    skipped_records: list[dict[str, Any]] = []
+    pending_files: list[Path] = []
+    for file_path in files:
+        if checkpoint.should_skip(file_path):
+            skipped_records.append(
+                {
+                    "filename": file_path.name,
+                    "path": str(file_path),
+                    "attempts": [],
+                    "attempts_used": checkpoint.records[str(file_path.resolve())].get("attempts_used", 0),
+                    "final_status": "skipped",
+                    "failure_reason": None,
+                    "paper_id": checkpoint.records[str(file_path.resolve())].get("paper_id"),
+                    "metadata": None,
+                    "final_checks": None,
+                }
+            )
+            continue
+        pending_files.append(file_path)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = log_dir / f"frontend_import_report_{timestamp}.json"
@@ -712,31 +1031,63 @@ def main() -> int:
     print(f"数据库:   {db_path}")
     print(f"后端地址: {args.base_url}")
     print(f"文件数量: {len(files)}")
+    print(f"跳过已完成: {len(skipped_records)}")
+    print(f"待处理数: {len(pending_files)}")
     print(f"重试次数: {args.retries}")
+    print(f"并发数:   {args.concurrency}")
     print(f"强制导入: {force}")
+    print(f"断点续传: {not args.no_resume}")
+    print(f"Checkpoint:{checkpoint_path}")
     print()
 
     run_started_at = datetime.now().isoformat(timespec="seconds")
-    run_records: list[dict[str, Any]] = []
+    run_records: list[dict[str, Any]] = list(skipped_records)
 
     try:
         # 禁用 trust_env，避免本地 SSE 请求被系统代理接管而卡住或中断。
         with httpx.Client(timeout=timeout, trust_env=False) as client:
             ensure_backend_alive(client, args.base_url)
-            with connect_db(db_path) as conn:
-                for index, file_path in enumerate(files, start=1):
-                    print(f"[{index}/{len(files)}] START   {file_path.name}")
-                    record = process_file(
-                        client=client,
-                        conn=conn,
+        if pending_files:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as executor:
+                future_to_file: dict[concurrent.futures.Future, Path] = {}
+                for file_path in pending_files:
+                    print(f"[QUEUE] {file_path.name}")
+                    future = executor.submit(
+                        process_file_in_worker,
                         file_path=file_path,
+                        db_path=db_path,
                         base_url=args.base_url,
                         retries=args.retries,
                         sleep_seconds=args.sleep_seconds,
                         force=force,
+                        timeout=timeout,
                     )
+                    future_to_file[future] = file_path
+
+                for completed_index, future in enumerate(
+                    concurrent.futures.as_completed(future_to_file),
+                    start=1,
+                ):
+                    file_path = future_to_file[future]
+                    try:
+                        record = future.result()
+                    except Exception as exc:
+                        record = {
+                            "filename": file_path.name,
+                            "path": str(file_path),
+                            "attempts": [],
+                            "attempts_used": 0,
+                            "final_status": "failed",
+                            "failure_reason": f"{type(exc).__name__}: {exc}",
+                            "paper_id": None,
+                            "metadata": None,
+                            "final_checks": None,
+                        }
                     run_records.append(record)
-                    print_file_result(index, len(files), record)
+                    checkpoint.update_with_result(file_path, record)
+                    if not args.no_resume:
+                        checkpoint.save(checkpoint_path)
+                    print_file_result(completed_index, len(pending_files), record)
 
     except KeyboardInterrupt:
         print("\n用户中断，正在保存已完成结果...")
@@ -756,6 +1107,9 @@ def main() -> int:
                 "final_checks": None,
             }
         )
+    finally:
+        if not args.no_resume:
+            checkpoint.save(checkpoint_path)
 
     summary = summarize(run_records)
     report_data = {
@@ -769,13 +1123,19 @@ def main() -> int:
             "limit": args.limit,
             "retries": args.retries,
             "sleep_seconds": args.sleep_seconds,
+            "concurrency": args.concurrency,
             "force": force,
+            "resume": not args.no_resume,
+            "checkpoint_file": str(checkpoint_path),
         },
         "summary": summary,
         "results": run_records,
     }
 
-    failed_records = [r for r in run_records if r["final_status"] != "success"]
+    failed_records = [
+        r for r in run_records
+        if r["final_status"] not in {"success", "skipped"}
+    ]
     write_json(report_path, report_data)
     write_jsonl(failures_path, failed_records)
 
@@ -785,6 +1145,7 @@ def main() -> int:
     print("=" * 88)
     print(f"总文件数:   {summary['total_files']}")
     print(f"成功数:     {summary['success_count']}")
+    print(f"跳过数:     {summary['skipped_count']}")
     print(f"失败数:     {summary['failed_count']}")
     print(f"校验失败数: {summary['validation_failed_count']}")
     print(f"总报告:     {report_path}")

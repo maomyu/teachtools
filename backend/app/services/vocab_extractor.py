@@ -9,11 +9,11 @@ AI词汇提取服务
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 import json
-import httpx
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 
 from app.config import settings
+from app.services.dashscope_runtime import async_chat_completion
 
 
 @dataclass
@@ -81,43 +81,27 @@ class VocabExtractor:
 
         try:
             full_prompt = self._build_prompt(content)
+            result = await async_chat_completion(
+                api_key=self.api_key,
+                model="qwen-plus",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是一个专业的英语教学专家，擅长分析英语阅读文章并提取核心词汇。",
+                    },
+                    {
+                        "role": "user",
+                        "content": full_prompt,
+                    },
+                ],
+                operation="vocab_extractor.extract_async",
+                temperature=0.3,
+                max_tokens=2000,
+                timeout_seconds=60.0,
+            )
+            ai_content = result['choices'][0]['message']['content']
 
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}',
-                    'Content-Type': 'application/json'
-                }
-
-                payload = {
-                    "model": "qwen-plus",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "你是一个专业的英语教学专家，擅长分析英语阅读文章并提取核心词汇。"
-                        },
-                        {
-                            "role": "user",
-                            "content": full_prompt
-                        }
-                    ],
-                    "temperature": 0.3,
-                    "max_tokens": 2000
-                }
-
-                response = await client.post(
-                    self.API_URL,
-                    headers=headers,
-                    json=payload
-                )
-
-                if response.status_code != 200:
-                    print(f"AI词汇提取失败: {response.status_code} - {response.text}")
-                    return []
-
-                result = response.json()
-                ai_content = result['choices'][0]['message']['content']
-
-                return self._parse_ai_response(ai_content, content)
+            return self._parse_ai_response(ai_content, content)
 
         except Exception as e:
             print(f"AI词汇提取异常: {type(e).__name__}: {e}")

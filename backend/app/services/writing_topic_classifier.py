@@ -13,10 +13,8 @@ import time
 from typing import List, Optional
 from dataclasses import dataclass
 
-import dashscope
-from dashscope import Generation
-
 from app.config import settings
+from app.services.dashscope_runtime import async_chat_completion, sync_generation_call
 
 
 logger = logging.getLogger(__name__)
@@ -102,8 +100,57 @@ class WritingTopicClassifier:
         if not self.api_key:
             raise ValueError("请配置DASHSCOPE_API_KEY")
 
-        dashscope.api_key = self.api_key
         self.model = "qwen-turbo"
+
+    def _combined_text(self, content: str, requirements: str = "") -> str:
+        return "\n".join(part.strip() for part in [content or "", requirements or ""] if part and part.strip())
+
+    def _heuristic_classify(
+        self,
+        content: str,
+        requirements: str = "",
+    ) -> WritingTopicResult:
+        combined = self._combined_text(content, requirements)
+        normalized = re.sub(r"\s+", "", combined)
+        if not normalized:
+            return WritingTopicResult(success=False, error="内容为空")
+
+        keyword_rules = [
+            ("建议信件", ("回信", "来信", "推荐", "建议", "求助")),
+            ("邀请回复", ("邀请", "邀请函", "参加", "赴约")),
+            ("感谢道歉", ("感谢", "道歉", "抱歉", "致歉")),
+            ("申请自荐", ("申请", "自荐", "竞选", "应聘")),
+            ("通知公告", ("通知", "公告", "启事")),
+            ("经历描述", ("日记", "经历", "度过", "难忘", "一天的活动", "暑假", "寒假")),
+            ("活动安排", ("活动安排", "活动计划", "安排", "计划")),
+            ("观点表达", ("看法", "观点", "是否", "认为", "你的想法")),
+            ("问题解决", ("问题", "如何", "解决", "帮助")),
+            ("科技生活", ("发明", "科技", "网络", "互联网", "AI", "电脑", "手机")),
+            ("环境保护", ("环保", "环境", "低碳", "垃圾分类")),
+            ("运动健康", ("运动", "健康", "锻炼")),
+            ("校园生活", ("校园", "学校", "同学", "老师")),
+            ("文化交流", ("文化", "传统", "节日", "习俗")),
+        ]
+
+        scored: list[tuple[int, str, list[str]]] = []
+        for topic, keywords in keyword_rules:
+            matched = [keyword for keyword in keywords if keyword in normalized]
+            if matched:
+                scored.append((len(matched), topic, matched))
+
+        if not scored:
+            return WritingTopicResult(success=False, error="启发式未命中")
+
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        _, topic, matched_keywords = scored[0]
+        return WritingTopicResult(
+            success=True,
+            primary_topic=topic,
+            confidence=0.72,
+            reasoning=f"根据题干关键词匹配推断为{topic}",
+            keywords=matched_keywords,
+            suggested_aspects=[],
+        )
 
     def _build_prompt(
         self,
@@ -159,9 +206,9 @@ class WritingTopicClassifier:
         Returns:
             WritingTopicResult
         """
-        # 边界检查：内容为空或太短
-        if not content or len(content.strip()) < 50:
-            logger.warning(f"内容为空或太短（{len(content.strip() if content else 0)} 字符），跳过话题分类")
+        combined = self._combined_text(content, requirements)
+        if not combined or len(combined.strip()) < 20:
+            logger.warning(f"内容为空或太短（{len(combined.strip() if combined else 0)} 字符），跳过话题分类")
             return WritingTopicResult(
                 success=False,
                 error="内容为空或太短"
@@ -171,50 +218,43 @@ class WritingTopicClassifier:
             topics = WRITING_TOPICS
 
         prompt = self._build_prompt(content, requirements, topics)
-
-        # 带重试的 AI 调用
-        last_error = None
-        for attempt in range(max_retries + 1):
-            try:
-                start_time = time.time()
-
-                response = Generation.call(
-                    model=self.model,
-                    prompt=prompt,
-                    result_format='message'
+        try:
+            start_time = time.time()
+            response = await async_chat_completion(
+                api_key=self.api_key,
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "你是北京中考英语教研专家，请严格输出 JSON。"},
+                    {"role": "user", "content": prompt},
+                ],
+                operation="writing_topic_classifier.classify",
+                timeout_seconds=60.0,
+            )
+            elapsed = time.time() - start_time
+            result_text = response["choices"][0]["message"]["content"]
+            result = self._parse_response(result_text)
+            if result.success:
+                logger.info(
+                    f"话题分类成功: {result.primary_topic} "
+                    f"(confidence: {result.confidence:.2f}, 耗时: {elapsed:.2f}s)"
                 )
-
-                elapsed = time.time() - start_time
-
-                if response.status_code == 200:
-                    result_text = response.output.choices[0].message.content
-                    result = self._parse_response(result_text)
-
-                    if result.success:
-                        logger.info(
-                            f"话题分类成功: {result.primary_topic} "
-                            f"(confidence: {result.confidence:.2f}, 耗时: {elapsed:.2f}s)"
-                        )
-                        return result
-                    else:
-                        last_error = result.error
-                else:
-                    last_error = f"AI 调用失败: {response.message}"
-
-            except Exception as e:
-                last_error = str(e)
-                logger.warning(f"话题分类失败 (attempt {attempt + 1}): {e}")
-
-            # 重试前等待
-            if attempt < max_retries:
-                time.sleep(0.5)
-
-        # 所有重试都失败，返回降级结果
-        logger.error(f"话题分类最终失败: {last_error}")
-        return WritingTopicResult(
-            success=False,
-            error=last_error
-        )
+                return result
+            heuristic_result = self._heuristic_classify(content, requirements)
+            if heuristic_result.success:
+                logger.info(f"话题分类回退到启发式: {heuristic_result.primary_topic}")
+                return heuristic_result
+            logger.error(f"话题分类最终失败: {result.error}")
+            return WritingTopicResult(success=False, error=result.error)
+        except Exception as e:
+            heuristic_result = self._heuristic_classify(content, requirements)
+            if heuristic_result.success:
+                logger.info(f"话题分类异常后回退到启发式: {heuristic_result.primary_topic}")
+                return heuristic_result
+            logger.error(f"话题分类最终失败: {e}")
+            return WritingTopicResult(
+                success=False,
+                error=str(e)
+            )
 
     def classify_sync(
         self,
@@ -235,9 +275,9 @@ class WritingTopicClassifier:
         Returns:
             WritingTopicResult
         """
-        # 边界检查：内容为空或太短
-        if not content or len(content.strip()) < 50:
-            logger.warning(f"内容为空或太短（{len(content.strip() if content else 0)} 字符），跳过话题分类")
+        combined = self._combined_text(content, requirements)
+        if not combined or len(combined.strip()) < 20:
+            logger.warning(f"内容为空或太短（{len(combined.strip() if combined else 0)} 字符），跳过话题分类")
             return WritingTopicResult(
                 success=False,
                 error="内容为空或太短"
@@ -247,47 +287,37 @@ class WritingTopicClassifier:
             topics = WRITING_TOPICS
 
         prompt = self._build_prompt(content, requirements, topics)
-
-        # 带重试的 AI 调用
-        last_error = None
-        for attempt in range(max_retries + 1):
-            try:
-                start_time = time.time()
-
-                response = Generation.call(
-                    model=self.model,
-                    prompt=prompt,
-                    result_format='message'
+        try:
+            start_time = time.time()
+            response = sync_generation_call(
+                api_key=self.api_key,
+                model=self.model,
+                prompt=prompt,
+                result_format='message',
+                operation="writing_topic_classifier.classify_sync",
+            )
+            elapsed = time.time() - start_time
+            result_text = response.output.choices[0].message.content
+            result = self._parse_response(result_text)
+            if result.success:
+                logger.info(
+                    f"话题分类成功: {result.primary_topic} "
+                    f"(confidence: {result.confidence:.2f}, 耗时: {elapsed:.2f}s)"
                 )
-
-                elapsed = time.time() - start_time
-
-                if response.status_code == 200:
-                    result_text = response.output.choices[0].message.content
-                    result = self._parse_response(result_text)
-
-                    if result.success:
-                        logger.info(
-                            f"话题分类成功: {result.primary_topic} "
-                            f"(confidence: {result.confidence:.2f}, 耗时: {elapsed:.2f}s)"
-                        )
-                        return result
-                    else:
-                        last_error = result.error
-                else:
-                    last_error = f"AI 调用失败: {response.message}"
-
-            except Exception as e:
-                last_error = str(e)
-                logger.warning(f"话题分类失败 (attempt {attempt + 1}): {e}")
-
-            # 重试前等待
-            if attempt < max_retries:
-                time.sleep(0.5)
-
-        # 所有重试都失败，返回降级结果
-        logger.error(f"话题分类最终失败: {last_error}")
-        return WritingTopicResult(
-            success=False,
-            error=last_error
-        )
+                return result
+            heuristic_result = self._heuristic_classify(content, requirements)
+            if heuristic_result.success:
+                logger.info(f"同步话题分类回退到启发式: {heuristic_result.primary_topic}")
+                return heuristic_result
+            logger.error(f"话题分类最终失败: {result.error}")
+            return WritingTopicResult(success=False, error=result.error)
+        except Exception as e:
+            heuristic_result = self._heuristic_classify(content, requirements)
+            if heuristic_result.success:
+                logger.info(f"同步话题分类异常后回退到启发式: {heuristic_result.primary_topic}")
+                return heuristic_result
+            logger.error(f"话题分类最终失败: {e}")
+            return WritingTopicResult(
+                success=False,
+                error=str(e)
+            )

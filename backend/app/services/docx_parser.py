@@ -61,15 +61,18 @@ class DocxParser:
         "书面表达（共", "九、作文", "十、作文"
     ]
 
-    # 文件名解析正则 - 支持全角和半角括号，学期可选
+    # 文件名解析正则：尽量只抓稳定锚点，其他元数据交由后置推断
     FILENAME_PATTERN = re.compile(
-        r'(\d{4})北京(.+?)(初[一二三])(?:[（(](上|下)[）)])?(期中|期末|一模|二模)英语[（(]?(教师版|学生版|原卷版|解析版)?[）)]?'
+        r'(\d{4})\s*北京(.+?)(初[一二三])'
     )
 
-    # 官方真题文件名正则 - 如: 精品解析：2022年北京市中考英语真题（解析版）
+    # 官方中考文件名正则 - 如: 2022年北京市中考英语真题（解析版）/试题（解析版）
     OFFICIAL_EXAM_PATTERN = re.compile(
-        r'(\d{4})年北京市中考英语真题(?:[（(](解析版|原卷版)[）)])?'
+        r'(\d{4})年?北京(?:市)?中考英语(?:真题|试题)'
     )
+
+    VERSION_KEYWORDS = ["解析版", "教师版", "原卷版", "学生版"]
+    EXAM_TYPE_KEYWORDS = ["中考", "二模", "一模", "期末", "期中", "开学考", "月考"]
 
     def __init__(self, file_path: str):
         self.file_path = Path(file_path)
@@ -97,11 +100,14 @@ class DocxParser:
     def parse_filename(self) -> Dict:
         """从文件名提取元数据"""
         filename = self.file_path.name
+        normalized_filename = self._normalize_filename_text(filename)
+        version = self._infer_version_from_filename(normalized_filename)
+        exam_type = self._infer_exam_type_from_text(normalized_filename)
+        semester = self._infer_semester_from_text(normalized_filename, exam_type)
 
         # 先尝试官方真题模式
-        official_match = self.OFFICIAL_EXAM_PATTERN.search(filename)
+        official_match = self.OFFICIAL_EXAM_PATTERN.search(normalized_filename)
         if official_match:
-            version = official_match.group(2) or "原卷版"
             return {
                 "year": int(official_match.group(1)),
                 "region": "北京",  # 市级中考
@@ -109,11 +115,11 @@ class DocxParser:
                 "grade": "初三",  # 中考 = 初三
                 "semester": "下",  # 中考通常在下学期
                 "exam_type": "中考",
-                "version": version
+                "version": version or "原卷版"
             }
 
         # 常规文件名模式
-        match = self.FILENAME_PATTERN.search(filename)
+        match = self.FILENAME_PATTERN.search(normalized_filename)
         if match:
             # 提取中间部分（可能是区县名或学校名）
             region_or_school = match.group(2).strip()
@@ -141,14 +147,70 @@ class DocxParser:
                 "region": region,
                 "school": school,
                 "grade": match.group(3),
-                "semester": match.group(4),  # 文件名没有就为 None，不推断
-                "exam_type": match.group(5),
-                "version": match.group(6) or "学生版"
+                "semester": semester,
+                "exam_type": exam_type,
+                "version": version or "学生版"
             }
             return result
 
         # 尝试从目录结构推断
-        return self._parse_from_directory()
+        result = self._parse_from_directory()
+
+        year_match = re.search(r'(\d{4})', normalized_filename)
+        grade_match = re.search(r'(初[一二三])', normalized_filename)
+
+        if year_match and "year" not in result:
+            result["year"] = int(year_match.group(1))
+        if grade_match and "grade" not in result:
+            result["grade"] = grade_match.group(1)
+        if semester and "semester" not in result:
+            result["semester"] = semester
+        if exam_type and "exam_type" not in result:
+            result["exam_type"] = exam_type
+        if version:
+            result["version"] = version
+
+        return result
+
+    def _normalize_filename_text(self, filename: str) -> str:
+        """统一括号、空白和历史前缀，便于后续规则解析。"""
+        text = Path(filename).name
+        text = text.replace("（", "(").replace("）", ")")
+        text = re.sub(r"\s+", "", text)
+        if text.startswith("区校试卷_"):
+            parts = text.split("_", 4)
+            if len(parts) == 5 and parts[4]:
+                text = parts[4]
+        return text
+
+    def _infer_version_from_filename(self, text: str) -> Optional[str]:
+        """从任意位置提取版本标记。"""
+        for keyword in self.VERSION_KEYWORDS:
+            if keyword in text:
+                return keyword
+        return None
+
+    def _infer_exam_type_from_text(self, text: str) -> Optional[str]:
+        """从文件名文本推断考试类型。"""
+        for keyword in self.EXAM_TYPE_KEYWORDS:
+            if keyword in text:
+                return keyword
+        return None
+
+    def _infer_semester_from_text(self, text: str, exam_type: Optional[str]) -> Optional[str]:
+        """从文件名文本推断学期。"""
+        semester_match = re.search(r'[(]([上下])(?:学期)?[)]', text)
+        if semester_match:
+            return semester_match.group(1)
+        if "上学期" in text:
+            return "上"
+        if "下学期" in text:
+            return "下"
+        if "秋季" in text:
+            return "上"
+        if "春季" in text:
+            return "下"
+        return self._infer_semester(exam_type)
 
     def _infer_semester(self, exam_type: str) -> Optional[str]:
         """根据考试类型推断学期"""

@@ -5,11 +5,12 @@ AI主题分类服务
 使用统一话题池，只输出一个 primary_topic
 """
 import json
+import re
 from typing import List, Optional
 from dataclasses import dataclass
-import httpx
 
 from app.config import settings
+from app.services.dashscope_runtime import async_chat_completion
 
 
 # ============================================================================
@@ -91,6 +92,47 @@ class TopicClassifier:
         """获取话题列表（使用统一话题池，不区分年级）"""
         return UNIFIED_TOPICS
 
+    def _heuristic_classify(self, content: str, valid_topics: List[str]) -> ClassifyResult:
+        normalized = re.sub(r"\s+", " ", (content or "").lower())
+        if not normalized:
+            return ClassifyResult(success=False, error="内容为空")
+
+        keyword_rules = [
+            ("家庭亲情", ("dad", "father", "mother", "mom", "mum", "parents", "family", "home")),
+            ("友谊合作", ("friend", "friends", "friendship", "classmate", "together", "help me", "help her")),
+            ("师生关系", ("teacher", "teachers", "student", "students", "homework", "school bus", "classroom")),
+            ("校园生活", ("school", "class", "yearbook", "cafeteria", "class president", "exam", "test")),
+            ("运动健康", ("baseball", "basketball", "football", "tennis", "sports", "exercise")),
+            ("动物自然", ("volcano", "earthquake", "lava", "mountain", "sea", "island", "forest", "animal")),
+            ("科学探索", ("science", "scientist", "research", "researchers", "expert", "experts", "experiment", "left-handed")),
+            ("文化交流", ("culture", "cultures", "tradition", "celebration", "symbol", "custom")),
+            ("情绪管理", ("envy", "sad", "worry", "worried", "upset", "feelings", "emotion")),
+            ("个人成长", ("grow", "changed", "change", "confidence", "loneliness", "attitude", "proud")),
+            ("科技生活", ("technology", "internet", "computer", "robot", "online")),
+            ("社会现象", ("society", "problem", "problems", "people think")),
+        ]
+
+        scored: list[tuple[int, str, list[str]]] = []
+        for topic, keywords in keyword_rules:
+            if topic not in valid_topics:
+                continue
+            matched = [keyword for keyword in keywords if keyword in normalized]
+            if matched:
+                scored.append((len(matched), topic, matched))
+
+        if not scored:
+            return ClassifyResult(success=False, error="启发式未命中")
+
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        _, topic, matched_keywords = scored[0]
+        return ClassifyResult(
+            success=True,
+            primary_topic=topic,
+            confidence=0.7,
+            keywords=matched_keywords,
+            reasoning=f"根据关键词匹配推断为{topic}",
+        )
+
     async def classify(
         self,
         content: str,
@@ -123,41 +165,35 @@ class TopicClassifier:
                 content=content_preview
             )
 
-            # 调用qwen-plus API
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}',
-                    'Content-Type': 'application/json'
-                }
+            result = await async_chat_completion(
+                api_key=self.api_key,
+                model="qwen-plus",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a helpful assistant specialized in English reading comprehension for Beijing middle school students.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                operation="topic_classifier.classify",
+                temperature=0.1,
+                timeout_seconds=60.0,
+            )
+            content_str = result['choices'][0]['message']['content']
 
-                payload = {
-                    "model": "qwen-plus",
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful assistant specialized in English reading comprehension for Beijing middle school students."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.1,
-                }
-
-                response = await client.post(
-                    self.API_URL,
-                    headers=headers,
-                    json=payload
-                )
-
-                if response.status_code != 200:
-                    return ClassifyResult(
-                        success=False,
-                        error=f"API调用失败: {response.status_code} - {response.text}"
-                    )
-
-                result = response.json()
-                content_str = result['choices'][0]['message']['content']
-
-                # 解析JSON响应
-                return self._parse_response(content_str, topics)
+            # 解析JSON响应
+            parsed = self._parse_response(content_str, topics)
+            if parsed.success:
+                return parsed
+            heuristic = self._heuristic_classify(content_preview, topics)
+            if heuristic.success:
+                return heuristic
+            return parsed
 
         except Exception as e:
+            heuristic = self._heuristic_classify(content, topics if 'topics' in locals() else self._get_topics_for_grade(grade))
+            if heuristic.success:
+                return heuristic
             return ClassifyResult(
                 success=False,
                 error=str(e)

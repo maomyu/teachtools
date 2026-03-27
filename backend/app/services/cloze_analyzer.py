@@ -17,11 +17,11 @@
 旧类型映射: 固定搭配→C2, 词义辨析→D1, 熟词僻义→D2
 """
 import json
-import httpx
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 
 from app.config import settings
+from app.services.dashscope_runtime import async_chat_completion
 
 
 # ============================================================================
@@ -535,7 +535,8 @@ low:    信号模糊，多考点竞争，建议人工复核
         correct_word: str,
         options: Dict[str, str],
         context: str,
-        db_session=None
+        db_session=None,
+        textbook_info: Optional[Dict] = None,
     ) -> PointAnalysisResultV5:
         """
         分析单个空格的考点类型（V5版本）
@@ -552,7 +553,8 @@ low:    信号模糊，多考点竞争，建议人工复核
         """
         try:
             # 1. 查询课本释义
-            textbook_info = await self.lookup_textbook_definition(correct_word, db_session)
+            if textbook_info is None:
+                textbook_info = await self.lookup_textbook_definition(correct_word, db_session)
 
             if textbook_info:
                 textbook_section = self.TEXTBOOK_SECTION_TEMPLATE.format(
@@ -576,39 +578,23 @@ low:    信号模糊，多考点竞争，建议人工复核
             )
 
             # 3. 调用 API
-            messages = [
-                {"role": "system", "content": "You are an expert in English cloze test analysis for Chinese middle school students. Always respond with valid JSON. IMPORTANT: All definitions and explanations MUST be in Chinese."},
-                {"role": "user", "content": prompt}
-            ]
-
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}',
-                    'Content-Type': 'application/json'
-                }
-
-                payload = {
-                    "model": "qwen-plus",
-                    "messages": messages,
-                    "temperature": 0.2,  # 降低随机性
-                    "max_tokens": 3000  # 增加输出长度
-                }
-
-                response = await client.post(
-                    self.API_URL,
-                    headers=headers,
-                    json=payload
-                )
-
-                if response.status_code != 200:
-                    return PointAnalysisResultV5(
-                        success=False,
-                        error=f"API调用失败: {response.status_code}"
-                    )
-
-                result = response.json()
-                content = result['choices'][0]['message']['content']
-                return self._parse_response_v5(content, correct_word)
+            result = await async_chat_completion(
+                api_key=self.api_key,
+                model="qwen-plus",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert in English cloze test analysis for Chinese middle school students. Always respond with valid JSON. IMPORTANT: All definitions and explanations MUST be in Chinese.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                operation="cloze_analyzer.analyze_point",
+                temperature=0.2,
+                max_tokens=3000,
+                timeout_seconds=120.0,
+            )
+            content = result['choices'][0]['message']['content']
+            return self._parse_response_v5(content, correct_word)
 
         except Exception as e:
             return PointAnalysisResultV5(success=False, error=str(e))
