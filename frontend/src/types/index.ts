@@ -921,6 +921,16 @@ export interface BatchDeleteResponse {
 // ============================================================================
 
 /** 作文任务 */
+export interface WritingCategoryNode {
+  id: number
+  code: string
+  name: string
+  level: number
+  parent_id?: number
+  path: string
+  template_key: string
+}
+
 export interface WritingTask {
   id: number
   paper_id: number
@@ -931,10 +941,12 @@ export interface WritingTask {
   grade?: string
   semester?: string
   exam_type?: string
-  writing_type?: '应用文' | '记叙文' | '其他'
-  application_type?: string  // 书信/通知/邀请/日记/邮件
-  primary_topic?: string
-  topic_verified: boolean
+  group_category?: WritingCategoryNode
+  major_category?: WritingCategoryNode
+  category?: WritingCategoryNode
+  category_confidence: number
+  category_reasoning?: string
+  training_word_target: string
   source?: SourceInfo
   created_at: string
 }
@@ -949,8 +961,7 @@ export interface WritingTaskListResponse {
 /** 作文模板 */
 export interface WritingTemplate {
   id: number
-  writing_type: string
-  application_type?: string
+  category: WritingCategoryNode
   template_name: string
   template_content: string
   tips?: string
@@ -995,9 +1006,9 @@ export interface WritingFilter {
   grade?: string
   semester?: string
   exam_type?: string
-  writing_type?: string
-  application_type?: string
-  topic?: string
+  group_category_id?: number
+  major_category_id?: number
+  category_id?: number
   search?: string
 }
 
@@ -1006,16 +1017,17 @@ export interface WritingFiltersResponse {
   grades: string[]
   semesters: string[]
   exam_types: string[]
-  writing_types: string[]
-  application_types: string[]
-  topics: string[]
+  groups: WritingCategoryNode[]
+  major_categories: WritingCategoryNode[]
+  categories: WritingCategoryNode[]
 }
 
 /** 文体识别响应 */
 export interface WritingTypeDetectResponse {
   task_id: number
-  writing_type: string
-  application_type?: string
+  group_category?: WritingCategoryNode
+  major_category?: WritingCategoryNode
+  category?: WritingCategoryNode
   confidence: number
   reasoning?: string
 }
@@ -1036,12 +1048,15 @@ export interface BatchGenerateResponse {
 //  作文讲义类型
 // ============================================================================
 
-/** 作文讲义话题统计 */
-export interface WritingHandoutTopicStats {
-  topic: string
+/** 作文讲义子类统计 */
+export interface WritingHandoutCategorySummary {
+  group_name: string
+  major_category_name: string
+  category_name: string
   task_count: number
   sample_count: number
   recent_years: number[]
+  applicable_ranges: string[]
 }
 
 /** 写作框架段落 */
@@ -1053,7 +1068,8 @@ export interface WritingFrameworkSection {
 
 /** 写作框架 */
 export interface WritingFramework {
-  writing_type: string  // 应用文/记叙文
+  title: string
+  category_name: string
   sections: WritingFrameworkSection[]
 }
 
@@ -1089,21 +1105,27 @@ export interface HandoutSample {
   source?: HandoutSampleSource
 }
 
-/** 作文讲义详情响应（四段式） */
-export interface WritingHandoutDetailResponse {
-  topic: string
-  grade: string
-  edition: string
-  part1_topic_stats: WritingHandoutTopicStats
-  part2_frameworks: WritingFramework[]
-  part3_expressions: HighFrequencyExpression[]
-  part4_samples: HandoutSample[]
+/** 作文讲义单个子类区块 */
+export interface WritingHandoutCategorySection {
+  group_category: WritingCategoryNode
+  major_category: WritingCategoryNode
+  category: WritingCategoryNode
+  summary: WritingHandoutCategorySummary
+  frameworks: WritingFramework[]
+  expressions: HighFrequencyExpression[]
+  samples: HandoutSample[]
+}
+
+/** 作文讲义一级分组 */
+export interface WritingHandoutGroup {
+  group_category: WritingCategoryNode
+  sections: WritingHandoutCategorySection[]
 }
 
 /** 年级作文讲义响应 */
 export interface WritingGradeHandoutResponse {
   grade: string
   edition: string
-  topics: WritingHandoutTopicStats[]
-  content: WritingHandoutDetailResponse[]
+  total_task_count: number
+  groups: WritingHandoutGroup[]
 }

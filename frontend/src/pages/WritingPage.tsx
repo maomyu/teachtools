@@ -12,6 +12,7 @@ import {
   Card,
   Select,
   Input,
+  Tabs,
   Tag,
   Space,
   Button,
@@ -48,7 +49,7 @@ const { Title } = Typography
 const { Search } = Input
 
 // 抽屉打开时要隐藏的次要列
-const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'primary_topic', 'word_limit']
+const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'category_path', 'word_limit']
 
 export function WritingPage() {
   const [viewMode, setViewMode] = useState<'list' | 'handout'>('list')
@@ -60,9 +61,9 @@ export function WritingPage() {
     grades: [],
     semesters: [],
     exam_types: [],
-    writing_types: [],
-    application_types: [],
-    topics: [],
+    groups: [],
+    major_categories: [],
+    categories: [],
   })
 
   // 批量选择状态
@@ -83,9 +84,9 @@ export function WritingPage() {
     grade: undefined as string | undefined,
     semester: undefined as string | undefined,
     exam_type: undefined as string | undefined,
-    writing_type: undefined as string | undefined,
-    application_type: undefined as string | undefined,
-    topic: undefined as string | undefined,
+    group_category_id: undefined as number | undefined,
+    major_category_id: undefined as number | undefined,
+    category_id: undefined as number | undefined,
     search: undefined as string | undefined,
   })
 
@@ -204,17 +205,61 @@ export function WritingPage() {
     },
   }
 
-  // 文体类型颜色
-  const getWritingTypeColor = (type: string) => {
+  const getGroupColor = (type?: string) => {
     switch (type) {
       case '应用文':
         return 'blue'
       case '记叙文':
         return 'green'
+      case '表达拓展类':
+        return 'gold'
       default:
         return 'default'
     }
   }
+
+  const availableMajorCategories = useMemo(() => {
+    if (!filter.group_category_id) return filters.major_categories
+    return filters.major_categories.filter((item) => item.parent_id === filter.group_category_id)
+  }, [filters.major_categories, filter.group_category_id])
+
+  const availableCategories = useMemo(() => {
+    if (filter.major_category_id) {
+      return filters.categories.filter((item) => item.parent_id === filter.major_category_id)
+    }
+    if (filter.group_category_id) {
+      const majorIds = new Set(
+        filters.major_categories
+          .filter((item) => item.parent_id === filter.group_category_id)
+          .map((item) => item.id)
+      )
+      return filters.categories.filter((item) => item.parent_id && majorIds.has(item.parent_id))
+    }
+    return filters.categories
+  }, [filters.categories, filters.major_categories, filter.group_category_id, filter.major_category_id])
+
+  const categoryTabItems = useMemo(
+    () => [
+      { key: 'all', label: '全部' },
+      ...availableCategories.map((item) => ({
+        key: String(item.id),
+        label: item.name,
+      })),
+    ],
+    [availableCategories]
+  )
+
+  useEffect(() => {
+    if (!filter.category_id) return
+    const categoryExists = availableCategories.some((item) => item.id === filter.category_id)
+    if (!categoryExists) {
+      setFilter((prev) => ({
+        ...prev,
+        category_id: undefined,
+        page: 1,
+      }))
+    }
+  }, [availableCategories, filter.category_id])
 
   // 表格列定义
   const columns: ColumnsType<WritingTask> = [
@@ -263,25 +308,21 @@ export function WritingPage() {
       render: (examType: string) => examType || '-',
     },
     {
-      title: '文体',
-      dataIndex: 'writing_type',
-      key: 'writing_type',
-      width: drawerOpen ? 90 : 100,
-      render: (type: string, record) => (
-        <Space direction="vertical" size={0}>
-          <Tag color={getWritingTypeColor(type)}>{type || '未识别'}</Tag>
-          {record.application_type && (
-            <span style={{ fontSize: 12, color: '#999' }}>{record.application_type}</span>
-          )}
+      title: '分类',
+      key: 'category_path',
+      width: drawerOpen ? 210 : 260,
+      render: (_, record) => (
+        <Space direction="vertical" size={4}>
+          <Space wrap size={[4, 4]}>
+            <Tag color={getGroupColor(record.group_category?.name)}>{record.group_category?.name || '未识别'}</Tag>
+            {record.major_category?.name && <Tag color="cyan">{record.major_category.name}</Tag>}
+            {record.category?.name && <Tag color="geekblue">{record.category.name}</Tag>}
+          </Space>
+          <span style={{ fontSize: 12, color: '#666' }}>
+            目标：150词左右
+          </span>
         </Space>
       ),
-    },
-    {
-      title: '话题',
-      dataIndex: 'primary_topic',
-      key: 'primary_topic',
-      width: 120,
-      render: (topic: string) => topic || '-',
     },
     {
       title: '题目预览',
@@ -377,16 +418,23 @@ export function WritingPage() {
             <Card>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           {/* 标题和统计 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Title level={3} style={{ margin: 0 }}>
-              <FileTextOutlined style={{ marginRight: 8 }} />
-              作文汇编
-              <Badge count={total} style={{ marginLeft: 8 }} />
-            </Title>
-            <Space>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+            <Space direction="vertical" size={6}>
+              <Title level={3} style={{ margin: 0 }}>
+                <FileTextOutlined style={{ marginRight: 8 }} />
+                作文汇编
+                <Badge count={total} style={{ marginLeft: 8 }} />
+              </Title>
+              <div style={{ color: '#667085', fontSize: 13 }}>
+                试卷导入后自动完成子类归类，并为当前作文补齐子类模板与 150 词左右范文。
+              </div>
+            </Space>
+            <Space wrap>
               {Object.entries(gradeCounts).map(([grade, count]) => (
                 <Tag key={grade} color="blue">{grade}: {count}</Tag>
               ))}
+              <Tag color="purple">子类模板驱动</Tag>
+              <Tag color="green">导入即生成范文</Tag>
             </Space>
           </div>
 
@@ -418,31 +466,30 @@ export function WritingPage() {
             />
             <Select
               allowClear
-              placeholder="文体"
+              placeholder="文体组"
               style={{ width: 120 }}
-              value={filter.writing_type}
-              onChange={(value) => setFilter({ ...filter, writing_type: value, page: 1 })}
-              options={filters.writing_types.map((w) => ({ value: w, label: w }))}
+              value={filter.group_category_id}
+              onChange={(value) => setFilter({
+                ...filter,
+                group_category_id: value,
+                major_category_id: undefined,
+                category_id: undefined,
+                page: 1,
+              })}
+              options={filters.groups.map((item) => ({ value: item.id, label: item.name }))}
             />
             <Select
               allowClear
-              placeholder="应用文类型"
-              style={{ width: 140 }}
-              value={filter.application_type}
-              onChange={(value) => setFilter({ ...filter, application_type: value, page: 1 })}
-              options={filters.application_types.map((a) => ({ value: a, label: a }))}
-            />
-            <Select
-              allowClear
-              showSearch
-              placeholder="话题"
-              style={{ width: 150 }}
-              value={filter.topic}
-              onChange={(value) => setFilter({ ...filter, topic: value, page: 1 })}
-              options={filters.topics.map((t) => ({ value: t, label: t }))}
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
+              placeholder="主类"
+              style={{ width: 160 }}
+              value={filter.major_category_id}
+              onChange={(value) => setFilter({
+                ...filter,
+                major_category_id: value,
+                category_id: undefined,
+                page: 1,
+              })}
+              options={availableMajorCategories.map((item) => ({ value: item.id, label: item.name }))}
             />
             <Search
               placeholder="搜索作文内容..."
@@ -451,6 +498,19 @@ export function WritingPage() {
               style={{ width: 250 }}
             />
           </Space>
+
+          <Tabs
+            activeKey={filter.category_id ? String(filter.category_id) : 'all'}
+            items={categoryTabItems}
+            onChange={(activeKey) =>
+              setFilter((prev) => ({
+                ...prev,
+                category_id: activeKey === 'all' ? undefined : Number(activeKey),
+                page: 1,
+              }))
+            }
+            tabBarStyle={{ marginBottom: 0 }}
+          />
 
           {/* 批量操作栏 */}
           {selectedRowKeys.length > 0 && (

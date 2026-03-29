@@ -12,7 +12,6 @@ import { Layout as AntLayout, Menu, Typography, Badge, Button, Space, Tag, Toolt
 import {
   ReadOutlined,
   FileTextOutlined,
-  HomeOutlined,
   UploadOutlined,
   EditOutlined,
   BookOutlined,
@@ -50,11 +49,6 @@ export function Layout() {
   }
 
   const menuItems = useMemo(() => ([
-    {
-      key: '/',
-      icon: <HomeOutlined />,
-      label: '首页',
-    },
     {
       key: '/import',
       icon: <UploadOutlined />,

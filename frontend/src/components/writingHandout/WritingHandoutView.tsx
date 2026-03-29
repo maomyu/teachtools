@@ -257,12 +257,12 @@ export function WritingHandoutView() {
       {/* 说明 */}
       <Card style={{ marginBottom: 24 }}>
         <Space direction="vertical">
-          <Text>作文讲义按<strong>话题分类</strong>，采用<strong>四段式结构</strong>：</Text>
+          <Text>作文讲义按<strong>文体组 / 主类 / 子类</strong>组织，突出“一个子类一套模板”的训练方式：</Text>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li><Text>话题目录 - 统计各话题的题目数量和考查年份</Text></li>
-            <li><Text>写作框架 - 标准结构模板（开头句、背景句、中心句、主体段、结尾句）</Text></li>
-            <li><Text>高频表达 - 开头句型、结尾句型、过渡词汇、高级词汇</Text></li>
-            <li><Text>范文展示 - 真题范文 + 重点句标注（教师版含解析）</Text></li>
+            <li><Text>分类目录 - 直接看到当前试卷覆盖了哪些文体组、主类和子类</Text></li>
+            <li><Text>写作框架 - 每个子类对应一套通用模板，便于学生迁移套用</Text></li>
+            <li><Text>高频表达 - 聚合该子类最常用的开头句、结尾句、过渡词和替换词</Text></li>
+            <li><Text>范文展示 - 代表题目 + 150词左右示范范文（教师版含翻译/重点句）</Text></li>
           </ul>
         </Space>
       </Card>

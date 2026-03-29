@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 
 from app.config import settings
+from app.writing_category_registry import flatten_writing_categories
 
 # 创建异步引擎
 engine = create_async_engine(
@@ -58,11 +59,12 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_exam_papers_nullable_metadata(conn)
+        await _migrate_writing_schema(conn)
 
         # 迁移：添加 is_rare_meaning 列（如果不存在）
         # SQLite 不支持 IF NOT EXISTS，需要捕获异常
         try:
-            await conn.execute(
+            await conn.exec_driver_sql(
                 "ALTER TABLE cloze_points ADD COLUMN is_rare_meaning BOOLEAN DEFAULT 0"
             )
         except Exception:
@@ -134,3 +136,124 @@ async def _migrate_exam_papers_nullable_metadata(conn):
     await conn.exec_driver_sql("DROP TABLE exam_papers")
     await conn.exec_driver_sql("ALTER TABLE exam_papers_new RENAME TO exam_papers")
     await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+
+
+async def _migrate_writing_schema(conn):
+    """迁移作文分类树相关结构并预置分类数据。"""
+    await conn.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS writing_categories (
+            id INTEGER NOT NULL PRIMARY KEY,
+            code VARCHAR(80) NOT NULL UNIQUE,
+            name VARCHAR(100) NOT NULL,
+            level INTEGER NOT NULL,
+            parent_id INTEGER,
+            path VARCHAR(255) NOT NULL,
+            template_key VARCHAR(100) NOT NULL,
+            prompt_hint TEXT,
+            sort_order INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT 1,
+            created_at DATETIME,
+            updated_at DATETIME,
+            FOREIGN KEY(parent_id) REFERENCES writing_categories(id)
+        )
+        """
+    )
+
+    await _ensure_column(conn, "writing_tasks", "group_category_id", "INTEGER")
+    await _ensure_column(conn, "writing_tasks", "major_category_id", "INTEGER")
+    await _ensure_column(conn, "writing_tasks", "category_id", "INTEGER")
+    await _ensure_column(conn, "writing_tasks", "category_confidence", "FLOAT DEFAULT 0")
+    await _ensure_column(conn, "writing_tasks", "category_reasoning", "TEXT")
+
+    await _ensure_column(conn, "writing_templates", "category_id", "INTEGER")
+    await _ensure_column(conn, "writing_templates", "template_key", "VARCHAR(100)")
+
+    await _seed_writing_categories(conn)
+
+
+async def _ensure_column(conn, table_name: str, column_name: str, definition: str) -> None:
+    """为 SQLite 表补充缺失列。"""
+    result = await conn.execute(text(f"PRAGMA table_info({table_name})"))
+    columns = {row[1] for row in result.fetchall()}
+    if column_name in columns:
+        return
+
+    await conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+
+async def _seed_writing_categories(conn) -> None:
+    """按 code 幂等写入/更新预置分类树。"""
+    rows = flatten_writing_categories()
+    code_to_id: dict[str, int] = {}
+
+    for level in (1, 2, 3):
+        for row in [item for item in rows if item["level"] == level]:
+            parent_id = code_to_id.get(row["parent_code"])
+            exists_result = await conn.execute(
+                text("SELECT id FROM writing_categories WHERE code = :code"),
+                {"code": row["code"]},
+            )
+            existing_id = exists_result.scalar_one_or_none()
+
+            if existing_id is None:
+                await conn.execute(
+                    text(
+                        """
+                        INSERT INTO writing_categories (
+                            code, name, level, parent_id, path, template_key, prompt_hint,
+                            sort_order, is_active, created_at, updated_at
+                        )
+                        VALUES (
+                            :code, :name, :level, :parent_id, :path, :template_key, :prompt_hint,
+                            :sort_order, :is_active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                        """
+                    ),
+                    {
+                        "code": row["code"],
+                        "name": row["name"],
+                        "level": row["level"],
+                        "parent_id": parent_id,
+                        "path": row["path"],
+                        "template_key": row["template_key"],
+                        "prompt_hint": row["prompt_hint"],
+                        "sort_order": row["sort_order"],
+                        "is_active": 1 if row["is_active"] else 0,
+                    },
+                )
+            else:
+                await conn.execute(
+                    text(
+                        """
+                        UPDATE writing_categories
+                        SET
+                            name = :name,
+                            level = :level,
+                            parent_id = :parent_id,
+                            path = :path,
+                            template_key = :template_key,
+                            prompt_hint = :prompt_hint,
+                            sort_order = :sort_order,
+                            is_active = :is_active,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE code = :code
+                        """
+                    ),
+                    {
+                        "code": row["code"],
+                        "name": row["name"],
+                        "level": row["level"],
+                        "parent_id": parent_id,
+                        "path": row["path"],
+                        "template_key": row["template_key"],
+                        "prompt_hint": row["prompt_hint"],
+                        "sort_order": row["sort_order"],
+                        "is_active": 1 if row["is_active"] else 0,
+                    },
+                )
+            category_id_result = await conn.execute(
+                text("SELECT id FROM writing_categories WHERE code = :code"),
+                {"code": row["code"]},
+            )
+            code_to_id[row["code"]] = category_id_result.scalar_one()

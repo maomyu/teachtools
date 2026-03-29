@@ -7,7 +7,7 @@
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, CheckConstraint, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -40,6 +40,13 @@ class WritingTask(Base):
     word_limit = Column(String(50))
     points_value = Column(String(20))  # 分值
 
+    # 新分类字段（数据库分类树驱动）
+    group_category_id = Column(Integer, ForeignKey("writing_categories.id"))
+    major_category_id = Column(Integer, ForeignKey("writing_categories.id"))
+    category_id = Column(Integer, ForeignKey("writing_categories.id"))
+    category_confidence = Column(Float, default=0.0)
+    category_reasoning = Column(Text)
+
     # ─────────────────────────────────────────────────────────────────────────
     #                              分类字段
     # ─────────────────────────────────────────────────────────────────────────
@@ -62,6 +69,9 @@ class WritingTask(Base):
     # ─────────────────────────────────────────────────────────────────────────
     paper = relationship("ExamPaper", back_populates="writing_tasks")
     samples = relationship("WritingSample", back_populates="task", cascade="all, delete-orphan")
+    group_category = relationship("WritingCategory", foreign_keys=[group_category_id])
+    major_category = relationship("WritingCategory", foreign_keys=[major_category_id])
+    category = relationship("WritingCategory", foreign_keys=[category_id], back_populates="tasks")
 
     __table_args__ = (
         CheckConstraint(
@@ -91,12 +101,14 @@ class WritingTemplate(Base):
     __tablename__ = "writing_templates"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    category_id = Column(Integer, ForeignKey("writing_categories.id"), nullable=False)
     writing_type = Column(String(50), nullable=False)
     application_type = Column(String(50))
     template_name = Column(String(100), nullable=False)
     template_content = Column(Text, nullable=False)
     tips = Column(Text)  # 写作技巧
     structure = Column(Text)  # 结构说明
+    template_key = Column(String(100))
 
     # === 新增专业要素字段 ===
     opening_sentences = Column(Text)    # 开头句型（JSON数组）
@@ -110,6 +122,11 @@ class WritingTemplate(Base):
 
     # 关系
     samples = relationship("WritingSample", back_populates="template")
+    category = relationship("WritingCategory", back_populates="templates")
+
+    __table_args__ = (
+        UniqueConstraint("category_id", "template_key", name="uq_writing_templates_category_template_key"),
+    )
 
     def __repr__(self):
         return f"<WritingTemplate(id={self.id}, name={self.template_name})>"
@@ -149,3 +166,29 @@ class WritingSample(Base):
 
     def __repr__(self):
         return f"<WritingSample(id={self.id}, type={self.sample_type})>"
+
+
+class WritingCategory(Base):
+    """作文分类树"""
+    __tablename__ = "writing_categories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(80), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
+    level = Column(Integer, nullable=False)
+    parent_id = Column(Integer, ForeignKey("writing_categories.id"))
+    path = Column(String(255), nullable=False)
+    template_key = Column(String(100), nullable=False)
+    prompt_hint = Column(Text)
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    parent = relationship("WritingCategory", remote_side=[id], back_populates="children")
+    children = relationship("WritingCategory", back_populates="parent")
+    tasks = relationship("WritingTask", back_populates="category", foreign_keys=[WritingTask.category_id])
+    templates = relationship("WritingTemplate", back_populates="category", foreign_keys=[WritingTemplate.category_id])
+
+    def __repr__(self):
+        return f"<WritingCategory(id={self.id}, code={self.code}, level={self.level})>"

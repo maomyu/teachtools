@@ -587,14 +587,26 @@ def verify_paper_in_db(
         (paper_id,),
     )
     checks["reading_passages_count"] = len(reading_passages)
-    if source_expectations["expects_reading"] and not reading_passages:
+    expected_passages = None
+    expected_questions = None
+    if upload_result:
+        expected_passages = upload_result.get("passages_created")
+        expected_questions = upload_result.get("questions_created")
+
+    should_check_reading = bool(
+        source_expectations["expects_reading"]
+        or reading_passages
+        or ((expected_passages or 0) > 0)
+        or ((expected_questions or 0) > 0)
+    )
+    if should_check_reading and not reading_passages:
         issues.append("未找到 reading_passages 记录")
 
     total_questions = 0
     total_vocab_passage = 0
     total_open_ended_questions = 0
     reading_details: list[dict[str, Any]] = []
-    for passage in reading_passages if source_expectations["expects_reading"] else []:
+    for passage in reading_passages if should_check_reading else []:
         passage_id = int(passage["id"])
         questions = fetch_all(
             conn,
@@ -664,17 +676,11 @@ def verify_paper_in_db(
     checks["questions_count"] = total_questions
     checks["open_ended_questions_count"] = total_open_ended_questions
     checks["vocabulary_passage_count"] = total_vocab_passage
-
-    expected_passages = None
-    expected_questions = None
-    if upload_result:
-        expected_passages = upload_result.get("passages_created")
-        expected_questions = upload_result.get("questions_created")
-    if expected_passages is not None and expected_passages != len(reading_passages):
+    if expected_passages is not None and should_check_reading and expected_passages != len(reading_passages):
         issues.append(
             f"阅读文章数不一致: SSE={expected_passages}, DB={len(reading_passages)}"
         )
-    if expected_questions is not None and expected_questions != total_questions:
+    if expected_questions is not None and should_check_reading and expected_questions != total_questions:
         issues.append(
             f"阅读题目数不一致: SSE={expected_questions}, DB={total_questions}"
         )
@@ -690,14 +696,15 @@ def verify_paper_in_db(
         (paper_id,),
     )
     checks["cloze_passages_count"] = len(cloze_passages)
-    if source_expectations["expects_cloze"] and not cloze_passages:
+    should_check_cloze = bool(source_expectations["expects_cloze"] or cloze_passages)
+    if should_check_cloze and not cloze_passages:
         issues.append("未找到 cloze_passages 记录")
 
     cloze_details: list[dict[str, Any]] = []
     total_cloze_points = 0
     total_vocab_cloze = 0
     total_open_form_cloze_points = 0
-    for cloze in cloze_passages if source_expectations["expects_cloze"] else []:
+    for cloze in cloze_passages if should_check_cloze else []:
         cloze_id = int(cloze["id"])
         points = fetch_all(
             conn,
@@ -788,11 +795,17 @@ def verify_paper_in_db(
         (paper_id,),
     )
     checks["writing_tasks_count"] = len(writing_tasks)
-    if source_expectations["expects_writing"] and not writing_tasks:
+    should_check_writing = bool(source_expectations["expects_writing"] or writing_tasks)
+    checks["effective_expectations"] = {
+        "expects_reading": should_check_reading,
+        "expects_cloze": should_check_cloze,
+        "expects_writing": should_check_writing,
+    }
+    if should_check_writing and not writing_tasks:
         issues.append("未找到 writing_tasks 记录")
 
     writing_details: list[dict[str, Any]] = []
-    for task in writing_tasks if source_expectations["expects_writing"] else []:
+    for task in writing_tasks if should_check_writing else []:
         task_id = int(task["id"])
         samples = fetch_all(
             conn,
@@ -807,10 +820,12 @@ def verify_paper_in_db(
         task_issues = []
         if not (task["task_content"] or "").strip():
             task_issues.append("作文 task_content 为空")
-        if not (task["writing_type"] or "").strip():
-            task_issues.append("作文 writing_type 为空")
-        if not (task["primary_topic"] or "").strip():
-            task_issues.append("作文 primary_topic 为空")
+        if not task["group_category_id"]:
+            task_issues.append("作文 group_category_id 为空")
+        if not task["major_category_id"]:
+            task_issues.append("作文 major_category_id 为空")
+        if not task["category_id"]:
+            task_issues.append("作文 category_id 为空")
         if not samples:
             task_issues.append("作文没有 writing_samples")
         for sample in samples:

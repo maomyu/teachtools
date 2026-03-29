@@ -8,7 +8,7 @@ from app.models.vocabulary_cloze import VocabularyCloze
 from app.models.topic import Topic
 from app.models.cloze import ClozePassage, ClozePoint
 from app.models.textbook_vocab import TextbookVocab
-from app.models.writing import WritingTask, WritingTemplate, WritingSample
+from app.models.writing import WritingTask, WritingTemplate, WritingSample, WritingCategory
 from app.models.handout import HandoutConversion
 from app.models.log import ImportLog
 
@@ -26,6 +26,7 @@ __all__ = [
     "WritingTask",
     "WritingTemplate",
     "WritingSample",
+    "WritingCategory",
     "HandoutConversion",
     "ImportLog",
 ]

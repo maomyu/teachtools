@@ -5,6 +5,7 @@ PDF 生成服务
 """
 import subprocess
 import io
+import math
 import os
 import shutil
 import tempfile
@@ -126,7 +127,7 @@ class PDFGenerator:
         pdf_path: str,
         watermark_text: str = "学生版",
         output_path: Optional[str] = None,
-        density: str = "medium",
+        density: str = "sparse",
         size: str = "medium",
         watermark_image_path: Optional[str] = None,
     ) -> str:
@@ -184,7 +185,7 @@ class PDFGenerator:
     @staticmethod
     def _create_watermark_pdf(
         text: str,
-        density: str = "medium",
+        density: str = "sparse",
         size: str = "medium",
         watermark_image_path: Optional[str] = None,
     ) -> str:
@@ -220,7 +221,7 @@ class PDFGenerator:
     @staticmethod
     def _create_image_watermark_pdf(
         image_path: Path,
-        density: str = "medium",
+        density: str = "sparse",
         size: str = "medium",
     ) -> str:
         """
@@ -229,9 +230,9 @@ class PDFGenerator:
         这里会裁掉原图透明边缘，并整体降低透明度，避免深色 Logo 压住正文。
         """
         density_config = {
-            'sparse': {'x_count': 2, 'y_count': 4, 'x_gap': 120, 'y_gap': 120},
-            'medium': {'x_count': 3, 'y_count': 5, 'x_gap': 80, 'y_gap': 92},
-            'dense': {'x_count': 4, 'y_count': 6, 'x_gap': 55, 'y_gap': 74},
+            'sparse': {'mode': 'single'},
+            'medium': {'x_step_scale': 1.45, 'y_step_min': 150},
+            'dense': {'x_step_scale': 1.22, 'y_step_min': 125},
         }
 
         size_config = {
@@ -239,9 +240,17 @@ class PDFGenerator:
             'medium': 220,
             'large': 270,
         }
+        single_size_config = {
+            'small': 300,
+            'medium': 380,
+            'large': 460,
+        }
 
         config = density_config.get(density, density_config['medium'])
-        image_width = size_config.get(size, size_config['medium'])
+        if config.get('mode') == 'single':
+            image_width = single_size_config.get(size, single_size_config['medium'])
+        else:
+            image_width = size_config.get(size, size_config['medium'])
         opacity = 0.11
         watermark_path = PDFGenerator._create_temp_watermark_path()
 
@@ -268,28 +277,45 @@ class PDFGenerator:
             width, height = A4
 
             image_height = image_width * (processed.height / processed.width)
-            x_step = image_width + config['x_gap']
-            y_step = image_height + config['y_gap']
 
             c.saveState()
             c.translate(width / 2, height / 2)
             c.rotate(28)
 
-            x_offset = (config['x_count'] - 1) / 2
-            y_offset = (config['y_count'] - 1) / 2
+            if config.get('mode') == 'single':
+                c.drawImage(
+                    watermark_image,
+                    -image_width / 2,
+                    -image_height / 2,
+                    width=image_width,
+                    height=image_height,
+                    mask='auto',
+                )
+            else:
+                x_step = image_width * config['x_step_scale']
+                # 当前图片水印是一个较宽的 logo，高度很小。
+                # 这里给纵向步长设置下限，避免旋转后过度挤在一起。
+                y_step = max(image_height * 2.2, config['y_step_min'])
+                coverage_span = math.hypot(width, height) + max(image_width, image_height) * 2
+                x_start = -(coverage_span / 2)
+                x_end = (coverage_span / 2) + x_step
+                y_start = -(coverage_span / 2)
+                y_end = (coverage_span / 2) + y_step
 
-            for i in range(config['x_count']):
-                for j in range(config['y_count']):
-                    x = (i - x_offset) * x_step - image_width / 2
-                    y = (j - y_offset) * y_step - image_height / 2
-                    c.drawImage(
-                        watermark_image,
-                        x,
-                        y,
-                        width=image_width,
-                        height=image_height,
-                        mask='auto',
-                    )
+                x = x_start
+                while x <= x_end:
+                    y = y_start
+                    while y <= y_end:
+                        c.drawImage(
+                            watermark_image,
+                            x - image_width / 2,
+                            y - image_height / 2,
+                            width=image_width,
+                            height=image_height,
+                            mask='auto',
+                        )
+                        y += y_step
+                    x += x_step
 
             c.restoreState()
             c.save()
@@ -307,7 +333,7 @@ class PDFGenerator:
     @staticmethod
     def _create_text_watermark_pdf(
         text: str,
-        density: str = "medium",
+        density: str = "sparse",
         size: str = "medium",
     ) -> str:
         """
@@ -325,7 +351,7 @@ class PDFGenerator:
         """
         # 密度配置：控制水印的间距和数量
         density_config = {
-            'sparse': {'x_count': 3, 'y_count': 4, 'x_step': 250, 'y_step': 180},
+            'sparse': {'mode': 'single'},
             'medium': {'x_count': 5, 'y_count': 6, 'x_step': 180, 'y_step': 130},
             'dense': {'x_count': 7, 'y_count': 9, 'x_step': 120, 'y_step': 90},
         }
@@ -384,20 +410,23 @@ class PDFGenerator:
         c.translate(width / 2, height / 2)
         c.rotate(45)
 
-        # 根据配置绘制水印
-        x_count = config['x_count']
-        y_count = config['y_count']
-        x_step = config['x_step']
-        y_step = config['y_step']
+        if config.get('mode') == 'single':
+            c.drawCentredString(0, 0, text)
+        else:
+            # 根据配置绘制水印
+            x_count = config['x_count']
+            y_count = config['y_count']
+            x_step = config['x_step']
+            y_step = config['y_step']
 
-        x_start = -(x_count // 2)
-        x_end = x_count // 2 + 1
-        y_start = -(y_count // 2)
-        y_end = y_count // 2 + 1
+            x_start = -(x_count // 2)
+            x_end = x_count // 2 + 1
+            y_start = -(y_count // 2)
+            y_end = y_count // 2 + 1
 
-        for i in range(x_start, x_end):
-            for j in range(y_start, y_end):
-                c.drawString(i * x_step, j * y_step, text)
+            for i in range(x_start, x_end):
+                for j in range(y_start, y_end):
+                    c.drawString(i * x_step, j * y_step, text)
 
         c.save()
 

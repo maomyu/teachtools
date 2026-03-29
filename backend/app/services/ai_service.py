@@ -205,202 +205,81 @@ class QwenService:
 
     def _build_writing_template_prompt(
         self,
-        writing_type: str,
-        application_type: Optional[str] = None,
+        category_name: str,
+        category_path: str,
+        prompt_hint: Optional[str] = None,
+        target_word_count: int = 150,
+        group_name: Optional[str] = None,
+        major_category_name: Optional[str] = None,
+        task_examples: Optional[list[dict[str, str]]] = None,
+        existing_template: Optional[str] = None,
     ) -> str:
-        application_hint = f"\n应用文子类型：{application_type}" if application_type else ""
-        return f"""你是北京中考英语写作教学专家。请为以下文体生成专业模板。
+        prompt_hint_text = prompt_hint or "无"
+        example_blocks = []
+        for index, item in enumerate(task_examples or [], start=1):
+            example_blocks.append(
+                "\n".join(
+                    [
+                        f"### 同类题目 {index}",
+                        f"- 来源：{item.get('source') or '未知'}",
+                        f"- 题目：{item.get('task_content') or '无'}",
+                        f"- 要求：{item.get('requirements') or '无'}",
+                        f"- 字数：{item.get('word_limit') or '未注明'}",
+                    ]
+                )
+            )
+        examples_text = "\n\n".join(example_blocks) if example_blocks else "暂无同类题目样本，仅基于分类树和当前题目生成。"
+        existing_template_text = existing_template.strip() if existing_template else "无"
 
-## 文体类型
-文体：{writing_type}{application_hint}
+        letter_like = any(keyword in category_path for keyword in ("信", "邮件", "回信"))
+        speech_like = any(keyword in category_path for keyword in ("演讲稿", "发言稿", "倡议书", "通知"))
+        if letter_like:
+            format_rule = "这是书信/邮件子类，模板正文必须保留称呼、正文、结尾、署名等完整格式。"
+        elif speech_like:
+            format_rule = "这是通知/演讲/倡议类子类，模板要用演讲稿或通知格式，不要写成私人书信。"
+        else:
+            format_rule = "这不是书信/邮件子类，模板正文绝对不要出现 Dear、Best wishes、Yours 等书信格式。"
+        return f"""你是北京中考英语写作教学专家。请根据数据库给定的作文子类，生成一套适合学生背诵迁移的通用模板。
 
-## 北京中考作文评分标准（必须掌握）
+## 分类信息
+- 文体组：{group_name or "未分类"}
+- 主类：{major_category_name or "未分类"}
+- 子类：{category_name}
+- 分类路径：{category_path}
+- 教学提示：{prompt_hint_text}
+- 目标范文字数：约 {target_word_count} 词
 
-### 一档文（13-15分）特征
-1. **内容**：涵盖所有要点，有适当拓展
-2. **语言**：词汇丰富、句式多样、基本无语法错误
-3. **结构**：段落分明、过渡自然、逻辑清晰
-4. **亮点**：至少3处高级表达（词汇或句型）
+## 真实题目样本
+{examples_text}
 
-### 模板设计方法论
+## 已有模板（如果存在，请在其基础上纠偏优化）
+{existing_template_text}
 
-#### 应用文（书信/邮件）结构模式
-```
-第一段（开头，15-25词）：
-  - 称呼（Dear...）
-  - 写信目的（1句话点明）
-  - 常用句式：I am writing to [动词短语]
-
-第二段（主体，40-60词）：
-  - 用连接词组织2-3个要点
-  - 每个要点：理由/建议/细节
-  - 常用句式：
-    • First of all, [要点1]. Besides, [要点2]. Finally, [要点3].
-    • On one hand, [要点1]. On the other hand, [要点2].
-
-第三段（结尾，15-25词）：
-  - 总结/期待/感谢
-  - 常用句式：
-    • I hope [期待]. Looking forward to [动词-ing].
-    • I would appreciate it if [请求].
-  - 落款（Yours sincerely, Li Hua）
-```
-
-#### 记叙文结构模式
-```
-第一段（开头，20-30词）：
-  - 交代背景：时间、地点、事件
-  - 常用句式：Last [时间], I [动词过去式]...
-
-第二段（主体，50-70词）：
-  - 按时间顺序展开
-  - 细节描写 + 人物感受
-  - 常用句式：
-    • First, [动作]. Then, [动作]. Finally, [动作].
-    • What impressed me most was [名词/从句].
-
-第三段（结尾，15-25词）：
-  - 总结感受/收获
-  - 常用句式：
-    • This experience taught me that [从句].
-    • It was really a [形容词] day/experience.
-```
-
-## 句型生成规则
-
-### 开头句型构造模式（必须按场景分类）
-
-**模式1：申请类**
-- 构造公式：[申请动作] + [职位/机会]
-- 高分句式：
-  • I am writing to apply for [职位].
-  • I would like to express my interest in [机会].
-  • I am writing to express my desire to [动词短语].
-
-**模式2：建议类**
-- 构造公式：[建议动作] + [建议对象]
-- 高分句式：
-  • I am writing to offer some suggestions on [主题].
-  • After careful consideration, I would like to propose [建议].
-  • I would like to share my views on [主题].
-
-**模式3：邀请类**
-- 构造公式：[邀请动作] + [活动]
-- 高分句式：
-  • On behalf of [组织], I sincerely invite you to [活动].
-  • It is my honor to invite you to participate in [活动].
-  • We would be delighted if you could [动词短语].
-
-**模式4：感谢类**
-- 构造公式：[感谢程度] + [感谢原因]
-- 高分句式：
-  • I am writing to express my sincere gratitude for [原因].
-  • Words cannot express how grateful I am for [原因].
-  • I would like to thank you from the bottom of my heart for [原因].
-
-**模式5：道歉类**
-- 构造公式：[道歉动作] + [道歉原因]
-- 高分句式：
-  • I am writing to apologize for [原因].
-  • Please accept my sincere apology for [原因].
-  • I am terribly sorry for [原因].
-
-### 结尾句型构造模式（按场景分类）
-
-**申请类结尾**：
-- I would appreciate it if you could give me this opportunity.
-- I am looking forward to your favorable reply.
-
-**建议类结尾**：
-- I hope my suggestions will be taken into consideration.
-- I believe these changes will make a difference.
-
-**邀请类结尾**：
-- We would be honored by your presence.
-- Your participation would mean a lot to us.
-
-**感谢类结尾**：
-- Thank you again for your kindness.
-- I will always remember your help.
-
-**道歉类结尾**：
-- I hope you can forgive me.
-- I promise this will not happen again.
-
-### 过渡词汇分类（按功能）
-
-**递进关系**：Besides, / What's more, / Furthermore, / In addition, / Moreover,
-**转折关系**：However, / On the other hand, / Nevertheless, / Instead,
-**因果关系**：Therefore, / As a result, / Consequently, / Thus,
-**顺序关系**：First of all, / Then, / Finally, / In the end,
-**总结关系**：In conclusion, / To sum up, / All in all, / In short,
-
-### 高级词汇替换方法论
-
-**替换原则**：
-1. 基础词太泛，需要具体化
-2. 高级词要符合语境，不能生搬硬套
-3. 每个替换词要给出使用场景
-
-| 基础词 | 高级替换 | 使用场景 |
-|--------|----------|----------|
-| good | excellent/outstanding | 形容人或事物的优秀品质 |
-| good | beneficial | 形容某事的好处 |
-| help | assist | 正式场合的帮助 |
-| help | support | 支持某人 |
-| think | believe | 表达观点 |
-| think | consider | 考虑某事 |
-| want | desire | 强烈愿望 |
-| want | hope to | 希望做某事 |
-| use | utilize | 正式场合的使用 |
-| use | apply | 应用方法/技能 |
-| important | significant | 重要的意义 |
-| important | vital | 至关重要 |
-| very | extremely | 程度非常高 |
-| very | highly | 高度（配合形容词） |
-| get | obtain | 获得（正式） |
-| get | gain | 获得（收益/经验） |
-| make | create | 创造 |
-| make | produce | 产生 |
-| know | understand | 理解 |
-| know | realize | 意识到 |
-
-### 语法要点（按文体分类）
-
-**应用文语法重点**：
-1. **情态动词表达礼貌**：
-   - should/could/would + 动词原形
-   - I would appreciate it if you could...
-2. **被动语态增加正式感**：
-   - Your application will be considered.
-3. **条件句表达请求**：
-   - If possible, I would like to...
-
-**记叙文语法重点**：
-1. **过去时态的正确使用**：
-   - 一般过去时：描述发生的动作
-   - 过去进行时：描述背景（was/were doing）
-2. **时间顺序词**：
-   - First, Then, Finally / Before, After, When
-3. **感受表达**：
-   - I felt + 形容词
-   - It made me + 形容词
-   - I was + 形容词 + to do
+## 设计要求
+1. 模板必须服务于“同一子类多题通用”，不能写成只适合某一道题的死模板。
+2. 模板要贴合北京中考英语写作，语言自然、可迁移、可背诵。
+3. 必须体现该子类最常见的结构、功能句和收尾方式。
+4. {format_rule}
+5. 如果是记叙或表达类，要突出段落组织、叙事顺序或观点展开方式。
+6. 高频表达要偏中考高频、学生可直接替换套用，避免虚浮大词。
+7. 输出结构要能直接用于教师讲义。
+8. template_content 必须是“通用模板”，要大量使用占位符，如 [event] / [reason] / [activity] / [feeling]，不要直接抄成某一道题的完整范文。
+9. structure 请写成清晰的分段说明文本，每段一行，包含段落功能和建议词数，不要输出 Python dict 字面量。
 
 ## 输出格式（JSON）
 
 ```json
 {{
-    "template_name": "应用文-建议信模板",
-    "template_content": "Dear [Recipient],\\n\\nI am writing to [purpose].\\n\\n[Body: First, [point1]. Besides, [point2]. Finally, [point3].]\\n\\nI hope [closing]. Looking forward to your reply.\\n\\nYours sincerely,\\n[Your name]",
-    "structure": "共三段：\\n第一段（开头）：说明写信目的（约20词）\\n第二段（主体）：展开建议/理由（约50词）\\n第三段（结尾）：总结并期待回复（约20词）",
-    "tips": "1. 开头明确说明目的\\n2. 用 First, Besides, Finally 组织理由\\n3. 结尾表达期待",
-    "opening_sentences": ["I am writing to offer some suggestions on [topic].", "After careful consideration, I would like to propose [suggestion]."],
-    "closing_sentences": ["I hope my suggestions will be helpful.", "I believe these changes will benefit everyone."],
+    "template_name": "该子类通用模板名称",
+    "template_content": "可直接套用的英文模板正文，使用占位符",
+    "structure": "分段说明，每段功能和建议词数",
+    "tips": "3-5条适合该子类的写作提醒",
+    "opening_sentences": ["2-4个适合该子类的开头句"],
+    "closing_sentences": ["2-4个适合该子类的结尾句"],
     "transition_words": ["First of all,", "Besides,", "What's more,", "In conclusion,"],
-    "advanced_vocabulary": [{{"word": "suggest", "basic": "say", "usage": "正式场合提出建议"}}, {{"word": "consider", "basic": "think", "usage": "表达经过思考的观点"}}],
-    "grammar_points": ["使用情态动词should/could表达建议", "使用First/Besides组织段落"],
-    "scoring_criteria": {{"content": "涵盖所有要点", "language": "语法正确，词汇丰富", "structure": "段落分明"}}
+    "advanced_vocabulary": [{{"word": "表达词", "basic": "基础词", "usage": "使用场景"}}],
+    "grammar_points": ["2-4条适合该子类的语法提醒"],
+    "scoring_criteria": {{"content": "内容建议", "language": "语言建议", "structure": "结构建议"}}
 }}
 ```
 
@@ -419,20 +298,37 @@ class QwenService:
 
     def generate_writing_template(
         self,
-        writing_type: str,
-        application_type: Optional[str] = None
+        category_name: str,
+        category_path: str,
+        prompt_hint: Optional[str] = None,
+        target_word_count: int = 150,
+        group_name: Optional[str] = None,
+        major_category_name: Optional[str] = None,
+        task_examples: Optional[list[dict[str, str]]] = None,
+        existing_template: Optional[str] = None,
     ) -> Dict:
         """
         生成作文模板（方法论驱动版 v3）
 
         Args:
-            writing_type: 文体类型（应用文/记叙文）
-            application_type: 应用文子类型（书信/通知/邀请等）
+            category_name: 叶子子类名
+            category_path: 分类完整路径
+            prompt_hint: 分类提示
+            target_word_count: 目标词数
 
         Returns:
             模板内容（包含句型库、词汇表等）
         """
-        prompt = self._build_writing_template_prompt(writing_type, application_type)
+        prompt = self._build_writing_template_prompt(
+            category_name,
+            category_path,
+            prompt_hint,
+            target_word_count,
+            group_name=group_name,
+            major_category_name=major_category_name,
+            task_examples=task_examples,
+            existing_template=existing_template,
+        )
 
         try:
             result_text = self._call_generation_text(
@@ -447,10 +343,25 @@ class QwenService:
 
     async def generate_writing_template_async(
         self,
-        writing_type: str,
-        application_type: Optional[str] = None,
+        category_name: str,
+        category_path: str,
+        prompt_hint: Optional[str] = None,
+        target_word_count: int = 150,
+        group_name: Optional[str] = None,
+        major_category_name: Optional[str] = None,
+        task_examples: Optional[list[dict[str, str]]] = None,
+        existing_template: Optional[str] = None,
     ) -> Dict:
-        prompt = self._build_writing_template_prompt(writing_type, application_type)
+        prompt = self._build_writing_template_prompt(
+            category_name,
+            category_path,
+            prompt_hint,
+            target_word_count,
+            group_name=group_name,
+            major_category_name=major_category_name,
+            task_examples=task_examples,
+            existing_template=existing_template,
+        )
         try:
             result_text = await self.chat_async(
                 prompt,

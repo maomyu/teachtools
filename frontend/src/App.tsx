@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from '@/components/common/Layout'
-import { HomePage } from '@/pages/HomePage'
 import { ReadingContent } from '@/pages/ReadingContent'
 import { PassageDetailPage } from '@/pages/PassageDetailPage'
 import { ImportPage } from '@/pages/ImportPage'
@@ -20,7 +19,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<HomePage />} />
+          <Route index element={<Navigate to="/import" replace />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="reading" element={<ReadingContent />} />
           <Route path="reading/:id" element={<PassageDetailPage />} />
@@ -34,7 +33,7 @@ function App() {
           <Route path="writing/handout" element={<WritingHandoutPage />} />
           <Route path="writing/:id" element={<WritingDetailPage />} />
           <Route path="writing/materials" element={<WritingMaterialPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/import" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

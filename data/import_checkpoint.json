@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-03-26T17:21:43",
+  "updated_at": "2026-03-28T12:44:28",
   "records": {
     "/Users/maoyu/Downloads/personal/项目-code/teachtools/试卷库/docx-解析版/2007年北京市中考英语试题（解析版）.docx": {
       "filename": "2007年北京市中考英语试题（解析版）.docx",
@@ -5460,6 +5460,18 @@
       "failure_reason": null,
       "paper_id": 767,
       "updated_at": "2026-03-26T17:21:43"
+    },
+    "/Users/maoyu/personal/code/teachtools/试卷库/区校试卷_2022_初一秋季期末_怀柔_2022北京怀柔初一（上）期末英语（教师版）.docx": {
+      "filename": "区校试卷_2022_初一秋季期末_怀柔_2022北京怀柔初一（上）期末英语（教师版）.docx",
+      "status": "success",
+      "signature": {
+        "size": 464056,
+        "mtime_ns": 1774176140186337314
+      },
+      "attempts_used": 1,
+      "failure_reason": null,
+      "paper_id": 922,
+      "updated_at": "2026-03-28T01:59:05"
     }
   }
 }

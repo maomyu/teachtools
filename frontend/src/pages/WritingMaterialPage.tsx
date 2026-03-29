@@ -159,8 +159,8 @@ export function WritingMaterialPage() {
     setLoading(true)
     try {
       const response = await getWritingFilters()
-      // 合并静态话题和动态话题
-      const allTopics = [...new Set([...Object.keys(TOPIC_MATERIALS), ...response.topics])]
+      const dynamicTopics = response.categories.map((item) => item.name)
+      const allTopics = [...new Set([...Object.keys(TOPIC_MATERIALS), ...dynamicTopics])]
       setTopics(allTopics)
     } catch (error) {
       // 使用静态话题作为备用

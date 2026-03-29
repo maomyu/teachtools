@@ -28,10 +28,12 @@ import { getWritingHandout, getWritingHandoutDocxExportUrl } from '@/services/wr
 import { exportToPDF } from '@/utils/pdfExport'
 import type {
   WritingGradeHandoutResponse,
-  WritingHandoutDetailResponse,
+  WritingHandoutGroup,
+  WritingHandoutCategorySection,
   WritingFramework,
   HighFrequencyExpression,
   HandoutSample,
+  HighlightedSentence,
 } from '@/types'
 import '../handout/HandoutDetail.css'
 
@@ -50,6 +52,9 @@ const MAX_LINES_PER_PAGE = 40
 
 // 高频表达每页最大标签数
 const MAX_EXPRESSIONS_PER_PAGE = 24
+const SECTION_HEADER_LINES = 4
+const SAMPLE_TASK_BLOCK_LINES = 10
+const SAMPLE_META_LINES = 2
 
 // 辅助函数：估算段落行数
 function estimateLines(text: string): number {
@@ -59,6 +64,70 @@ function estimateLines(text: string): number {
     return acc + (char.charCodeAt(0) > 127 ? 2 : 1)
   }, 0)
   return Math.ceil(charCount / CHARS_PER_LINE)
+}
+
+function paginateByLineBudget<T>(
+  items: T[],
+  estimateFn: (item: T) => number,
+  firstPageMaxLines: number,
+  continuedPageMaxLines: number = MAX_LINES_PER_PAGE
+): T[][] {
+  const pages: T[][] = []
+  let currentPage: T[] = []
+  let currentLines = 0
+  let currentLimit = Math.max(1, firstPageMaxLines)
+
+  for (const item of items) {
+    const itemLines = Math.max(1, estimateFn(item))
+    if (currentPage.length > 0 && currentLines + itemLines > currentLimit) {
+      pages.push(currentPage)
+      currentPage = []
+      currentLines = 0
+      currentLimit = continuedPageMaxLines
+    }
+    currentPage.push(item)
+    currentLines += itemLines
+  }
+
+  if (currentPage.length > 0) {
+    pages.push(currentPage)
+  }
+
+  return pages.length > 0 ? pages : [[]]
+}
+
+function paginateParagraphs(
+  paragraphs: string[],
+  firstPageMaxLines: number,
+  continuedPageMaxLines: number = MAX_LINES_PER_PAGE
+): string[][] {
+  return paginateByLineBudget(
+    paragraphs,
+    (paragraph) => estimateLines(paragraph) + 1,
+    firstPageMaxLines,
+    continuedPageMaxLines
+  )
+}
+
+function estimateFrameworkLines(framework: WritingFramework): number {
+  let lines = estimateLines(framework.title) + 3
+  framework.sections.forEach((section) => {
+    lines += estimateLines(section.name) + 1
+    if (section.description) {
+      lines += estimateLines(section.description) + 1
+    }
+    if (section.examples.length > 0) {
+      section.examples.forEach((example) => {
+        lines += estimateLines(example) + 1
+      })
+    }
+    lines += 1
+  })
+  return lines + 4
+}
+
+function estimateHighlightLines(item: HighlightedSentence): number {
+  return estimateLines(item.sentence) + estimateLines(`【${item.highlight_type}】${item.explanation}`) + 3
 }
 
 // ============================================================================
@@ -151,6 +220,9 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
+  const flatSections = handout?.groups.flatMap((group) =>
+    group.sections.map((section) => ({ group, section }))
+  ) ?? []
 
   useEffect(() => {
     loadHandout()
@@ -198,7 +270,7 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
     )
   }
 
-  if (!handout || handout.topics.length === 0) {
+  if (!handout || handout.groups.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: 48 }}>
         <Empty description="暂无讲义数据" />
@@ -236,9 +308,9 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
         <section className="handout-page cover-page writing-handout-page">
           <div className="cover-content">
             <Title level={1}>{grade}作文讲义</Title>
-            <Title level={3} type="secondary">话题分类 · 四段式结构</Title>
+            <Title level={3} type="secondary">分类树整理 · 子类模板迁移</Title>
             <Divider />
-            <Text>包含 {handout.topics.length} 个话题 · {handout.topics.reduce((sum, t) => sum + t.task_count, 0)} 道真题</Text>
+            <Text>包含 {flatSections.length} 个子类 · {handout.total_task_count} 道真题</Text>
             <br />
             <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
               {paperIds && paperIds.length > 0 ? `已选 ${paperIds.length} 份试卷` : '范围：全年级全部试卷'}
@@ -253,21 +325,21 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
           <Title level={2}>目录</Title>
           <Divider />
           <List
-            dataSource={handout.topics}
-            renderItem={(topic, index) => (
+            dataSource={flatSections}
+            renderItem={({ group, section }, index) => (
               <List.Item>
-                <Text>{index + 1}. {topic.topic}</Text>
-                <Text type="secondary">（{topic.task_count} 题，{topic.sample_count} 篇范文）</Text>
+                <Text>{index + 1}. {group.group_category.name} / {section.major_category.name} / {section.category.name}</Text>
+                <Text type="secondary">（{section.summary.task_count} 题，{section.summary.sample_count} 篇范文）</Text>
               </List.Item>
             )}
           />
         </section>
 
-        {/* 每个话题的讲义 */}
-        {handout.content.map((topicContent) => (
-          <TopicSection
-            key={topicContent.topic}
-            topicContent={topicContent}
+        {handout.groups.map((group, groupIndex) => (
+          <GroupSection
+            key={group.group_category.id}
+            group={group}
+            groupIndex={groupIndex + 1}
             edition={edition}
           />
         ))}
@@ -280,49 +352,102 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
 //  子组件：单话题讲义区块
 // ============================================================================
 
-interface TopicSectionProps {
-  topicContent: WritingHandoutDetailResponse
+interface GroupSectionProps {
+  group: WritingHandoutGroup
+  groupIndex: number
   edition: 'teacher' | 'student'
 }
 
-function TopicSection({ topicContent, edition }: TopicSectionProps) {
-  const { topic, part1_topic_stats, part2_frameworks, part3_expressions, part4_samples } = topicContent
-
+function GroupSection({ group, groupIndex, edition }: GroupSectionProps) {
   return (
     <>
-      {/* 主题标题页 */}
       <section className="handout-page topic-title-page writing-handout-page">
-        <Title level={2}>主题：{topic}</Title>
+        <Title level={2}>{groupIndex}. {group.group_category.name}</Title>
         <Divider />
-        <Space size="large">
-          <Text>共 {part1_topic_stats.task_count} 道题目</Text>
-          <Text>{part4_samples.length} 篇范文</Text>
-          {part1_topic_stats.recent_years.length > 0 && (
+        <Text type="secondary">
+          共 {group.sections.length} 个子类，覆盖 {group.sections.reduce((sum, section) => sum + section.summary.task_count, 0)} 道题目
+        </Text>
+      </section>
+
+      {group.sections.map((section, index) => (
+        <CategorySection
+          key={section.category.id}
+          section={section}
+          sectionIndex={index + 1}
+          edition={edition}
+        />
+      ))}
+    </>
+  )
+}
+
+interface CategorySectionProps {
+  section: WritingHandoutCategorySection
+  sectionIndex: number
+  edition: 'teacher' | 'student'
+}
+
+function CategorySection({ section, sectionIndex, edition }: CategorySectionProps) {
+  const { summary, frameworks, expressions, samples, major_category, category } = section
+  const frameworkPages = paginateByLineBudget(
+    frameworks,
+    estimateFrameworkLines,
+    MAX_LINES_PER_PAGE - SECTION_HEADER_LINES
+  )
+  return (
+    <>
+      <section className="handout-page topic-title-page writing-handout-page">
+        <Title level={2}>{sectionIndex}. {major_category.name} / {category.name}</Title>
+        <Divider />
+        <Space size="large" wrap>
+          <Text>共 {summary.task_count} 道题目</Text>
+          <Text>{summary.sample_count} 篇范文</Text>
+          {summary.recent_years.length > 0 && (
             <Text type="secondary">
-              考查年份：{part1_topic_stats.recent_years.join('、')}
+              考查年份：{summary.recent_years.join('、')}
             </Text>
           )}
         </Space>
+        {summary.applicable_ranges.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Text strong>适用题目范围</Text>
+            <ul style={{ margin: '8px 0 0 18px' }}>
+              {summary.applicable_ranges.map((item, idx) => (
+                <li key={idx}><Text>{item}</Text></li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
-      {/* Part 2: 写作框架 */}
-      {part2_frameworks.length > 0 && (
-        <section className="handout-page part-page writing-handout-page">
-          <Title level={3}>一、写作框架</Title>
-          <Divider />
-          {part2_frameworks.map((framework, idx) => (
-            <FrameworkCard key={idx} framework={framework} />
+      {frameworks.length > 0 && (
+        <>
+          {frameworkPages.map((frameworkPage, pageIdx) => (
+            <section key={pageIdx} className="handout-page part-page writing-handout-page">
+              {pageIdx === 0 && (
+                <>
+                  <Title level={3}>一、写作框架</Title>
+                  <Divider />
+                </>
+              )}
+              {pageIdx > 0 && (
+                <Text type="secondary" style={{ marginBottom: 16, display: 'block' }}>
+                  写作框架（续 {pageIdx}）
+                </Text>
+              )}
+              {frameworkPage.map((framework, idx) => (
+                <FrameworkCard key={`${pageIdx}-${idx}`} framework={framework} />
+              ))}
+            </section>
           ))}
-        </section>
+        </>
       )}
 
-      {/* Part 3: 高频表达 - 自动分页 */}
-      {part3_expressions.length > 0 && (
-        <ExpressionPages expressions={part3_expressions} />
+      {expressions.length > 0 && (
+        <ExpressionPages expressions={expressions} />
       )}
 
-      {/* Part 4: 范文展示 - 自动分页 */}
-      {part4_samples.map((sample, idx) => (
+      {samples.map((sample, idx) => (
         <SamplePages
           key={sample.id}
           sample={sample}
@@ -346,7 +471,7 @@ function FrameworkCard({ framework }: FrameworkCardProps) {
   return (
     <Card
       size="small"
-      title={`${framework.writing_type}写作框架`}
+      title={framework.title}
       style={{ marginBottom: 16 }}
     >
       {framework.sections.map((section, idx) => (
@@ -437,40 +562,21 @@ function SamplePages({ sample, sampleIndex, edition }: SamplePagesProps) {
   const contentParagraphs = paragraphs.length > 0 ? paragraphs : [sample.sample_content]
 
   // 估算题目占用的行数（第一页需要预留）
-  const taskLines = estimateLines(sample.task_content) + 8 // 标题+来源+卡片边距
-  const firstPageMaxLines = MAX_LINES_PER_PAGE - taskLines
-
-  // 基于行数分页
-  const pages: string[][] = []
-  let currentPage: string[] = []
-  let currentPageIndex = 0 // 0 = 第一页（有题目），1+ = 续页
-  let currentLines = 0
-
-  for (const paragraph of contentParagraphs) {
-    const paragraphLines = estimateLines(paragraph) + 1 // +1 for paragraph spacing
-    const pageMaxLines = currentPageIndex === 0 ? firstPageMaxLines : MAX_LINES_PER_PAGE
-
-    if (currentLines + paragraphLines > pageMaxLines && currentPage.length > 0) {
-      // 当前页放不下，开始新页
-      pages.push(currentPage)
-      currentPage = []
-      currentLines = 0
-      currentPageIndex++
-    }
-
-    currentPage.push(paragraph)
-    currentLines += paragraphLines
-  }
-
-  // 添加最后一页
-  if (currentPage.length > 0) {
-    pages.push(currentPage)
-  }
-
-  // 如果没有内容，至少有一页
-  if (pages.length === 0) {
-    pages.push([])
-  }
+  const taskLines = estimateLines(sample.task_content) + SAMPLE_TASK_BLOCK_LINES
+  const firstPageMaxLines = MAX_LINES_PER_PAGE - taskLines - SAMPLE_META_LINES
+  const pages = paginateParagraphs(contentParagraphs, firstPageMaxLines)
+  const translationParagraphs = (sample.translation || '')
+    .split('\n')
+    .filter((p: string) => p.trim())
+  const translationPages = paginateParagraphs(
+    translationParagraphs.length > 0 ? translationParagraphs : [sample.translation || ''],
+    MAX_LINES_PER_PAGE - SECTION_HEADER_LINES
+  )
+  const highlightPages = paginateByLineBudget(
+    sample.highlighted_sentences || [],
+    estimateHighlightLines,
+    MAX_LINES_PER_PAGE - SECTION_HEADER_LINES
+  )
 
   return (
     <>
@@ -539,34 +645,58 @@ function SamplePages({ sample, sampleIndex, edition }: SamplePagesProps) {
 
       {/* 教师版：中文翻译（单独一页） */}
       {edition === 'teacher' && sample.translation && (
-        <section className="handout-page part-page writing-handout-page">
-          <Title level={4}>范文 {sampleIndex} - 中文翻译</Title>
-          <Divider />
-          <div className="sample-content" style={{ color: '#333' }}>
-            {sample.translation.split('\n').filter((p: string) => p.trim()).map((paragraph: string, pIdx: number) => (
-              <Paragraph key={pIdx} style={{ textIndent: '2em', marginBottom: 12, lineHeight: 2 }}>
-                {paragraph}
-              </Paragraph>
-            ))}
-          </div>
-        </section>
+        <>
+          {translationPages.map((translationPage, pageIdx) => (
+            <section key={pageIdx} className="handout-page part-page writing-handout-page">
+              {pageIdx === 0 ? (
+                <>
+                  <Title level={4}>范文 {sampleIndex} - 中文翻译</Title>
+                  <Divider />
+                </>
+              ) : (
+                <Text type="secondary" style={{ marginBottom: 16, display: 'block' }}>
+                  范文 {sampleIndex} - 中文翻译（续 {pageIdx}）
+                </Text>
+              )}
+              <div className="sample-content" style={{ color: '#333' }}>
+                {translationPage.map((paragraph: string, pIdx: number) => (
+                  <Paragraph key={pIdx} style={{ textIndent: '2em', marginBottom: 12, lineHeight: 2 }}>
+                    {paragraph}
+                  </Paragraph>
+                ))}
+              </div>
+            </section>
+          ))}
+        </>
       )}
 
       {/* 教师版：重点句解析（单独一页） */}
       {edition === 'teacher' && sample.highlighted_sentences && sample.highlighted_sentences.length > 0 && (
-        <section className="handout-page part-page writing-handout-page">
-          <Title level={4}>范文 {sampleIndex} - 重点句解析</Title>
-          <Divider />
-          <div className="highlight-analysis">
-            {sample.highlighted_sentences.map((h, idx) => (
-              <div key={idx} className="highlight-item">
-                <Text mark style={{ wordBreak: 'break-word' }}>{h.sentence}</Text>
-                <br />
-                <Text type="secondary">【{h.highlight_type}】{h.explanation}</Text>
+        <>
+          {highlightPages.map((highlightPage, pageIdx) => (
+            <section key={pageIdx} className="handout-page part-page writing-handout-page">
+              {pageIdx === 0 ? (
+                <>
+                  <Title level={4}>范文 {sampleIndex} - 重点句解析</Title>
+                  <Divider />
+                </>
+              ) : (
+                <Text type="secondary" style={{ marginBottom: 16, display: 'block' }}>
+                  范文 {sampleIndex} - 重点句解析（续 {pageIdx}）
+                </Text>
+              )}
+              <div className="highlight-analysis">
+                {highlightPage.map((h, idx) => (
+                  <div key={idx} className="highlight-item">
+                    <Text mark style={{ wordBreak: 'break-word' }}>{h.sentence}</Text>
+                    <br />
+                    <Text type="secondary">【{h.highlight_type}】{h.explanation}</Text>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
+          ))}
+        </>
       )}
     </>
   )

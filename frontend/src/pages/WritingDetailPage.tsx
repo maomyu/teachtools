@@ -117,12 +117,14 @@ export function WritingDetailPage() {
   }
 
   // 文体类型颜色
-  const getWritingTypeColor = (type: string) => {
+  const getGroupColor = (type?: string) => {
     switch (type) {
       case '应用文':
         return 'blue'
       case '记叙文':
         return 'green'
+      case '表达拓展类':
+        return 'gold'
       default:
         return 'default'
     }
@@ -146,25 +148,25 @@ export function WritingDetailPage() {
             <Descriptions.Item label="考试类型">
               <Tag color="purple">{detail.exam_type || '未设置'}</Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="文体">
-              {detail.writing_type ? (
+            <Descriptions.Item label="文体组">
+              {detail.group_category ? (
                 <Space>
-                  <Tag color={getWritingTypeColor(detail.writing_type)}>
-                    {detail.writing_type}
+                  <Tag color={getGroupColor(detail.group_category.name)}>
+                    {detail.group_category.name}
                   </Tag>
-                  {detail.application_type && (
-                    <Text type="secondary">({detail.application_type})</Text>
-                  )}
                 </Space>
               ) : (
                 <Tag>未识别</Tag>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label="话题">
-              {detail.primary_topic || '未分类'}
+            <Descriptions.Item label="主类">
+              {detail.major_category?.name || '未分类'}
             </Descriptions.Item>
-            <Descriptions.Item label="字数要求">
-              {detail.word_limit || '未设置'}
+            <Descriptions.Item label="子类">
+              {detail.category?.name || '未分类'}
+            </Descriptions.Item>
+            <Descriptions.Item label="训练词数">
+              {detail.training_word_target || '150词左右'}
             </Descriptions.Item>
           </Descriptions>
         </Card>
@@ -581,15 +583,15 @@ export function WritingDetailPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Title level={3} style={{ margin: 0 }}>
             {detail.source?.grade || ''} {detail.source?.exam_type || ''} 作文
-            {detail.primary_topic && (
+            {detail.category?.name && (
               <Text type="secondary" style={{ marginLeft: 12, fontSize: 14 }}>
-                · {detail.primary_topic}
+                · {detail.category.name}
               </Text>
             )}
           </Title>
-          {detail.writing_type && (
-            <Tag color={getWritingTypeColor(detail.writing_type)} style={{ fontSize: 14 }}>
-              {detail.writing_type}
+          {detail.group_category && (
+            <Tag color={getGroupColor(detail.group_category.name)} style={{ fontSize: 14 }}>
+              {detail.group_category.name}
             </Tag>
           )}
         </div>

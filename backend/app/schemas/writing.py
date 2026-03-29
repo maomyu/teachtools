@@ -2,22 +2,20 @@
 作文模块 Schema
 
 [INPUT]: 依赖 pydantic BaseModel
-[OUTPUT]: 对外提供作文相关的 Pydantic 模型
+[OUTPUT]: 对外提供作文分类树、列表、详情与讲义相关 Schema
 [POS]: backend/app/schemas 的作文 schema 定义
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel, field_validator
 from enum import Enum
+from typing import List, Optional
 
+from pydantic import BaseModel, field_validator
 
-# ==============================================================================
-#                              ENUMS
-# ==============================================================================
 
 class GradeEnum(str, Enum):
     """年级枚举"""
+
     GRADE_7 = "初一"
     GRADE_8 = "初二"
     GRADE_9 = "初三"
@@ -25,12 +23,14 @@ class GradeEnum(str, Enum):
 
 class SemesterEnum(str, Enum):
     """学期枚举"""
+
     FIRST = "上学期"
     SECOND = "下学期"
 
 
 class ExamTypeEnum(str, Enum):
     """考试类型枚举"""
+
     MIDTERM = "期中"
     FINAL = "期末"
     FIRST_MODEL = "一模"
@@ -38,19 +38,9 @@ class ExamTypeEnum(str, Enum):
     OTHER = "其他"
 
 
-class WritingTypeEnum(str, Enum):
-    """文体类型枚举"""
-    APPLICATION = "应用文"
-    NARRATIVE = "记叙文"
-    OTHER = "其他"
-
-
-# ==============================================================================
-#                              BASE MODELS
-# ==============================================================================
-
 class SourceInfo(BaseModel):
     """出处信息"""
+
     year: Optional[int] = None
     region: Optional[str] = None
     school: Optional[str] = None
@@ -60,73 +50,73 @@ class SourceInfo(BaseModel):
     filename: Optional[str] = None
 
 
+class WritingCategoryResponse(BaseModel):
+    """作文分类节点"""
+
+    id: int
+    code: str
+    name: str
+    level: int
+    parent_id: Optional[int] = None
+    path: str
+    template_key: str
+
+    class Config:
+        from_attributes = True
+
+
 class WritingTaskBase(BaseModel):
     """作文题目基础信息"""
+
     task_content: str
     requirements: Optional[str] = None
     word_limit: Optional[str] = None
     points_value: Optional[str] = None
 
 
-# ==============================================================================
-#                              REQUEST MODELS
-# ==============================================================================
-
 class WritingFilter(BaseModel):
     """作文筛选参数"""
+
     page: int = 1
     size: int = 20
     grade: Optional[str] = None
     semester: Optional[str] = None
     exam_type: Optional[str] = None
-    writing_type: Optional[str] = None
-    application_type: Optional[str] = None
-    topic: Optional[str] = None
+    group_category_id: Optional[int] = None
+    major_category_id: Optional[int] = None
+    category_id: Optional[int] = None
     search: Optional[str] = None
-
-
-class WritingTypeUpdateRequest(BaseModel):
-    """文体更新请求"""
-    writing_type: str
-    application_type: Optional[str] = None
-
-
-class TopicUpdateRequest(BaseModel):
-    """话题更新请求"""
-    primary_topic: str
-    secondary_topics: Optional[List[str]] = None
-    verified_by: Optional[str] = None
 
 
 class BatchGenerateRequest(BaseModel):
     """批量范文生成请求"""
+
     task_ids: List[int]
 
-    @field_validator('task_ids')
+    @field_validator("task_ids")
     @classmethod
-    def validate_task_ids(cls, v):
-        if len(v) > 100:
-            raise ValueError('批量生成数量不能超过 100')
-        if len(v) == 0:
-            raise ValueError('请选择至少一篇作文')
-        return list(set(v))  # 去重
+    def validate_task_ids(cls, value: List[int]) -> List[int]:
+        if len(value) > 100:
+            raise ValueError("批量生成数量不能超过 100")
+        if len(value) == 0:
+            raise ValueError("请选择至少一篇作文")
+        return list(dict.fromkeys(value))
 
-
-# ==============================================================================
-#                              RESPONSE MODELS
-# ==============================================================================
 
 class WritingTaskResponse(WritingTaskBase):
     """作文题目响应"""
+
     id: int
     paper_id: int
     grade: Optional[str] = None
     semester: Optional[str] = None
     exam_type: Optional[str] = None
-    writing_type: Optional[str] = None
-    application_type: Optional[str] = None
-    primary_topic: Optional[str] = None
-    topic_verified: bool = False
+    group_category: Optional[WritingCategoryResponse] = None
+    major_category: Optional[WritingCategoryResponse] = None
+    category: Optional[WritingCategoryResponse] = None
+    category_confidence: float = 0.0
+    category_reasoning: Optional[str] = None
+    training_word_target: str = "150词左右"
     source: Optional[SourceInfo] = None
     created_at: datetime
 
@@ -136,53 +126,65 @@ class WritingTaskResponse(WritingTaskBase):
 
 class WritingTaskListResponse(BaseModel):
     """作文列表响应"""
+
     total: int
     items: List[WritingTaskResponse]
-    grade_counts: dict = {}  # 各年级数量统计
+    grade_counts: dict = {}
 
 
 class TemplateResponse(BaseModel):
     """模板响应"""
+
     id: int
-    writing_type: str
-    application_type: Optional[str] = None
+    category: WritingCategoryResponse
     template_name: str
     template_content: str
     tips: Optional[str] = None
     structure: Optional[str] = None
+    opening_sentences: Optional[str] = None
+    closing_sentences: Optional[str] = None
+    transition_words: Optional[str] = None
+    advanced_vocabulary: Optional[str] = None
+    grammar_points: Optional[str] = None
+    scoring_criteria: Optional[str] = None
     created_at: datetime
 
 
 class SampleResponse(BaseModel):
     """范文响应"""
+
     id: int
     task_id: Optional[int] = None
     template_id: Optional[int] = None
     sample_content: str
     sample_type: str
     score_level: Optional[str] = None
-    word_count: Optional[int] = None  # 实际字数
-    translation: Optional[str] = None  # 中文翻译
+    word_count: Optional[int] = None
+    translation: Optional[str] = None
     created_at: datetime
 
 
 class WritingTaskDetailResponse(WritingTaskResponse):
     """作文详情响应（含模板和范文）"""
+
     templates: List[TemplateResponse] = []
     samples: List[SampleResponse] = []
 
 
 class WritingTypeDetectResponse(BaseModel):
-    """文体识别响应"""
+    """作文分类响应"""
+
     task_id: int
-    writing_type: str
-    application_type: Optional[str] = None
+    group_category: Optional[WritingCategoryResponse] = None
+    major_category: Optional[WritingCategoryResponse] = None
+    category: Optional[WritingCategoryResponse] = None
     confidence: float
     reasoning: Optional[str] = None
 
 
 class BatchGenerateResponse(BaseModel):
     """批量生成响应"""
+
     success_count: int
     fail_count: int
     results: List[dict]
@@ -190,73 +192,49 @@ class BatchGenerateResponse(BaseModel):
 
 class WritingFiltersResponse(BaseModel):
     """筛选项响应"""
+
     grades: List[str] = []
     semesters: List[str] = []
     exam_types: List[str] = []
-    writing_types: List[str] = []
-    application_types: List[str] = []
-    topics: List[str] = []
-
-
-# ==============================================================================
-#                              MATERIAL MODELS
-# ==============================================================================
-
-class MaterialResponse(BaseModel):
-    """素材响应"""
-    id: int
-    topic: str
-    sentence_patterns: List[str] = []
-    vocabulary: List[str] = []
-    tips: Optional[str] = None
-    created_at: datetime
-
-
-class MaterialListResponse(BaseModel):
-    """素材列表响应"""
-    items: List[MaterialResponse]
-
-
-# ==============================================================================
-#                              HANDOUT MODELS
-# ==============================================================================
-
-class WritingHandoutTopicStats(BaseModel):
-    """作文讲义话题统计"""
-    topic: str
-    task_count: int  # 题目数量
-    sample_count: int  # 范文数量
-    recent_years: List[int] = []
+    groups: List[WritingCategoryResponse] = []
+    major_categories: List[WritingCategoryResponse] = []
+    categories: List[WritingCategoryResponse] = []
 
 
 class WritingFrameworkSection(BaseModel):
     """写作框架段落"""
-    name: str  # 开头句/背景句/中心句/主体段/结尾句
-    description: str  # 段落说明
-    examples: List[str] = []  # 示例句子
+
+    name: str
+    description: str
+    examples: List[str] = []
 
 
 class WritingFramework(BaseModel):
     """写作框架"""
-    writing_type: str  # 应用文/记叙文
+
+    title: str
+    category_name: str
     sections: List[WritingFrameworkSection]
 
 
 class HighFrequencyExpression(BaseModel):
     """高频表达"""
-    category: str  # 开头句型/结尾句型/过渡词汇/高级词汇
+
+    category: str
     items: List[str]
 
 
 class HighlightedSentence(BaseModel):
     """重点句标注"""
-    sentence: str  # 完整句子
-    highlight_type: str  # 高级词汇/复杂句型/地道表达/过渡词
-    explanation: str  # 亮点说明
+
+    sentence: str
+    highlight_type: str
+    explanation: str
 
 
 class HandoutSampleSource(BaseModel):
     """讲义范文来源"""
+
     year: Optional[int] = None
     region: Optional[str] = None
     exam_type: Optional[str] = None
@@ -265,37 +243,51 @@ class HandoutSampleSource(BaseModel):
 
 class HandoutSample(BaseModel):
     """讲义范文"""
+
     id: int
-    task_content: str  # 题目
-    sample_content: str  # 范文正文
-    translation: Optional[str] = None  # 中文翻译
+    task_content: str
+    sample_content: str
+    translation: Optional[str] = None
     word_count: Optional[int] = None
-    highlighted_sentences: List[HighlightedSentence] = []  # 重点句标注
+    highlighted_sentences: List[HighlightedSentence] = []
     source: Optional[HandoutSampleSource] = None
 
 
-class WritingHandoutDetailResponse(BaseModel):
-    """作文讲义详情响应（四段式）"""
-    topic: str
-    grade: str
-    edition: str  # teacher/student
+class WritingHandoutCategorySummary(BaseModel):
+    """作文讲义子类统计"""
 
-    # Part 1: 话题统计
-    part1_topic_stats: WritingHandoutTopicStats
+    group_name: str
+    major_category_name: str
+    category_name: str
+    task_count: int
+    sample_count: int
+    recent_years: List[int] = []
+    applicable_ranges: List[str] = []
 
-    # Part 2: 写作框架
-    part2_frameworks: List[WritingFramework] = []
 
-    # Part 3: 高频表达
-    part3_expressions: List[HighFrequencyExpression] = []
+class WritingHandoutCategorySection(BaseModel):
+    """单个子类讲义内容"""
 
-    # Part 4: 范文展示
-    part4_samples: List[HandoutSample] = []
+    group_category: WritingCategoryResponse
+    major_category: WritingCategoryResponse
+    category: WritingCategoryResponse
+    summary: WritingHandoutCategorySummary
+    frameworks: List[WritingFramework] = []
+    expressions: List[HighFrequencyExpression] = []
+    samples: List[HandoutSample] = []
+
+
+class WritingHandoutGroupResponse(BaseModel):
+    """讲义一级分组"""
+
+    group_category: WritingCategoryResponse
+    sections: List[WritingHandoutCategorySection] = []
 
 
 class WritingGradeHandoutResponse(BaseModel):
     """年级作文讲义响应"""
+
     grade: str
-    edition: str  # teacher/student
-    topics: List[WritingHandoutTopicStats] = []  # 话题统计列表
-    content: List[WritingHandoutDetailResponse] = []  # 各话题讲义内容
+    edition: str
+    total_task_count: int = 0
+    groups: List[WritingHandoutGroupResponse] = []

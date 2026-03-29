@@ -36,7 +36,7 @@ from app.models.vocabulary_cloze import VocabularyCloze  # noqa: E402
 from app.models.writing import WritingTask  # noqa: E402
 from app.services.cloze_analyzer import ClozeAnalyzerV5, NEW_CODE_TO_LEGACY  # noqa: E402
 from app.services.image_extractor import ImageExtractor  # noqa: E402
-from app.services.llm_parser import LLMDocumentParser  # noqa: E402
+from app.services.llm_parser import LLMDocumentParser, dedupe_writing_tasks  # noqa: E402
 from app.services.topic_classifier import TopicClassifier  # noqa: E402
 from app.services.vocab_extractor import ExtractedWord, VocabExtractor  # noqa: E402
 from app.services.writing_service import WritingService  # noqa: E402
@@ -236,51 +236,61 @@ async def repair_writing(session, paper: ExamPaper, file_path: Path, log: Repair
     result = await session.execute(
         select(WritingTask).where(WritingTask.paper_id == paper.id)
     )
-    task = result.scalars().first()
-    if task:
-        if task.primary_topic:
+    existing_tasks = list(result.scalars().all())
+    if existing_tasks:
+        if all(task.primary_topic for task in existing_tasks):
             return
         classifier = WritingTopicClassifier()
-        topic_result = await classifier.classify(
-            content=task.task_content,
-            requirements=task.requirements or "",
-        )
-        if topic_result.success and topic_result.primary_topic:
-            task.primary_topic = topic_result.primary_topic
-            log.actions.append("补齐作文主话题")
+        topics_updated = 0
+        for task in existing_tasks:
+            if task.primary_topic:
+                continue
+            topic_result = await classifier.classify(
+                content=task.task_content,
+                requirements=task.requirements or "",
+            )
+            if topic_result.success and topic_result.primary_topic:
+                task.primary_topic = topic_result.primary_topic
+                topics_updated += 1
+        if topics_updated:
+            log.actions.append(f"补齐 {topics_updated} 道作文主话题")
         return
 
     parser = LLMDocumentParser()
     fileid = await parser.upload_file(str(file_path))
     writing_result = await parser.extract_writing(fileid, file_path=str(file_path))
-    if not writing_result.success or not writing_result.content:
+    if not writing_result.success or not writing_result.tasks:
         raise ValueError(f"作文提取失败: {writing_result.error}")
 
     classifier = WritingTopicClassifier()
-    topic_result = await classifier.classify(
-        content=writing_result.content,
-        requirements=writing_result.requirements or "",
-    )
-    primary_topic = topic_result.primary_topic if topic_result.success else None
-
-    task = WritingTask(
-        paper_id=paper.id,
-        task_content=writing_result.content,
-        requirements=writing_result.requirements,
-        word_limit=writing_result.word_limit,
-        writing_type=writing_result.writing_type,
-        application_type=writing_result.application_type,
-        primary_topic=primary_topic,
-        grade=paper.grade,
-        semester=paper.semester,
-        exam_type=paper.exam_type,
-    )
-    session.add(task)
-    await session.flush()
-
     writing_service = WritingService(session)
-    await writing_service.generate_sample(task_id=task.id, score_level="一档")
-    log.actions.append("补齐作文题目与范文")
+    created_count = 0
+
+    for extracted_task in dedupe_writing_tasks(writing_result.tasks):
+        topic_result = await classifier.classify(
+            content=extracted_task.content,
+            requirements=extracted_task.requirements or "",
+        )
+        primary_topic = topic_result.primary_topic if topic_result.success else None
+
+        task = WritingTask(
+            paper_id=paper.id,
+            task_content=extracted_task.content,
+            requirements=extracted_task.requirements,
+            word_limit=extracted_task.word_limit,
+            writing_type=extracted_task.writing_type,
+            application_type=extracted_task.application_type,
+            primary_topic=primary_topic,
+            grade=paper.grade,
+            semester=paper.semester,
+            exam_type=paper.exam_type,
+        )
+        session.add(task)
+        await session.flush()
+        await writing_service.generate_sample(task_id=task.id, score_level="一档")
+        created_count += 1
+
+    log.actions.append(f"补齐 {created_count} 道作文题目与范文")
 
 
 async def repair_cloze_topic(session, paper: ExamPaper, log: RepairLog) -> ClozePassage | None:

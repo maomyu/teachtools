@@ -14,10 +14,9 @@ import type {
   WritingFiltersResponse,
   WritingTypeDetectResponse,
   BatchGenerateResponse,
-  WritingTemplate,
   WritingSample,
   WritingGradeHandoutResponse,
-  WritingHandoutDetailResponse,
+  WritingHandoutCategorySummary,
 } from '@/types'
 
 function buildHandoutParams(
@@ -163,27 +162,6 @@ export async function deleteSample(
 
 
 // ==============================================================================
-//                              模板
-// ==============================================================================
-
-/**
- * 获取模板
- */
-export async function getTemplate(
-  writingType: string,
-  applicationType?: string
-): Promise<WritingTemplate> {
-  const response = await api.get<WritingTemplate>('/writings/template', {
-    params: {
-      writing_type: writingType,
-      application_type: applicationType,
-    },
-  })
-  return response.data
-}
-
-
-// ==============================================================================
 //                              讲义功能
 // ==============================================================================
 
@@ -207,25 +185,8 @@ export async function getWritingHandout(
  */
 export async function getWritingHandoutTopics(
   grade: string
-): Promise<{ grade: string; topics: Array<{ topic: string; task_count: number; sample_count: number; recent_years: number[] }> }> {
-  const response = await api.get(`/writings/handouts/${grade}/topics`)
-  return response.data
-}
-
-/**
- * 获取单话题作文讲义详情
- */
-export async function getWritingHandoutDetail(
-  grade: string,
-  topic: string,
-  edition: 'teacher' | 'student' = 'teacher',
-  paperIds?: number[]
-): Promise<WritingHandoutDetailResponse> {
-  const encodedTopic = encodeURIComponent(topic)
-  const response = await api.get<WritingHandoutDetailResponse>(
-    `/writings/handouts/${grade}/topics/${encodedTopic}`,
-    { params: buildHandoutParams(edition, paperIds) }
-  )
+): Promise<{ grade: string; categories: WritingHandoutCategorySummary[] }> {
+  const response = await api.get(`/writings/handouts/${grade}/categories`)
   return response.data
 }
 

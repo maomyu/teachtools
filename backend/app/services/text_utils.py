@@ -66,6 +66,40 @@ def normalize_known_patterns(content: str) -> Tuple[str, set]:
     return result, found_blanks
 
 
+def normalize_sequential_underscore_blanks(content: str, expected_count: int) -> Tuple[str, set]:
+    """
+    处理没有编号、只有下划线占位的完形正文，例如：
+    - ____
+    - ___ _
+    - ____ ____
+
+    当纯下划线空格数量与预期数量一致时，按出现顺序标准化为 (1)(2)...(N)。
+    """
+    if not content or expected_count <= 0:
+        return content, set()
+
+    if re.search(r'\((\d+)\)', content):
+        return content, set()
+
+    pattern = re.compile(r'_{2,}(?:\s+_{1,})*')
+    matches = list(pattern.finditer(content))
+    if len(matches) != expected_count:
+        return content, set()
+
+    parts = []
+    found_blanks = set()
+    last_index = 0
+
+    for index, match in enumerate(matches, start=1):
+        parts.append(content[last_index:match.start()])
+        parts.append(f'({index})')
+        found_blanks.add(index)
+        last_index = match.end()
+
+    parts.append(content[last_index:])
+    return ''.join(parts), found_blanks
+
+
 def validate_blanks(content: str, expected_count: int) -> bool:
     """
     校验空格格式是否完整且正确
@@ -228,6 +262,15 @@ async def normalize_cloze_blanks(
     if validate_blanks(normalized, expected_count):
         logger.info(f"正则匹配成功，找到 {len(found_blanks)} 个空格")
         return normalized
+
+    # Step 2.5: 兼容纯下划线空格
+    sequential_normalized, sequential_blanks = normalize_sequential_underscore_blanks(
+        normalized,
+        expected_count,
+    )
+    if validate_blanks(sequential_normalized, expected_count):
+        logger.info(f"顺序下划线标准化成功，找到 {len(sequential_blanks)} 个空格")
+        return sequential_normalized
 
     # Step 3: AI 回退（如果启用）
     if use_ai_fallback:

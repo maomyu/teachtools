@@ -144,10 +144,14 @@ export function ClozeDetailContent({
   const contentParts = useMemo(() => {
     if (!cloze?.content) return []
 
-    // 匹配两种格式: (数字) 或 __ 数字 __
-    // 捕获组1: (数字) 格式，捕获组2: __ 数字 __ 格式
-    const BLANK_REGEX = /(?:\((\d+)\))|(?:__\s*(\d+)\s*__)/g
+    // 支持多种空格格式：
+    // 1. 标准编号: (1) / （1）/ [1]
+    // 2. 带编号下划线: __1__ / ____12____
+    // 3. 纯下划线占位: ____ / ___ _
+    const BLANK_REGEX = /(?:\(\s*(\d+)\s*\))|(?:（\s*(\d+)\s*）)|(?:\[\s*(\d+)\s*\])|(?:_{2,}\s*(\d+)\s*_{2,})|(?:_{2,}(?:\s+_{1,})*)/g
     const result: (string | number)[] = []
+    const usedNumbers = new Set<number>()
+    let fallbackBlankNumber = 1
     let lastIndex = 0
     let match
 
@@ -156,8 +160,20 @@ export function ClozeDetailContent({
       if (match.index > lastIndex) {
         result.push(cloze.content.slice(lastIndex, match.index))
       }
-      // 添加空格编号（从两个捕获组中取值）
-      const blankNum = parseInt(match[1] || match[2])
+
+      const explicitBlankNumber = match[1] || match[2] || match[3] || match[4]
+      let blankNum: number
+
+      if (explicitBlankNumber) {
+        blankNum = parseInt(explicitBlankNumber, 10)
+      } else {
+        while (usedNumbers.has(fallbackBlankNumber)) {
+          fallbackBlankNumber += 1
+        }
+        blankNum = fallbackBlankNumber
+      }
+
+      usedNumbers.add(blankNum)
       result.push(blankNum)
       lastIndex = match.index + match[0].length
     }
@@ -675,6 +691,7 @@ export function ClozeDetailContent({
           if (typeof part === 'number') {
             const binding = getBlankBinding(part)
             const blankNum = binding.contentBlankNumber
+            const displayBlankNumber = binding.pointBlankNumber ?? blankNum
             const point = binding.point
             const primaryPoint = point ? (point as any).primary_point as PointType | undefined : undefined
             const isSelected = selectedBlank === blankNum || selectedBlank === binding.pointBlankNumber
@@ -700,7 +717,7 @@ export function ClozeDetailContent({
                   }}
                 >
                   <BlankTag
-                    blankNumber={blankNum}
+                    blankNumber={displayBlankNumber}
                     point={primaryPoint}
                     selected={isSelected}
                   />
@@ -746,6 +763,7 @@ export function ClozeDetailContent({
       const binding = getBlankBinding(bp.num)
       const point = binding.point
       const isSelected = selectedBlank === binding.contentBlankNumber || selectedBlank === binding.pointBlankNumber
+      const displayBlankNumber = binding.pointBlankNumber ?? binding.contentBlankNumber
       const primaryPoint = point ? (point as any).primary_point as PointType | undefined : undefined
 
       result.push(
@@ -769,7 +787,7 @@ export function ClozeDetailContent({
             }}
           >
             <BlankTag
-              blankNumber={binding.contentBlankNumber}
+              blankNumber={displayBlankNumber}
               point={primaryPoint}
               selected={isSelected}
             />

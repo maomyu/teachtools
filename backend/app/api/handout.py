@@ -85,7 +85,7 @@ async def upload_handout(file: UploadFile = File(...)):
 async def process_handout(
     task_id: str,
     watermark_text: str = "学生版",
-    watermark_density: str = "medium",
+    watermark_density: str = "sparse",
     watermark_size: str = "medium"
 ):
     """

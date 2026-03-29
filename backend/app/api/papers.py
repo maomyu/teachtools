@@ -136,9 +136,9 @@ from app.models.vocabulary_cloze import VocabularyCloze
 from app.models.writing import WritingTask, WritingSample
 from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse
 from app.services.docx_parser import DocxParser
-from app.services.llm_parser import LLMDocumentParser, WritingExtractResult
+from app.services.llm_parser import LLMDocumentParser, WritingExtractResult, dedupe_writing_tasks
 from app.services.topic_classifier import TopicClassifier
-from app.services.writing_topic_classifier import WritingTopicClassifier
+from app.services.writing_service import WritingService
 from app.services.vocab_extractor import VocabExtractor
 from app.services.cloze_analyzer import ClozeAnalyzerV5, NEW_CODE_TO_LEGACY
 from app.services.image_extractor import ImageExtractor
@@ -849,54 +849,67 @@ async def upload_paper_with_progress(
                     # 使用 LLM 提取作文（替代正则表达式）
                     writing_result = await llm_parser.extract_writing(fileid, file_path=tmp_path)
 
-                    if writing_result.success and writing_result.content:
-                        # ===== 新增：话题提取 =====
-                        primary_topic = None
-                        try:
-                            topic_classifier = WritingTopicClassifier()
-                            topic_result = await topic_classifier.classify(
-                                content=writing_result.content,
-                                requirements=writing_result.requirements or "",
-                            )
-                            if topic_result.success:
-                                primary_topic = topic_result.primary_topic
-                        except Exception as topic_error:
-                            logger.warning(f"话题提取失败（不影响导入）: {topic_error}")
+                    if writing_result.success and writing_result.tasks:
+                        writing_service = WritingService(db)
+                        created_count = 0
+                        category_labels: list[str] = []
+                        extracted_tasks = dedupe_writing_tasks(writing_result.tasks)
 
-                        # 创建作文题目记录（包含文体类型和话题）
-                        writing_task = WritingTask(
-                            paper_id=paper.id,
-                            task_content=writing_result.content,
-                            requirements=writing_result.requirements,
-                            word_limit=writing_result.word_limit,
-                            writing_type=writing_result.writing_type,
-                            application_type=writing_result.application_type,
-                            primary_topic=primary_topic,  # 新增
-                            grade=metadata.get("grade"),
-                            semester=metadata.get("semester"),
-                            exam_type=metadata.get("exam_type")
+                        for extracted_task in extracted_tasks:
+                            writing_task = WritingTask(
+                                paper_id=paper.id,
+                                task_content=extracted_task.content,
+                                requirements=extracted_task.requirements,
+                                word_limit=extracted_task.word_limit,
+                                grade=metadata.get("grade"),
+                                semester=metadata.get("semester"),
+                                exam_type=metadata.get("exam_type")
+                            )
+                            db.add(writing_task)
+                            await db.flush()
+
+                            category_label = "未分类"
+                            try:
+                                category_result = await writing_service.classify_task(
+                                    writing_task,
+                                    extracted_writing_type=extracted_task.writing_type,
+                                    extracted_application_type=extracted_task.application_type,
+                                )
+                                if not category_result.success:
+                                    logger.warning(f"作文分类失败（不影响导入）: {category_result.error}")
+                                elif category_result.category:
+                                    category_label = category_result.category.path
+                            except Exception as category_error:
+                                logger.warning(f"作文分类失败（不影响导入）: {category_error}")
+
+                            try:
+                                _, template, sample = await writing_service.ensure_task_assets(
+                                    writing_task,
+                                    force_template_refresh=True,
+                                    regenerate_sample=False,
+                                    score_level="一档",
+                                )
+                                logger.info(
+                                    "作文导入资产已就绪: task_id=%s template_id=%s sample_id=%s",
+                                    writing_task.id,
+                                    template.id,
+                                    sample.id,
+                                )
+                            except Exception as sample_error:
+                                logger.warning(f"自动生成子类模板或范文失败（不影响导入）: {sample_error}")
+
+                            created_count += 1
+                            if category_label and category_label not in category_labels:
+                                category_labels.append(category_label)
+
+                        writing_created = created_count > 0
+                        category_summary = "；".join(category_labels[:3]) if category_labels else "未分类"
+                        if len(category_labels) > 3:
+                            category_summary += " 等"
+                        reporter.complete_step(
+                            "writing_extract",
+                            f"已提取{created_count}道作文，并归类生成模板/范文：{category_summary}",
                         )
-                        db.add(writing_task)
-                        await db.flush()
-
-                        # ===== 自动生成范文 =====
-                        try:
-                            from app.services.writing_service import WritingService
-                            writing_service = WritingService(db)
-                            sample = await writing_service.generate_sample(
-                                task_id=writing_task.id,
-                                score_level="一档"
-                            )
-                            logger.info(f"自动生成范文成功: sample_id={sample.id}")
-                        except Exception as sample_error:
-                            logger.warning(f"自动生成范文失败（不影响导入）: {sample_error}")
-
-                        writing_created = True
-                        type_info = writing_result.writing_type
-                        if writing_result.application_type:
-                            type_info += f"({writing_result.application_type})"
-                        topic_info = f" | 话题: {primary_topic}" if primary_topic else ""
-                        reporter.complete_step("writing_extract", f"已提取: {type_info}{topic_info}")
                         await db.commit()
                     else:
                         reporter.skip_step("writing_extract", writing_result.error or "未找到作文题目")

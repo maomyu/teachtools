@@ -26,6 +26,7 @@ import {
   List,
   Alert,
   Collapse,
+  Progress,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -114,15 +115,25 @@ export function WritingDetailContent({ writingId, onClose }: WritingDetailConten
   }
 
   // 文体类型颜色
-  const getWritingTypeColor = (type: string) => {
+  const getGroupColor = (type?: string) => {
     switch (type) {
       case '应用文':
         return 'blue'
       case '记叙文':
         return 'green'
+      case '表达拓展类':
+        return 'gold'
       default:
         return 'default'
     }
+  }
+
+  const parseStructureLines = (value?: string): string[] => {
+    if (!value) return []
+    return value
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean)
   }
 
   // 渲染题目内容
@@ -131,6 +142,46 @@ export function WritingDetailContent({ writingId, onClose }: WritingDetailConten
 
     return (
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Card
+          size="small"
+          style={{
+            background: 'linear-gradient(135deg, #f7fbff 0%, #eef7ff 100%)',
+            border: '1px solid #d6eaff',
+          }}
+        >
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            <Space wrap size={[8, 8]}>
+              <Tag color={getGroupColor(detail.group_category?.name)}>
+                {detail.group_category?.name || '未识别'}
+              </Tag>
+              <Tag color="cyan">{detail.major_category?.name || '未分类'}</Tag>
+              <Tag color="geekblue">{detail.category?.name || '未分类'}</Tag>
+              <Tag color="purple">{detail.training_word_target || '150词左右'}</Tag>
+            </Space>
+            <div>
+              <Text strong>分类路径</Text>
+              <div style={{ marginTop: 4, color: '#4b5563' }}>
+                {detail.group_category?.name || '未识别'} / {detail.major_category?.name || '未分类'} / {detail.category?.name || '未分类'}
+              </div>
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text strong>分类置信度</Text>
+                <Text type="secondary">{Math.round((detail.category_confidence || 0) * 100)}%</Text>
+              </div>
+              <Progress percent={Math.round((detail.category_confidence || 0) * 100)} showInfo={false} strokeColor="#1677ff" />
+            </div>
+            {detail.category_reasoning && (
+              <Alert
+                type="info"
+                showIcon
+                message="分类说明"
+                description={detail.category_reasoning}
+              />
+            )}
+          </Space>
+        </Card>
+
         {/* 基本信息 */}
         <Card size="small">
           <Descriptions column={2} bordered size="small">
@@ -143,25 +194,25 @@ export function WritingDetailContent({ writingId, onClose }: WritingDetailConten
             <Descriptions.Item label="考试类型">
               <Tag color="purple">{detail.exam_type || '未设置'}</Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="文体">
-              {detail.writing_type ? (
+            <Descriptions.Item label="文体组">
+              {detail.group_category ? (
                 <Space>
-                  <Tag color={getWritingTypeColor(detail.writing_type)}>
-                    {detail.writing_type}
+                  <Tag color={getGroupColor(detail.group_category.name)}>
+                    {detail.group_category.name}
                   </Tag>
-                  {detail.application_type && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>({detail.application_type})</Text>
-                  )}
                 </Space>
               ) : (
                 <Tag>未识别</Tag>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label="话题">
-              {detail.primary_topic || '未分类'}
+            <Descriptions.Item label="主类">
+              {detail.major_category?.name || '未分类'}
             </Descriptions.Item>
-            <Descriptions.Item label="字数要求">
-              {detail.word_limit || '未设置'}
+            <Descriptions.Item label="子类">
+              {detail.category?.name || '未分类'}
+            </Descriptions.Item>
+            <Descriptions.Item label="训练词数">
+              {detail.training_word_target || '150词左右'}
             </Descriptions.Item>
           </Descriptions>
         </Card>
@@ -245,15 +296,40 @@ export function WritingDetailContent({ writingId, onClose }: WritingDetailConten
           const transitionWords = parseJsonField(template.transition_words)
           const advancedVocabulary = parseJsonField(template.advanced_vocabulary)
           const grammarPoints = parseJsonField(template.grammar_points)
+          const structureLines = parseStructureLines(template.structure)
 
           return (
             <Space direction="vertical" size="small" style={{ width: '100%' }} key={template.id}>
+              <Card
+                size="small"
+                style={{
+                  background: 'linear-gradient(135deg, #fffaf2 0%, #fff7e8 100%)',
+                  border: '1px solid #ffe0b2',
+                }}
+              >
+                <Space direction="vertical" size={6}>
+                  <Space wrap size={[8, 8]}>
+                    <Tag color={getGroupColor(detail?.group_category?.name)}>{detail?.group_category?.name || '未识别'}</Tag>
+                    <Tag color="cyan">{detail?.major_category?.name || '未分类'}</Tag>
+                    <Tag color="orange">{detail?.category?.name || '未分类'}</Tag>
+                  </Space>
+                  <Text strong>{template.template_name}</Text>
+                  <Text type="secondary">这个模板会在试卷导入后按子类生成，并供同类题复用。</Text>
+                </Space>
+              </Card>
+
               {/* 文章结构 */}
-              {template.structure && (
+              {structureLines.length > 0 && (
                 <Card size="small" title={<><BulbOutlined /> 文章结构</>}>
-                  <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: 13 }}>
-                    {template.structure}
-                  </Paragraph>
+                  <List
+                    size="small"
+                    dataSource={structureLines}
+                    renderItem={(item: string) => (
+                      <List.Item style={{ padding: '6px 0' }}>
+                        <Text style={{ fontSize: 13 }}>{item}</Text>
+                      </List.Item>
+                    )}
+                  />
                 </Card>
               )}
 
@@ -577,15 +653,15 @@ export function WritingDetailContent({ writingId, onClose }: WritingDetailConten
           </Button>
           <Title level={5} style={{ margin: 0 }}>
             {detail.source?.grade || ''} {detail.source?.exam_type || ''} 作文
-            {detail.primary_topic && (
+            {detail.category?.name && (
               <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                · {detail.primary_topic}
+                · {detail.category.name}
               </Text>
             )}
           </Title>
-          {detail.writing_type && (
-            <Tag color={getWritingTypeColor(detail.writing_type)}>
-              {detail.writing_type}
+          {detail.group_category && (
+            <Tag color={getGroupColor(detail.group_category.name)}>
+              {detail.group_category.name}
             </Tag>
           )}
         </div>

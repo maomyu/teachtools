@@ -70,7 +70,7 @@ class HandoutConverter:
         file_path: str,
         watermark_text: str = "学生版",
         progress_callback: Optional[Callable[[int, str], Awaitable[None]]] = None,
-        watermark_density: str = "medium",
+        watermark_density: str = "sparse",
         watermark_size: str = "medium"
     ) -> dict:
         """

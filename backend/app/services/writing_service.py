@@ -1,57 +1,37 @@
 """
 作文服务
 
-[INPUT]: 依赖 ai_service.py、models/writing.py
-[OUTPUT]: 对外提供作文文体识别、范文生成、PDF 导出等服务
+[INPUT]: 依赖 ai_service.py、writing 模型、作文分类树分类器
+[OUTPUT]: 对外提供作文列表、分类、模板、范文和讲义聚合能力
 [POS]: backend/app/services 的作文业务逻辑层
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
-import re
+from __future__ import annotations
+
+import ast
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+import re
+from collections import defaultdict
+from typing import Dict, Iterable, List, Optional, Tuple
 
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
-from app.models.writing import (
-    WritingTask,
-    WritingTemplate,
-    WritingSample,
-    GRADE_OPTIONS,
-    SEMESTER_OPTIONS,
-    EXAM_TYPE_OPTIONS,
-    WRITING_TYPE_OPTIONS,
-)
 from app.models.paper import ExamPaper
+from app.models.writing import GRADE_OPTIONS, WritingCategory, WritingSample, WritingTask, WritingTemplate
 from app.services.ai_service import QwenService
+from app.services.writing_category_classifier import WritingCategoryClassifier, WritingCategoryResult
+
 
 logger = logging.getLogger(__name__)
 
-
-# ==============================================================================
-#                              CONSTANTS
-# ==============================================================================
-
-# 应用文子类型
-APPLICATION_TYPES = {
-    "书信": ["Dear", "Yours", "Best wishes", "Regards", "Sincerely"],
-    "通知": ["Notice", "NOTICE", "通知"],
-    "邀请": ["invite", "invitation", "邀请"],
-    "日记": ["Monday", "Tuesday", "日记", "Date"],
-    "邮件": ["Subject:", "To:", "From:", "@"],
-}
-
-# 应用文格式特征
-APPLICATION_MARKERS = [
-    r"Dear\s+\w+,",  # Dear xxx,
-    r"Yours?\s+(sincerely|truly|faithfully)",  # Yours sincerely
-    r"Best\s+wishes",  # Best wishes
-    r"Regards,?",  # Regards
-    r"Sincerely,?",  # Sincerely
-]
+DEFAULT_WORD_TARGET = 150
+SAMPLE_MIN_WORDS = 130
+SAMPLE_MAX_WORDS = 170
+LETTER_CATEGORY_KEYWORDS = ("信", "邮件", "回信")
+SPEECH_CATEGORY_KEYWORDS = ("演讲稿", "发言稿", "倡议书", "通知")
 
 
 class WritingService:
@@ -61,571 +41,365 @@ class WritingService:
         self.db = db
         self.ai_service = QwenService()
 
-    # =========================================================================
-    #                              文体识别
-    # =========================================================================
-
-    def detect_writing_type_by_rules(self, content: str) -> Tuple[str, Optional[str], float]:
-        """
-        基于规则判断文体类型
-
-        Args:
-            content: 作文内容
-
-        Returns:
-            (writing_type, application_type, confidence)
-        """
-        if not content or len(content.strip()) < 50:
-            return "其他", None, 0.5
-
-        # 检查应用文格式特征
-        content_clean = content.strip()
-        application_type = None
-
-        for marker in APPLICATION_MARKERS:
-            if re.search(marker, content_clean, re.IGNORECASE):
-                # 尝试识别具体应用文类型
-                for app_type, keywords in APPLICATION_TYPES.items():
-                    for kw in keywords:
-                        if kw.lower() in content_clean.lower():
-                            application_type = app_type
-                            break
-                    if application_type:
-                        break
-                return "应用文", application_type, 0.9
-
-        # 检查日记格式
-        if re.search(r"(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\w+", content_clean):
-            return "应用文", "日记", 0.85
-
-        # 默认为记叙文
-        return "记叙文", None, 0.7
-
-    async def detect_writing_type_with_ai(self, content: str) -> Dict:
-        """
-        使用 AI 判断文体类型（用于边界情况）
-
-        Args:
-            content: 作文内容
-
-        Returns:
-            {
-                "writing_type": "应用文/记叙文/其他",
-                "application_type": "书信/通知/...",
-                "confidence": 0.95,
-                "reasoning": "判断理由"
-            }
-        """
-        content_preview = content[:1500] if len(content) > 1500 else content
-
-        prompt = f"""
-你是一位北京中考英语教研专家。请判断以下作文题目的文体类型。
-
-作文题目：
-{content_preview}
-
-文体类型：
-- 应用文：书信、通知、邀请、日记、邮件等有固定格式的文体
-- 记叙文：讲述故事、描述经历、表达观点的文章
-- 其他：无法归入以上两类的
-
-判断标准：
-- 如果开头有 Dear/To/Hi 等称呼，结尾有 Best wishes/Yours/Regards 等结束语，为应用文
-- 如果有明显的日期开头（如 Monday, Date:），可能是日记
-- 如果是讲述故事或描述经历，为记叙文
-
-请按以下JSON格式输出（仅输出JSON）：
-{{
-    "writing_type": "应用文/记叙文/其他",
-    "application_type": "书信/通知/邀请/日记/邮件/其他/null",
-    "confidence": 0.95,
-    "reasoning": "判断理由"
-}}
-"""
-
-        try:
-            response = self.ai_service.chat(prompt)
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
-                return result
-            return {
-                "writing_type": "其他",
-                "application_type": None,
-                "confidence": 0.3,
-                "reasoning": "AI 返回格式异常"
-            }
-        except Exception as e:
-            logger.error(f"AI 文体识别失败: {e}")
-            return {
-                "writing_type": "其他",
-                "application_type": None,
-                "confidence": 0.3,
-                "reasoning": f"AI 调用失败: {str(e)}"
-            }
-
-    async def detect_and_update_writing_type(self, task_id: int) -> Dict:
-        """
-        检测并更新作文文体类型
-
-        Args:
-            task_id: 作文 ID
-
-        Returns:
-            检测结果
-        """
-        # 获取作文
-        result = await self.db.execute(
-            select(WritingTask).where(WritingTask.id == task_id)
-        )
-        task = result.scalar_one_or_none()
+    async def classify_task(
+        self,
+        task_or_id: WritingTask | int,
+        extracted_writing_type: Optional[str] = None,
+        extracted_application_type: Optional[str] = None,
+    ) -> WritingCategoryResult:
+        """根据数据库分类树为作文题归类。"""
+        if isinstance(task_or_id, WritingTask):
+            task = task_or_id
+        else:
+            result = await self.db.execute(select(WritingTask).where(WritingTask.id == task_or_id))
+            task = result.scalar_one_or_none()
 
         if not task:
-            raise ValueError(f"作文不存在: {task_id}")
+            return WritingCategoryResult(success=False, error="作文不存在")
 
-        content = task.task_content or ""
+        classifier = WritingCategoryClassifier(self.db)
+        result = await classifier.classify(
+            content=task.task_content or "",
+            requirements=task.requirements or "",
+            extracted_writing_type=extracted_writing_type,
+            extracted_application_type=extracted_application_type,
+        )
 
-        # 先用规则判断
-        writing_type, application_type, confidence = self.detect_writing_type_by_rules(content)
+        if result.success and result.category and result.major_category and result.group_category:
+            task.group_category_id = result.group_category.id
+            task.major_category_id = result.major_category.id
+            task.category_id = result.category.id
+            task.category_confidence = result.confidence
+            task.category_reasoning = result.reasoning
+            task.group_category = result.group_category
+            task.major_category = result.major_category
+            task.category = result.category
 
-        # 如果置信度不高，用 AI 辅助判断
-        if confidence < 0.8:
-            ai_result = await self.detect_writing_type_with_ai(content)
-            if ai_result.get("confidence", 0) > confidence:
-                writing_type = ai_result.get("writing_type", "其他")
-                application_type = ai_result.get("application_type")
-                confidence = ai_result.get("confidence", 0)
-                reasoning = ai_result.get("reasoning")
-            else:
-                reasoning = "规则判断"
-        else:
-            reasoning = "规则判断"
+            await self.db.flush()
 
-        # 更新数据库
-        task.writing_type = writing_type
-        task.application_type = application_type
+        return result
+
+    async def detect_and_update_writing_type(self, task_id: int) -> Dict:
+        """重新执行作文分类并写回数据库。"""
+        result = await self.classify_task(task_id)
+        if not result.success:
+            raise ValueError(result.error or "作文分类失败")
+
         await self.db.commit()
-
         return {
             "task_id": task_id,
-            "writing_type": writing_type,
-            "application_type": application_type,
-            "confidence": confidence,
-            "reasoning": reasoning
+            "group_category": result.group_category,
+            "major_category": result.major_category,
+            "category": result.category,
+            "confidence": result.confidence,
+            "reasoning": result.reasoning,
         }
-
-    # =========================================================================
-    #                              范文生成（v4 精英版）
-    # =========================================================================
 
     def _build_sample_prompt(
         self,
-        content: str,
-        requirements: str,
-        word_limit: str,
-        template_content: str = ""
+        task: WritingTask,
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+        template_content: str = "",
+        tips: str = "",
     ) -> str:
-        """构建范文生成 Prompt（v6 教学版 - 300词详细范文）"""
-        template_hint = f"\n参考模板：\n{template_content}\n" if template_content else ""
+        """构建中考 150 词左右范文生成 Prompt。"""
+        category_path = category.path
+        structure_hint = f"\n通用模板：\n{template_content}\n" if template_content else ""
+        tips_hint = f"\n写作提醒：\n{tips}\n" if tips else ""
+        original_limit = task.word_limit or "以题目原始要求为准"
+        return f"""你是北京中考英语写作教研专家。请根据下面的作文题，生成一篇适合初中生背诵迁移的高质量英文范文，并附中文翻译。
 
-        return f"""你是北京中考英语教研专家。请根据以下作文题目生成一篇**教学用详细范文**。
-
-## ⚠️ 核心要求（最重要）
-**这是一篇教学示范范文，字数必须达到 300 词左右！**
-教学范文需要充分展示写作技巧，让学生学习如何扩展内容、使用高级词汇和复杂句型。
+## 分类信息
+- 文体组：{group_category.name if group_category else "未分类"}
+- 主类：{major_category.name if major_category else "未分类"}
+- 子类：{category.name}
+- 分类路径：{category_path}
+- 训练范文字数目标：约 {DEFAULT_WORD_TARGET} 词
+- 原题字数要求：{original_limit}
 
 ## 作文题目
-{content}
+{task.task_content}
 
 ## 写作要求
-{requirements}
-{template_hint}
-## 教学范文写作方法论
+{task.requirements or "无"}
+{structure_hint}{tips_hint}
+## 生成要求
+1. 输出必须是英文范文 + 中文翻译。
+2. 英文部分请严格控制在 130-170 词之间，理想目标约 150 词；最佳输出区间是 145-155 词。
+3. 必须覆盖题目所有关键信息点，不能遗漏原题要求。
+4. 必须明显体现“{category.name}”这一子类的常见结构与表达方式。
+5. 如果是信件/邮件类，必须保留称呼、正文、结尾、署名等格式感。
+6. 范文要自然、地道、可迁移，适合学生背诵模板后灵活套用。
+7. 即使原题只要求“不少于50词”，训练范文也必须写成 145-155 词左右的完整中考示范文，不能偷短。
+8. 非书信类请优先写成 3 段、11-13 个完整英文句子；书信类请在称呼和署名之间保持 10-12 个完整英文句子。
+9. 不要输出点评、不要输出字数统计、不要输出额外说明。
 
-### 核心原则：展示而非告知
-- 不要说 "I am happy" → 要说 "A big smile spread across my face and my heart was filled with joy"
-- 不要说 "It was beautiful" → 要描述具体细节（颜色、形状、声音、气味）
-- 不要说 "I learned a lot" → 要具体说学到了什么，用 2-3 句话展开
-
-### ⭐ 五层拓展法（每个要点必须使用）
-
-**Layer 1: 陈述** - 用一句话表达核心观点
-**Layer 2: 解释** - 用 2-3 句话解释原因或背景
-**Layer 3: 举例** - 用 2-3 句话给出具体例子
-**Layer 4: 细节** - 用 1-2 句话添加感官细节或情感描写
-**Layer 5: 感悟** - 用 1 句话总结这一点的意义
-
-**应用文五层拓展示例**：
-> 原句：I suggest we should have more books. (7 words)
->
-> 拓展后 (60+ words)：
-> I would like to suggest that our school library should have more English books for students to borrow. The reason is that many of us are eager to improve our English reading skills, but unfortunately, we often find it difficult to locate suitable reading materials in the current library. For instance, graded readers like Oxford Bookworms and interesting English magazines such as Time for Kids would be extremely helpful for beginners like us. I still remember how frustrated I felt last week when I spent thirty minutes searching for an English book but found nothing at my level. With more resources available, I believe more students will develop a passion for English reading.
-
-**记叙文五层拓展示例**：
-> 原句：I went to the museum. (5 words)
->
-> 拓展后 (70+ words)：
-> Last Saturday morning, I went to the Science Museum in the city center with three of my best classmates. We had been looking forward to this trip for weeks because it was our first school outing since the pandemic began. The museum was an impressive modern building with huge glass windows that sparkled in the sunlight. As soon as we entered, I was amazed by the enormous dinosaur skeleton standing in the main hall. I could hear the excited whispers of children around me and smell the faint scent of the coffee shop nearby. At that moment, I felt like a young explorer ready to discover the wonders of science.
-
-### 内容拓展技巧库
-
-**应用文拓展技巧**：
-
-1. **理由链**（Reason Chain）
-   - 不仅说"因为..."，还要说"这会导致..."，再延伸到"最终会..."
-   - 例：图书馆需要更多书 → 学生可以多阅读 → 英语水平提高 → 考试成绩更好 → 未来有更多机会
-
-2. **对比论证**（Comparison）
-   - 描述现状的问题 vs 改进后的美好前景
-   - 例：Currently, students... However, if we..., then...
-
-3. **具体数据**（Specific Details）
-   - 用具体数字、时间、地点增加可信度
-   - 例：last semester, more than 50 students, every Tuesday afternoon
-
-4. **个人经历**（Personal Experience）
-   - 用自己的故事增强说服力
-   - 例：I still remember when I..., This reminded me of...
-
-**记叙文拓展技巧**：
-
-1. **五感描写法**（Five Senses）
-   - 视觉（颜色、形状、大小）
-   - 听觉（声音、音乐、对话）
-   - 嗅觉（气味）
-   - 触觉（温度、质地）
-   - 味觉（如果是食物相关）
-
-2. **心理活动描写**（Inner Thoughts）
-   - 直接描写想法：I thought to myself...
-   - 描写情绪变化：At first I was..., but then...
-   - 描写内心独白：Should I...? What if...?
-
-3. **动作分解**（Action Breakdown）
-   - 把一个动作拆成 3-4 个连续小动作
-   - 例：I looked at → I stared at → I narrowed my eyes → I gasped in surprise
-
-4. **环境烘托**（Atmosphere Building）
-   - 天气、光线、温度、周围的人和物
-   - 例：The golden sunlight filtered through the leaves, casting dancing shadows on the ground.
-
-### 高级语言技巧
-
-**词汇升级清单**：
-| 基础词 | 高级替换 |
-|--------|----------|
-| good | excellent, outstanding, remarkable, impressive |
-| bad | terrible, awful, disappointing, unpleasant |
-| happy | delighted, thrilled, overjoyed, ecstatic |
-| sad | upset, depressed, heartbroken, miserable |
-| think | believe, consider, assume, suppose |
-| say | mention, explain, suggest, emphasize |
-| very | extremely, incredibly, remarkably, absolutely |
-| important | significant, crucial, essential, vital |
-
-**必用句型清单**：
-1. **定语从句**：..., which/who/that...
-2. **状语从句**：When/If/Because/Although/While...
-3. **非谓语动词**：Doing.../To do.../..., doing.../..., done...
-4. **强调句**：It is/was... that...
-5. **倒装句**：Not only... but also... / Only when...
-6. **虚拟语气**：If I were..., I would... / I wish I could...
-
-**过渡词清单**：
-- 递进：Besides, Furthermore, Moreover, In addition, What's more
-- 转折：However, Nevertheless, On the other hand, Despite this
-- 因果：Therefore, Thus, As a result, Consequently
-- 总结：In conclusion, To sum up, All in all
-
-### 结构模板（300词版本）
-
-**应用文（书信/邮件）- 300词**：
-```
-开头（50-60词）：
-  - Dear [称呼],
-  - 写信背景和目的（用 3-4 句话详细说明）
-  - 为什么写这封信，有什么特别的触发事件
-
-主体（180-200词）- 分3个要点，每个60-70词：
-  - First of all, [要点1]. [五层拓展：陈述→解释→举例→细节→感悟].
-  - Besides, [要点2]. [五层拓展：陈述→解释→举例→细节→感悟].
-  - What's more/Furthermore, [要点3]. [五层拓展：陈述→解释→举例→细节→感悟].
-
-结尾（50-60词）：
-  - 总结期待和请求
-  - 表达感谢或希望
-  - Looking forward to... / I would appreciate it if...
-  - Yours sincerely, Li Hua
-```
-
-**记叙文 - 300词**：
-```
-开头（50-60词）：
-  - 时间、地点、人物、事件背景
-  - 环境描写（天气、氛围）
-  - 初始心情和期待
-
-主体（180-200词）- 分3个场景，每个60-70词：
-  - First, [场景1]. [五感描写 + 心理活动 + 动作分解].
-  - Then, [场景2 - 转折或发展]. [对话 + 情感变化 + 环境烘托].
-  - Finally, [场景3 - 高潮]. [最详细的描写，突出关键时刻].
-
-结尾（50-60词）：
-  - 事件结果的简述
-  - 深刻的感悟或学到的道理
-  - 对未来的展望或决心
-```
-
-## 输出要求
-
-1. 直接输出范文，不要解释，不要字数统计
-2. **⚠️ 字数必须达到 300 词左右！这是教学示范范文！**
-3. **每个要点必须用五层拓展法，每个要点至少 50-70 词**
-4. 至少使用 5 个高级词汇（从词汇升级清单中选择）
-5. 至少使用 3 种高级句型（从必用句型清单中选择）
-6. 至少使用 4 个过渡词（从过渡词清单中选择）
-7. 确保涵盖所有题目要求
-8. 语言自然流畅，避免生硬堆砌
-
-## 输出格式（必须严格遵守！请分别用以下两个标题输出内容，不要添加任何解释性文字）
-
+## 输出格式
 ### English Essay
-[在此处写300词左右的英文范文]
+[英文范文]
 
 ### Chinese Translation
-[在此处写对应的中文翻译]
-
-## 示例输出格式（请严格按照此格式输出）
-
-### English Essay
-Dear Editor,
-
-I am writing to share my admiration for...
-
-[范文正文继续...]
-
-### Chinese Translation
-尊敬的编辑：
-
-我写这封信是为了分享我对...的敬佩...
-
-[翻译正文继续...]
+[中文翻译]
 """
 
-    def _parse_essay_with_translation(self, text: str) -> tuple:
-        """
-        解析 AI 返回的范文和翻译
+    def _parse_essay_with_translation(self, text: str) -> tuple[str, Optional[str]]:
+        """解析 AI 返回的英文范文与中文翻译。"""
+        english_essay: Optional[str] = None
+        chinese_translation: Optional[str] = None
 
-        Args:
-            text: AI 返回的原始文本
-
-        Returns:
-            (english_essay, chinese_translation) 元组
-        """
-        import re
-
-        english_essay = None
-        chinese_translation = None
-
-        # 尝试多种分隔符格式
-        # 格式1: ### Chinese Translation
-        if '### Chinese Translation' in text or '### English Essay' in text:
-            match_essay = re.search(
-                r'###\s*English\s*Essay\s*\n(.*?)(?=###\s*Chinese\s*Translation|$)',
-                text, re.DOTALL | re.IGNORECASE
+        if "### Chinese Translation" in text or "### English Essay" in text:
+            essay_match = re.search(
+                r"###\s*English\s*Essay\s*\n(.*?)(?=###\s*Chinese\s*Translation|$)",
+                text,
+                re.DOTALL | re.IGNORECASE,
             )
-            match_translation = re.search(
-                r'###\s*Chinese\s*Translation\s*\n(.*?)$',
-                text, re.DOTALL | re.IGNORECASE
+            translation_match = re.search(
+                r"###\s*Chinese\s*Translation\s*\n(.*?)$",
+                text,
+                re.DOTALL | re.IGNORECASE,
             )
-            if match_essay:
-                english_essay = match_essay.group(1).strip()
-            if match_translation:
-                chinese_translation = match_translation.group(1).strip()
-
-        # 格式2: 只有 ### Chinese Translation，没有 ### English Essay
-        elif '### Chinese Translation' in text:
-            parts = text.split('### Chinese Translation')
-            english_essay = parts[0].strip()
-            chinese_translation = parts[1].strip() if len(parts) > 1 else None
-
-        # 格式3: 只有翻译，没有分隔符
-        elif '翻译' in text or '中文翻译' in text:
-            parts = re.split(r'(?:翻译|中文翻译)\s*[:\n]', text, flags=re.IGNORECASE)
+            if essay_match:
+                english_essay = essay_match.group(1).strip()
+            if translation_match:
+                chinese_translation = translation_match.group(1).strip()
+        elif "中文翻译" in text or "翻译" in text:
+            parts = re.split(r"(?:中文翻译|翻译)\s*[:：\n]", text, maxsplit=1, flags=re.IGNORECASE)
             if len(parts) > 1:
                 english_essay = parts[0].strip()
                 chinese_translation = parts[1].strip()
 
-        # 如果没有找到任何分隔符，使用整个文本作为英文范文
         if not english_essay:
             english_essay = text.strip()
 
-        logger.info(f"解析结果: 英文 {len(english_essay)} 字符, 翻译 {len(chinese_translation) if chinese_translation else 0} 字符")
         return english_essay, chinese_translation
 
-    # 保留旧方法名作为别名（向后兼容）
-    def _build_tier1_prompt(self, *args, **kwargs):
-        """已废弃：使用 _build_sample_prompt 代替"""
-        return self._build_sample_prompt(*args, **kwargs)
+    def _count_english_words(self, text: str) -> int:
+        return len(re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text or ""))
 
-    def _build_tier2_prompt(self, *args, **kwargs):
-        """已废弃：使用 _build_sample_prompt 代替"""
-        return self._build_sample_prompt(*args, **kwargs)
+    def _sample_meets_quality_bar(
+        self,
+        sample: Optional[WritingSample],
+        *,
+        expected_template_id: Optional[int] = None,
+    ) -> bool:
+        """判断现有范文是否满足当前质量门槛。"""
+        if not sample:
+            return False
 
-    def _build_tier3_prompt(self, *args, **kwargs):
-        """已废弃：使用 _build_sample_prompt 代替"""
-        return self._build_sample_prompt(*args, **kwargs)
+        if expected_template_id and sample.template_id != expected_template_id:
+            return False
+
+        if not sample.sample_content or not sample.sample_content.strip():
+            return False
+
+        if not sample.translation or not sample.translation.strip():
+            return False
+
+        actual_word_count = sample.word_count or self._count_english_words(sample.sample_content)
+        if not (SAMPLE_MIN_WORDS <= actual_word_count <= SAMPLE_MAX_WORDS):
+            return False
+
+        return True
+
+    async def _revise_essay_length(
+        self,
+        essay: str,
+        task: WritingTask,
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+        min_words: int = SAMPLE_MIN_WORDS,
+        max_words: int = SAMPLE_MAX_WORDS,
+    ) -> tuple[str, int]:
+        """在首轮生成不达标时，强制扩写/压缩到目标字数范围。"""
+        if not essay:
+            return essay, 0
+
+        current_word_count = self._count_english_words(essay)
+        if min_words <= current_word_count <= max_words:
+            return essay, current_word_count
+
+        action = "扩写" if current_word_count < min_words else "压缩"
+        length_guidance = (
+            "请增加必要的背景、原因、细节、感受或期待，确保至少 11 个完整英文句子，并且最终不少于 "
+            f"{min_words} 词，理想区间为 145-155 词。"
+            if current_word_count < min_words
+            else f"请在保留要点的前提下删去冗余表达，确保最终不超过 {max_words} 词，理想区间为 145-155 词。"
+        )
+        prompt = f"""你是北京中考英语写作改写专家。请在不改变作文任务和文体格式的前提下，把下面这篇英文作文{action}到 {min_words}-{max_words} 词之间。
+
+## 分类信息
+- 文体组：{group_category.name if group_category else "未分类"}
+- 主类：{major_category.name if major_category else "未分类"}
+- 子类：{category.name}
+- 分类路径：{category.path}
+
+## 原题
+{task.task_content}
+
+## 写作要求
+{task.requirements or "无"}
+
+## 当前作文
+{essay}
+
+## 改写要求
+1. 只输出英文作文，不要输出中文翻译、标题、字数统计或解释。
+2. 保留该子类应有的格式感，比如信件称呼、正文、结尾、署名。
+3. 不要丢失原题关键信息点。
+4. 最终控制在 {min_words}-{max_words} 词之间，理想目标约 150 词，最佳区间 145-155 词。
+5. 非书信类优先保持 3 段、11-13 个完整英文句子；书信类保持 10-12 个完整英文句子。
+6. {length_guidance}
+"""
+
+        revised_text = await self.ai_service.chat_async(
+            prompt,
+            system_prompt="你是严格控制中考英语作文篇幅的英文改写专家。",
+            operation="writing_service.revise_sample_length",
+        )
+        revised_essay, _ = self._parse_essay_with_translation(revised_text or "")
+        revised_word_count = self._count_english_words(revised_essay)
+        return revised_essay or essay, revised_word_count or current_word_count
 
     async def generate_sample(
         self,
         task_id: int,
         template_id: Optional[int] = None,
-        score_level: str = "一档"
+        score_level: str = "一档",
+        force_template_refresh: bool = False,
     ) -> WritingSample:
-        """
-        生成范文（v6 教学版 - 300词详细范文 + 字数验证）
-
-        Args:
-            task_id: 作文 ID
-            template_id: 模板 ID（可选，不传则自动获取或创建）
-            score_level: 档次（v6 已废弃，保留参数用于兼容）
-
-        Returns:
-            WritingSample
-        """
-        # 获取写作任务
+        """按作文子类模板生成范文。"""
         result = await self.db.execute(
-            select(WritingTask).where(WritingTask.id == task_id)
+            select(WritingTask)
+            .options(
+                selectinload(WritingTask.category),
+                selectinload(WritingTask.major_category),
+                selectinload(WritingTask.group_category),
+            )
+            .where(WritingTask.id == task_id)
         )
         task = result.scalar_one_or_none()
-
         if not task:
             raise ValueError(f"作文不存在: {task_id}")
 
-        # 获取或创建模板
-        template_content = ""
-        actual_template_id = template_id
+        if not task.category_id:
+            category_result = await self.classify_task(task)
+            if not category_result.success or not category_result.category:
+                raise ValueError(category_result.error or "作文分类失败")
 
+        template: Optional[WritingTemplate] = None
         if template_id:
-            # 使用指定的模板
-            template_result = await self.db.execute(
-                select(WritingTemplate).where(WritingTemplate.id == template_id)
-            )
+            template_result = await self.db.execute(select(WritingTemplate).where(WritingTemplate.id == template_id))
             template = template_result.scalar_one_or_none()
-            if template:
-                template_content = template.template_content or ""
-        else:
-            # 根据文体类型获取或创建模板
-            writing_type = task.writing_type or "应用文"
-            application_type = task.application_type
-            template = await self.get_or_create_template(writing_type, application_type)
-            if template:
-                actual_template_id = template.id
-                template_content = template.template_content or ""
+        if template is None:
+            template = await self.get_or_create_template(
+                task.category_id,
+                anchor_task=task,
+                force_refresh=force_template_refresh,
+            )
 
-        # 构建统一的高质量 Prompt（忽略 score_level 参数）
         prompt = self._build_sample_prompt(
-            content=task.task_content,
-            requirements=task.requirements or "",
-            word_limit=task.word_limit or "80-100词",
-            template_content=template_content
+            task=task,
+            category=task.category,
+            major_category=task.major_category,
+            group_category=task.group_category,
+            template_content=template.template_content if template else "",
+            tips=template.tips if template and template.tips else "",
         )
 
-        # 字数验证 + 自动重试机制
-        MAX_RETRIES = 3
-        MIN_WORD_COUNT = 250  # 教学范文最低 250 词
-        result_text = None
-        final_word_count = 0
-        english_essay = None
-        chinese_translation = None
+        result_text = ""
+        english_essay = ""
+        chinese_translation: Optional[str] = None
+        word_count = 0
 
-        for attempt in range(MAX_RETRIES):
-            # 调用 AI 生成
+        for attempt in range(3):
             result_text = await self.ai_service.chat_async(
                 prompt,
                 system_prompt="你是北京中考英语写作教学专家。",
                 operation="writing_service.generate_sample",
             )
-
             if not result_text:
                 raise ValueError("AI 生成范文失败：返回内容为空")
 
-            # 解析英文范文和中文翻译
             english_essay, chinese_translation = self._parse_essay_with_translation(result_text)
-
-            # 计算英文单词数（只计算英文部分）
-            final_word_count = len(english_essay.split()) if english_essay else 0
-            logger.info(f"范文生成尝试 {attempt + 1}/{MAX_RETRIES}，字数: {final_word_count}")
-
-            if final_word_count >= MIN_WORD_COUNT:
+            word_count = self._count_english_words(english_essay)
+            logger.info("作文范文生成尝试 %s/3，字数=%s", attempt + 1, word_count)
+            if SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS:
                 break
+            prompt = (
+                f"{prompt}\n\n"
+                f"⚠️ 上一次英文范文约 {word_count} 词，不符合要求。请重新生成，并将英文部分控制在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间，"
+                "不要省略要点，也不要写成长篇教学范文。"
+            )
 
-            # 字数不足，增强提示重试
-            if attempt < MAX_RETRIES - 1:
-                logger.warning(f"范文字数不足 ({final_word_count} < {MIN_WORD_COUNT})，准备重试...")
-                prompt = f"""{prompt}
+        revision_round = 0
+        while english_essay and not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS) and revision_round < 3:
+            english_essay, word_count = await self._revise_essay_length(
+                essay=english_essay,
+                task=task,
+                category=task.category,
+                major_category=task.major_category,
+                group_category=task.group_category,
+                min_words=SAMPLE_MIN_WORDS,
+                max_words=SAMPLE_MAX_WORDS,
+            )
+            revision_round += 1
 
-⚠️ 上一次生成的内容只有 {final_word_count} 个英文单词，远远不够！
-教学范文需要至少 250-300 词，请大幅扩展内容：
-1. 每个要点必须用五层拓展法（陈述→解释→举例→细节→感悟）
-2. 添加更多具体的细节描写（颜色、声音、感受等）
-3. 增加对话或心理活动描写
-4. 使用更多的从句和复杂句型
-5. 绝对不能缩短内容，只能扩展！"""
+        if english_essay and not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS):
+            fallback_prompt = (
+                f"{self._build_sample_prompt(task, task.category, task.major_category, task.group_category, template.template_content if template else '', template.tips if template and template.tips else '')}\n\n"
+                f"⚠️ 最终要求再强调一次：只输出英文范文和中文翻译，英文部分必须在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间，"
+                "理想区间为 145-155 词。请适度增加细节、原因、感受和结尾升华。"
+            )
+            result_text = await self.ai_service.chat_async(
+                fallback_prompt,
+                system_prompt="你是严格执行字数要求的北京中考英语写作教学专家。",
+                operation="writing_service.generate_sample_fallback",
+            )
+            if result_text:
+                english_essay, chinese_translation = self._parse_essay_with_translation(result_text)
+                word_count = self._count_english_words(english_essay)
 
-        if final_word_count < MIN_WORD_COUNT:
-            logger.warning(f"范文经过 {MAX_RETRIES} 次尝试仍不足 {MIN_WORD_COUNT} 词, 0 using last result")
-
-        # 如果 AI 没有返回翻译，单独调用翻译 API
         if not chinese_translation and english_essay:
-            logger.info("AI 未返回翻译，单独生成翻译...")
-            translation_prompt = f"""请将以下英文范文翻译成中文，保持段落对应，语言通顺自然：
-
-{english_essay}"""
+            translation_prompt = f"请将下面英文范文翻译成自然流畅的中文，保持段落对应：\n\n{english_essay}"
             chinese_translation = await self.ai_service.chat_async(
                 translation_prompt,
-                system_prompt="你是专业英汉翻译，要求忠实、自然、通顺。",
+                system_prompt="你是专业英汉翻译。",
                 operation="writing_service.translate_sample",
             )
-            if chinese_translation:
-                logger.info(f"翻译生成成功: {len(chinese_translation)} 字符")
 
-        # 保存范文
+        if english_essay:
+            word_count = self._count_english_words(english_essay)
+
+        if not english_essay or not english_essay.strip():
+            raise ValueError("AI 生成范文失败：英文范文为空")
+
+        if not chinese_translation or not chinese_translation.strip():
+            raise ValueError("AI 生成范文失败：中文翻译为空")
+
+        if not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS):
+            raise ValueError(
+                f"AI 生成范文失败：英文范文字数 {word_count} 不在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间"
+            )
+
         sample = WritingSample(
-            task_id=task_id,
-            template_id=actual_template_id,
-            sample_type="AI生成",
+            task_id=task.id,
+            template_id=template.id if template else None,
             sample_content=english_essay or result_text,
-            score_level="优质范文",  # 统一标记
-            word_count=final_word_count,  # 记录实际字数
-            translation=chinese_translation,  # 中文翻译
+            sample_type="AI生成",
+            score_level=score_level,
+            word_count=word_count,
+            translation=chinese_translation,
         )
         self.db.add(sample)
         await self.db.commit()
         await self.db.refresh(sample)
-
-        logger.info(f"范文生成完成: id={sample.id}, word_count={final_word_count}")
         return sample
 
-    async def batch_generate_samples(
-        self,
-        task_ids: List[int],
-        score_level: str = "一档"
-    ) -> Dict:
-        """
-        批量生成范文（串行处理）
-
-        Args:
-            task_ids: 作文 ID 列表
-            score_level: 档次
-
-        Returns:
-            {
-                "success_count": 5,
-                "fail_count": 1,
-                "results": [...]
-            }
-        """
+    async def batch_generate_samples(self, task_ids: List[int], score_level: str = "一档") -> Dict:
+        """批量生成范文。"""
         success_count = 0
         fail_count = 0
         results = []
@@ -634,87 +408,326 @@ I am writing to share my admiration for...
             try:
                 sample = await self.generate_sample(task_id, score_level=score_level)
                 success_count += 1
-                results.append({
-                    "task_id": task_id,
-                    "success": True,
-                    "sample_id": sample.id
-                })
-                logger.info(f"批量生成进度: {success_count}/{len(task_ids)}")
-            except Exception as e:
+                results.append({"task_id": task_id, "success": True, "sample_id": sample.id})
+            except Exception as exc:
                 fail_count += 1
-                results.append({
-                    "task_id": task_id,
-                    "success": False,
-                    "error": str(e)
-                })
-                logger.warning(f"批量生成失败: task_id={task_id}, error={e}")
+                logger.warning("批量生成范文失败 task_id=%s: %s", task_id, exc)
+                results.append({"task_id": task_id, "success": False, "error": str(exc)})
 
         return {
             "success_count": success_count,
             "fail_count": fail_count,
-            "results": results
+            "results": results,
         }
 
-    # =========================================================================
-    #                              模板管理
-    # =========================================================================
+    async def _load_category_example_tasks(
+        self,
+        category_id: int,
+        anchor_task: Optional[WritingTask] = None,
+        limit: int = 5,
+    ) -> List[WritingTask]:
+        tasks: List[WritingTask] = []
+        seen_ids: set[int] = set()
+
+        if anchor_task and anchor_task.category_id == category_id and anchor_task.task_content:
+            tasks.append(anchor_task)
+            if anchor_task.id:
+                seen_ids.add(anchor_task.id)
+
+        result = await self.db.execute(
+            select(WritingTask)
+            .options(selectinload(WritingTask.paper))
+            .where(WritingTask.category_id == category_id)
+            .order_by(WritingTask.created_at.desc(), WritingTask.id.desc())
+            .limit(limit)
+        )
+        for task in result.scalars().all():
+            if task.id in seen_ids:
+                continue
+            tasks.append(task)
+            seen_ids.add(task.id)
+            if len(tasks) >= limit:
+                break
+        return tasks
+
+    def _build_template_examples(self, tasks: List[WritingTask]) -> List[Dict[str, str]]:
+        examples: List[Dict[str, str]] = []
+        for task in tasks:
+            content = re.sub(r"\s+", " ", (task.task_content or "").strip())
+            requirements = re.sub(r"\s+", " ", (task.requirements or "").strip())
+            examples.append(
+                {
+                    "source": self._build_source_line(task.paper),
+                    "task_content": self._shorten(content, 220),
+                    "requirements": self._shorten(requirements, 160) if requirements else "",
+                    "word_limit": task.word_limit or "",
+                }
+            )
+        return examples
+
+    def _build_template_fallback(self, category: WritingCategory) -> Dict[str, object]:
+        path = category.path or category.name
+        is_letter = any(keyword in path for keyword in LETTER_CATEGORY_KEYWORDS)
+        is_speech = any(keyword in path for keyword in SPEECH_CATEGORY_KEYWORDS)
+
+        if is_letter:
+            template_content = (
+                "Dear [name],\n\n"
+                "I am writing to [purpose].\n"
+                "First of all, [key point 1]. Besides, [key point 2]. "
+                "What's more, [key point 3 or reason].\n"
+                "I hope [expectation]. Please let me know [reply request].\n\n"
+                "Best wishes,\n"
+                "Li Hua"
+            )
+            structure = "\n".join(
+                [
+                    "第1段：称呼并说明写作目的（30-40词）",
+                    f"第2段：围绕“{category.name}”展开核心信息和细节（70-80词）",
+                    "第3段：表达期待、收束全文并署名（30-40词）",
+                ]
+            )
+        elif is_speech:
+            template_content = (
+                "Hello everyone,\n\n"
+                "Today I want to talk about [topic].\n"
+                "First of all, [main point 1]. Then, [main point 2]. "
+                "Finally, [call to action or conclusion].\n\n"
+                "Thank you for listening."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：开场点题，说明讲话目的（30-40词）",
+                    f"第2段：结合“{category.name}”展开主体内容（70-80词）",
+                    "第3段：总结观点并呼吁/致谢（30-40词）",
+                ]
+            )
+        else:
+            template_content = (
+                "I would like to share [topic/event].\n"
+                "First of all, [background or main point]. Then, [detail or action]. "
+                "After that, [result or another detail].\n"
+                "In the end, I learned that [feeling or reflection]."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：引入主题，交代背景或观点（35-45词）",
+                    f"第2段：围绕“{category.name}”展开关键内容（65-80词）",
+                    "第3段：总结感受、启示或个人态度（30-40词）",
+                ]
+            )
+
+        return {
+            "template_name": f"{category.name}通用模板",
+            "template_content": template_content,
+            "structure": structure,
+            "tips": "紧扣题干信息点，优先覆盖场景、细节、原因与感受；句子保持自然可迁移。",
+            "opening_sentences": [
+                f"I would like to share something about {category.name}.",
+                "I'm glad to write about this topic today.",
+            ],
+            "closing_sentences": [
+                "I hope my ideas can be helpful.",
+                "This is how I would deal with the topic.",
+            ],
+            "transition_words": ["First of all,", "Then,", "Besides,", "In the end,"],
+            "advanced_vocabulary": [{"word": "meaningful", "basic": "good", "usage": "描述活动或经历有意义"}],
+            "grammar_points": ["注意时态统一，根据信件或记叙场景选择一般现在时或一般过去时。"],
+            "scoring_criteria": {
+                "content": "覆盖题干要点",
+                "language": "句式自然、表达准确",
+                "structure": "段落清楚、过渡自然",
+            },
+        }
+
+    def _should_refresh_template(self, template: WritingTemplate, category: WritingCategory) -> bool:
+        content = (template.template_content or "").strip()
+        structure = (template.structure or "").strip()
+        is_letter = any(keyword in (category.path or category.name) for keyword in LETTER_CATEGORY_KEYWORDS)
+
+        if not content:
+            return True
+        if not is_letter and re.search(r"(?i)\bDear\b|\bBest wishes\b|\bYours\b", content):
+            return True
+        if "paragraph" in structure and "{" in structure:
+            return True
+        if not (template.opening_sentences and template.closing_sentences):
+            return True
+        return False
 
     async def get_or_create_template(
         self,
-        writing_type: str,
-        application_type: Optional[str] = None
+        category_id: int,
+        anchor_task: Optional[WritingTask] = None,
+        force_refresh: bool = False,
+        refresh_if_stale: bool = True,
     ) -> WritingTemplate:
-        """
-        获取或创建模板（增强版）
-
-        Args:
-            writing_type: 文体类型
-            application_type: 应用文子类型
-
-        Returns:
-            WritingTemplate（包含句型库、词汇表等）
-        """
-        # 查找现有模板
-        query = select(WritingTemplate).where(
-            WritingTemplate.writing_type == writing_type
+        """按子类获取或创建模板。"""
+        query = (
+            select(WritingTemplate)
+            .options(selectinload(WritingTemplate.category))
+            .where(WritingTemplate.category_id == category_id)
+            .limit(1)
         )
-        if application_type:
-            query = query.where(WritingTemplate.application_type == application_type)
-
-        result = await self.db.execute(query.limit(1))
+        result = await self.db.execute(query)
         template = result.scalar_one_or_none()
 
-        if template:
-            return template
-
-        # 生成新模板（增强版，包含句型库、词汇表等）
-        template_data = await self.ai_service.generate_writing_template_async(writing_type, application_type)
-
-        template = WritingTemplate(
-            writing_type=writing_type,
-            application_type=application_type,
-            template_name=template_data.get("template_name", f"{writing_type}模板"),
-            template_content=template_data.get("template_content", ""),
-            tips=template_data.get("tips", ""),
-            structure=template_data.get("structure", ""),
-            # === 新增专业要素字段 ===
-            opening_sentences=template_data.get("opening_sentences"),
-            closing_sentences=template_data.get("closing_sentences"),
-            transition_words=template_data.get("transition_words"),
-            advanced_vocabulary=template_data.get("advanced_vocabulary"),
-            grammar_points=template_data.get("grammar_points"),
-            scoring_criteria=template_data.get("scoring_criteria")
+        category_result = await self.db.execute(
+            select(WritingCategory)
+            .options(selectinload(WritingCategory.parent).selectinload(WritingCategory.parent))
+            .where(WritingCategory.id == category_id)
         )
+        category = category_result.scalar_one_or_none()
+        if not category:
+            raise ValueError(f"作文分类不存在: {category_id}")
 
-        self.db.add(template)
+        if template and not force_refresh:
+            if not refresh_if_stale:
+                return template
+            if not self._should_refresh_template(template, category):
+                return template
+
+        parent = category.parent
+        group = parent.parent if parent and parent.parent else parent
+
+        example_tasks = await self._load_category_example_tasks(category_id, anchor_task=anchor_task, limit=5)
+        template_data = await self.ai_service.generate_writing_template_async(
+            category_name=category.name,
+            category_path=category.path,
+            prompt_hint=category.prompt_hint,
+            target_word_count=DEFAULT_WORD_TARGET,
+            group_name=group.name if group else None,
+            major_category_name=parent.name if parent else None,
+            task_examples=self._build_template_examples(example_tasks),
+            existing_template=template.template_content if template else None,
+        )
+        if not template_data or not template_data.get("template_content"):
+            template_data = self._build_template_fallback(category)
+
+        template_name = self._normalize_template_text(
+            template_data.get("template_name", f"{category.name}通用模板")
+        )
+        template_content = self._normalize_template_text(template_data.get("template_content", ""))
+        tips = self._normalize_template_text(template_data.get("tips", ""))
+        structure = self._normalize_template_text(template_data.get("structure", ""))
+        opening_sentences = self._normalize_template_json(template_data.get("opening_sentences"))
+        closing_sentences = self._normalize_template_json(template_data.get("closing_sentences"))
+        transition_words = self._normalize_template_json(template_data.get("transition_words"))
+        advanced_vocabulary = self._normalize_template_json(template_data.get("advanced_vocabulary"))
+        grammar_points = self._normalize_template_json(template_data.get("grammar_points"))
+        scoring_criteria = self._normalize_template_json(template_data.get("scoring_criteria"))
+
+        if template is None:
+            template = WritingTemplate(
+                category_id=category.id,
+                category=category,
+                writing_type=group.name if group else (parent.name if parent else category.name),
+                application_type=parent.name if parent else None,
+                template_name=template_name,
+                template_content=template_content,
+                tips=tips,
+                structure=structure,
+                opening_sentences=opening_sentences,
+                closing_sentences=closing_sentences,
+                transition_words=transition_words,
+                advanced_vocabulary=advanced_vocabulary,
+                grammar_points=grammar_points,
+                scoring_criteria=scoring_criteria,
+                template_key=category.template_key,
+            )
+            self.db.add(template)
+        else:
+            template.category = category
+            template.writing_type = group.name if group else (parent.name if parent else category.name)
+            template.application_type = parent.name if parent else None
+            template.template_name = template_name
+            template.template_content = template_content
+            template.tips = tips
+            template.structure = structure
+            template.opening_sentences = opening_sentences
+            template.closing_sentences = closing_sentences
+            template.transition_words = transition_words
+            template.advanced_vocabulary = advanced_vocabulary
+            template.grammar_points = grammar_points
+            template.scoring_criteria = scoring_criteria
+            template.template_key = category.template_key
+
         await self.db.commit()
         await self.db.refresh(template)
-
         return template
 
-    # =========================================================================
-    #                              查询方法
-    # =========================================================================
+    async def ensure_task_assets(
+        self,
+        task_or_id: WritingTask | int,
+        *,
+        force_template_refresh: bool = False,
+        regenerate_sample: bool = False,
+        score_level: str = "一档",
+    ) -> tuple[WritingTask, WritingTemplate, WritingSample]:
+        """确保作文在分类后拥有当前子类模板和对应范文。"""
+        task_id = task_or_id.id if isinstance(task_or_id, WritingTask) else task_or_id
+        result = await self.db.execute(
+            select(WritingTask)
+            .options(
+                selectinload(WritingTask.samples),
+                selectinload(WritingTask.category),
+                selectinload(WritingTask.major_category),
+                selectinload(WritingTask.group_category),
+                selectinload(WritingTask.paper),
+            )
+            .where(WritingTask.id == task_id)
+        )
+        task = result.scalar_one_or_none()
+
+        if not task:
+            raise ValueError("作文不存在")
+
+        if not task.category_id:
+            category_result = await self.classify_task(task)
+            if not category_result.success or not category_result.category:
+                raise ValueError(category_result.error or "作文分类失败")
+
+        template = await self.get_or_create_template(
+            task.category_id,
+            anchor_task=task,
+            force_refresh=force_template_refresh,
+        )
+
+        existing_sample = next(
+            (
+                sample
+                for sample in sorted(task.samples or [], key=lambda item: item.id or 0, reverse=True)
+                if sample.sample_type == "AI生成"
+            ),
+            None,
+        )
+        if existing_sample and not regenerate_sample:
+            if self._sample_meets_quality_bar(existing_sample, expected_template_id=template.id):
+                return task, template, existing_sample
+
+            await self.db.delete(existing_sample)
+            await self.db.flush()
+
+        last_error: Optional[Exception] = None
+        for attempt in range(1, 4):
+            try:
+                sample = await self.generate_sample(
+                    task_id=task.id,
+                    template_id=template.id,
+                    score_level=score_level,
+                    force_template_refresh=False,
+                )
+                return task, template, sample
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "作文范文生成重试 %s/3 失败 task_id=%s: %s",
+                    attempt,
+                    task.id,
+                    exc,
+                )
+
+        raise ValueError(f"作文范文生成失败: {last_error}") from last_error
 
     async def get_writings(
         self,
@@ -723,612 +736,440 @@ I am writing to share my admiration for...
         grade: Optional[str] = None,
         semester: Optional[str] = None,
         exam_type: Optional[str] = None,
-        writing_type: Optional[str] = None,
-        application_type: Optional[str] = None,
-        topic: Optional[str] = None,
-        search: Optional[str] = None
+        group_category_id: Optional[int] = None,
+        major_category_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        search: Optional[str] = None,
     ) -> Tuple[List[WritingTask], int, Dict]:
-        """
-        获取作文列表
-
-        Returns:
-            (items, total, grade_counts)
-        """
-        query = select(WritingTask).options(
-            selectinload(WritingTask.paper)
+        """获取作文列表。"""
+        query = (
+            select(WritingTask)
+            .options(
+                selectinload(WritingTask.paper),
+                selectinload(WritingTask.group_category),
+                selectinload(WritingTask.major_category),
+                selectinload(WritingTask.category),
+            )
         )
 
-        # 筛选条件
         if grade:
             query = query.where(WritingTask.grade == grade)
         if semester:
             query = query.where(WritingTask.semester == semester)
         if exam_type:
             query = query.where(WritingTask.exam_type == exam_type)
-        if writing_type:
-            query = query.where(WritingTask.writing_type == writing_type)
-        if application_type:
-            query = query.where(WritingTask.application_type == application_type)
-        if topic:
-            query = query.where(WritingTask.primary_topic == topic)
+        if group_category_id:
+            query = query.where(WritingTask.group_category_id == group_category_id)
+        if major_category_id:
+            query = query.where(WritingTask.major_category_id == major_category_id)
+        if category_id:
+            query = query.where(WritingTask.category_id == category_id)
         if search:
             query = query.where(WritingTask.task_content.contains(search))
 
-        # 统计总数
-        count_query = select(func.count()).select_from(query.subquery())
-        total_result = await self.db.execute(count_query)
-        total = total_result.scalar()
+        total_result = await self.db.execute(select(func.count()).select_from(query.subquery()))
+        total = total_result.scalar() or 0
 
-        # 分页
-        query = query.order_by(WritingTask.created_at.desc())
-        query = query.offset((page - 1) * size).limit(size)
-
+        query = query.order_by(WritingTask.created_at.desc()).offset((page - 1) * size).limit(size)
         result = await self.db.execute(query)
         items = list(result.scalars().all())
 
-        # 统计各年级数量
         grade_counts = {}
-        for g in GRADE_OPTIONS:
-            count_query = select(func.count()).select_from(
-                WritingTask.__table__
-            ).where(WritingTask.grade == g)
-            count_result = await self.db.execute(count_query)
-            grade_counts[g] = count_result.scalar() or 0
+        for grade_value in GRADE_OPTIONS:
+            count_query = select(func.count()).select_from(WritingTask).where(WritingTask.grade == grade_value)
+            grade_count = await self.db.execute(count_query)
+            grade_counts[grade_value] = grade_count.scalar() or 0
 
         return items, total, grade_counts
 
     async def get_writing_detail(self, task_id: int) -> Optional[WritingTask]:
-        """
-        获取作文详情（含模板和范文）
-        """
-        query = select(WritingTask).options(
-            selectinload(WritingTask.paper),
-            selectinload(WritingTask.samples)
-        ).where(WritingTask.id == task_id)
-
+        """获取作文详情（含模板和范文）。"""
+        query = (
+            select(WritingTask)
+            .options(
+                selectinload(WritingTask.paper),
+                selectinload(WritingTask.samples),
+                selectinload(WritingTask.group_category),
+                selectinload(WritingTask.major_category),
+                selectinload(WritingTask.category),
+            )
+            .where(WritingTask.id == task_id)
+        )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
     async def get_filters(self) -> Dict:
-        """
-        获取筛选项
-        """
-        # 年级
+        """获取作文筛选项。"""
         grades_result = await self.db.execute(
-            select(WritingTask.grade).distinct().where(
-                WritingTask.grade.isnot(None)
-            )
+            select(WritingTask.grade).distinct().where(WritingTask.grade.isnot(None))
         )
-        grades = [g for g in grades_result.scalars().all() if g]
-
-        # 学期
         semesters_result = await self.db.execute(
-            select(WritingTask.semester).distinct().where(
-                WritingTask.semester.isnot(None)
-            )
+            select(WritingTask.semester).distinct().where(WritingTask.semester.isnot(None))
         )
-        semesters = [s for s in semesters_result.scalars().all() if s]
-
-        # 考试类型
         exam_types_result = await self.db.execute(
-            select(WritingTask.exam_type).distinct().where(
-                WritingTask.exam_type.isnot(None)
-            )
+            select(WritingTask.exam_type).distinct().where(WritingTask.exam_type.isnot(None))
         )
-        exam_types = [e for e in exam_types_result.scalars().all() if e]
-
-        # 文体类型
-        writing_types_result = await self.db.execute(
-            select(WritingTask.writing_type).distinct().where(
-                WritingTask.writing_type.isnot(None)
-            )
+        category_result = await self.db.execute(
+            select(WritingCategory)
+            .where(WritingCategory.is_active.is_(True))
+            .order_by(WritingCategory.level, WritingCategory.sort_order, WritingCategory.id)
         )
-        writing_types = [w for w in writing_types_result.scalars().all() if w]
-
-        # 应用文子类型
-        application_types_result = await self.db.execute(
-            select(WritingTask.application_type).distinct().where(
-                WritingTask.application_type.isnot(None)
-            )
-        )
-        application_types = [a for a in application_types_result.scalars().all() if a]
-
-        # 话题
-        topics_result = await self.db.execute(
-            select(WritingTask.primary_topic).distinct().where(
-                WritingTask.primary_topic.isnot(None)
-            )
-        )
-        topics = [t for t in topics_result.scalars().all() if t]
+        categories = list(category_result.scalars().all())
 
         return {
-            "grades": sorted(grades),
-            "semesters": sorted(semesters),
-            "exam_types": sorted(exam_types),
-            "writing_types": sorted(writing_types),
-            "application_types": sorted(application_types),
-            "topics": sorted(topics)
+            "grades": sorted([value for value in grades_result.scalars().all() if value]),
+            "semesters": sorted([value for value in semesters_result.scalars().all() if value]),
+            "exam_types": sorted([value for value in exam_types_result.scalars().all() if value]),
+            "groups": [item for item in categories if item.level == 1],
+            "major_categories": [item for item in categories if item.level == 2],
+            "categories": [item for item in categories if item.level == 3],
         }
 
-    # =========================================================================
-    #                              讲义功能
-    # =========================================================================
-
-    async def get_topic_stats_for_grade(self, grade: str, paper_ids: Optional[List[int]] = None) -> List[Dict]:
-        """
-        获取年级话题统计（按题目数量排序）
-
-        Args:
-            grade: 年级
-
-        Returns:
-            [{"topic": "校园生活", "task_count": 10, "sample_count": 8, "recent_years": [2023, 2024]}]
-        """
-        # 查询该年级下所有话题的统计
-        query = (
-            select(
-                WritingTask.primary_topic.label('topic'),
-                func.count(WritingTask.id).label('task_count'),
-                func.group_concat(ExamPaper.year.distinct()).label('years')
-            )
-            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
-            .where(ExamPaper.grade == grade)
-            .where(WritingTask.primary_topic.isnot(None))
-            .where(WritingTask.primary_topic != '')
-            .group_by(WritingTask.primary_topic)
-            .order_by(func.count(WritingTask.id).desc())
-        )
-        query = self._apply_exam_paper_filter(query, paper_ids)
-
-        result = await self.db.execute(query)
-        rows = result.all()
-
-        stats = []
-        for row in rows:
-            topic = row.topic
-            task_count = row.task_count
-
-            # 查询该话题下的范文数量
-            sample_count_query = (
-                select(func.count(WritingSample.id))
-                .join(WritingTask, WritingSample.task_id == WritingTask.id)
-                .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
-                .where(ExamPaper.grade == grade)
-                .where(WritingTask.primary_topic == topic)
-            )
-            sample_count_query = self._apply_exam_paper_filter(sample_count_query, paper_ids)
-            sample_count_result = await self.db.execute(sample_count_query)
-            sample_count = sample_count_result.scalar() or 0
-
-            # 解析年份
-            years = []
-            if row.years:
-                try:
-                    years = sorted(set(int(y.strip()) for y in str(row.years).split(',') if y.strip().isdigit()))
-                except:
-                    pass
-
-            stats.append({
-                "topic": topic,
-                "task_count": task_count,
-                "sample_count": sample_count,
-                "recent_years": years[-3:] if years else []  # 最近3年
-            })
-
-        return stats
-
-    async def get_topic_handout_content(
+    async def build_grade_handout(
         self,
         grade: str,
-        topic: str,
-        edition: str = 'teacher',
-        paper_ids: Optional[List[int]] = None
+        edition: str = "teacher",
+        paper_ids: Optional[List[int]] = None,
     ) -> Dict:
-        """
-        获取单话题讲义内容（四段式）
+        """构建年级作文讲义。"""
+        tasks = await self._load_tasks_for_handout(grade, paper_ids)
+        if not tasks:
+            return {"grade": grade, "edition": edition, "total_task_count": 0, "groups": []}
 
-        Args:
-            grade: 年级
-            topic: 话题
-            edition: teacher/student
+        group_map: dict[int, dict] = {}
+        for task in tasks:
+            if not (task.group_category and task.major_category and task.category):
+                continue
 
-        Returns:
-            四段式讲义内容
-        """
-        # Part 1: 话题统计
-        stats = await self._get_single_topic_stats(grade, topic, paper_ids)
+            group_bucket = group_map.setdefault(
+                task.group_category.id,
+                {"group_category": task.group_category, "sections": {}},
+            )
+            section_bucket = group_bucket["sections"].setdefault(
+                task.category.id,
+                {
+                    "group_category": task.group_category,
+                    "major_category": task.major_category,
+                    "category": task.category,
+                    "tasks": [],
+                },
+            )
+            section_bucket["tasks"].append(task)
 
-        # Part 2: 写作框架
-        frameworks = await self._aggregate_frameworks(grade, topic, paper_ids)
-
-        # Part 3: 高频表达
-        expressions = await self._aggregate_expressions(grade, topic, paper_ids)
-
-        # Part 4: 范文展示
-        samples = await self._get_topic_samples(grade, topic, edition, paper_ids)
+        groups_output = []
+        for group_bucket in sorted(
+            group_map.values(),
+            key=lambda item: (item["group_category"].sort_order, item["group_category"].id),
+        ):
+            sections_output = []
+            for section in sorted(
+                group_bucket["sections"].values(),
+                key=lambda item: (item["major_category"].sort_order, item["category"].sort_order, item["category"].id),
+            ):
+                section_data = await self._build_category_section(section["tasks"], edition)
+                sections_output.append(section_data)
+            groups_output.append(
+                {
+                    "group_category": self._category_to_dict(group_bucket["group_category"]),
+                    "sections": sections_output,
+                }
+            )
 
         return {
-            "topic": topic,
             "grade": grade,
             "edition": edition,
-            "part1_topic_stats": stats,
-            "part2_frameworks": frameworks,
-            "part3_expressions": expressions,
-            "part4_samples": samples
+            "total_task_count": len(tasks),
+            "groups": groups_output,
         }
 
-    async def _get_single_topic_stats(self, grade: str, topic: str, paper_ids: Optional[List[int]] = None) -> Dict:
-        """获取单个话题的统计"""
-        # 题目数量
-        task_count_query = (
-            select(func.count(WritingTask.id))
-            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
-            .where(ExamPaper.grade == grade)
-            .where(WritingTask.primary_topic == topic)
-        )
-        task_count_query = self._apply_exam_paper_filter(task_count_query, paper_ids)
-        task_count_result = await self.db.execute(task_count_query)
-        task_count = task_count_result.scalar() or 0
-
-        # 范文数量
-        sample_count_query = (
-            select(func.count(WritingSample.id))
-            .join(WritingTask, WritingSample.task_id == WritingTask.id)
-            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
-            .where(ExamPaper.grade == grade)
-            .where(WritingTask.primary_topic == topic)
-        )
-        sample_count_query = self._apply_exam_paper_filter(sample_count_query, paper_ids)
-        sample_count_result = await self.db.execute(sample_count_query)
-        sample_count = sample_count_result.scalar() or 0
-
-        # 年份
-        years_query = (
-            select(ExamPaper.year.distinct())
-            .join(WritingTask, ExamPaper.id == WritingTask.paper_id)
-            .where(ExamPaper.grade == grade)
-            .where(WritingTask.primary_topic == topic)
-            .where(ExamPaper.year.isnot(None))
-            .order_by(ExamPaper.year.desc())
-            .limit(3)
-        )
-        years_query = self._apply_exam_paper_filter(years_query, paper_ids)
-        years_result = await self.db.execute(years_query)
-        years = [y for y in years_result.scalars().all() if y]
-
-        return {
-            "topic": topic,
-            "task_count": task_count,
-            "sample_count": sample_count,
-            "recent_years": years
-        }
-
-    async def _aggregate_frameworks(self, grade: str, topic: str, paper_ids: Optional[List[int]] = None) -> List[Dict]:
-        """
-        聚合写作框架（从该话题下所有模板提取）
-
-        写作框架结构：
-        - 开头句（点明目的）
-        - 背景句（交代背景）
-        - 中心句（核心观点）
-        - 主体段（观点+例子+解释）
-        - 结尾句（总结+建议）
-        """
-        # 获取该话题下的文体类型
-        writing_types_query = (
-            select(WritingTask.writing_type.distinct())
-            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
-            .where(ExamPaper.grade == grade)
-            .where(WritingTask.primary_topic == topic)
-            .where(WritingTask.writing_type.isnot(None))
-        )
-        writing_types_query = self._apply_exam_paper_filter(writing_types_query, paper_ids)
-        writing_types_result = await self.db.execute(writing_types_query)
-        writing_types = [wt for wt in writing_types_result.scalars().all() if wt]
-
-        frameworks = []
-        for writing_type in writing_types:
-            # 获取该文体的模板
-            template_query = select(WritingTemplate).where(
-                WritingTemplate.writing_type == writing_type
-            ).limit(1)
-            template_result = await self.db.execute(template_query)
-            template = template_result.scalar_one_or_none()
-
-            # 解析模板中的句型
-            opening_sentences = []
-            closing_sentences = []
-            if template:
-                if template.opening_sentences:
-                    try:
-                        opening_sentences = json.loads(template.opening_sentences)[:3]
-                    except:
-                        pass
-                if template.closing_sentences:
-                    try:
-                        closing_sentences = json.loads(template.closing_sentences)[:3]
-                    except:
-                        pass
-
-            # 构建框架
-            if writing_type == "应用文":
-                framework = {
-                    "writing_type": writing_type,
-                    "sections": [
-                        {
-                            "name": "开头句",
-                            "description": "点明写信目的，引起注意",
-                            "examples": opening_sentences[:2] if opening_sentences else [
-                                "I am writing to tell you about...",
-                                "I would like to invite you to..."
-                            ]
-                        },
-                        {
-                            "name": "背景句",
-                            "description": "交代事件背景、原因",
-                            "examples": []
-                        },
-                        {
-                            "name": "中心句",
-                            "description": "表达核心观点或请求",
-                            "examples": []
-                        },
-                        {
-                            "name": "主体段",
-                            "description": "分点论述（观点+例子+解释）",
-                            "examples": []
-                        },
-                        {
-                            "name": "结尾句",
-                            "description": "总结、期待回复",
-                            "examples": closing_sentences[:2] if closing_sentences else [
-                                "I am looking forward to your reply.",
-                                "Best wishes!"
-                            ]
-                        }
-                    ]
-                }
-            else:  # 记叙文
-                framework = {
-                    "writing_type": writing_type,
-                    "sections": [
-                        {
-                            "name": "开头句",
-                            "description": "交代时间、地点、人物",
-                            "examples": opening_sentences[:2] if opening_sentences else [
-                                "Last weekend, I had an unforgettable experience.",
-                                "It was a sunny day when..."
-                            ]
-                        },
-                        {
-                            "name": "背景句",
-                            "description": "描述事件起因",
-                            "examples": []
-                        },
-                        {
-                            "name": "中心句",
-                            "description": "点明主题或情感",
-                            "examples": []
-                        },
-                        {
-                            "name": "主体段",
-                            "description": "详细描述事件经过（动作+对话+感受）",
-                            "examples": []
-                        },
-                        {
-                            "name": "结尾句",
-                            "description": "总结感悟、升华主题",
-                            "examples": closing_sentences[:2] if closing_sentences else [
-                                "This experience taught me that...",
-                                "I will never forget this special day."
-                            ]
-                        }
-                    ]
-                }
-
-            frameworks.append(framework)
-
-        return frameworks
-
-    async def _aggregate_expressions(self, grade: str, topic: str, paper_ids: Optional[List[int]] = None) -> List[Dict]:
-        """
-        聚合高频表达（从模板字段合并去重）
-
-        分类：
-        - 开头句型
-        - 结尾句型
-        - 过渡词汇
-        - 高级词汇
-        """
-        # 获取该话题下的文体类型
-        writing_types_query = (
-            select(WritingTask.writing_type.distinct())
-            .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
-            .where(ExamPaper.grade == grade)
-            .where(WritingTask.primary_topic == topic)
-            .where(WritingTask.writing_type.isnot(None))
-        )
-        writing_types_query = self._apply_exam_paper_filter(writing_types_query, paper_ids)
-        writing_types_result = await self.db.execute(writing_types_query)
-        writing_types = [wt for wt in writing_types_result.scalars().all() if wt]
-
-        # 合并所有模板的表达素材
-        all_opening = []
-        all_closing = []
-        all_transitions = []
-        all_vocabulary = []
-
-        for writing_type in writing_types:
-            template_query = select(WritingTemplate).where(
-                WritingTemplate.writing_type == writing_type
-            ).limit(1)
-            template_result = await self.db.execute(template_query)
-            template = template_result.scalar_one_or_none()
-
-            if template:
-                if template.opening_sentences:
-                    try:
-                        all_opening.extend(json.loads(template.opening_sentences))
-                    except:
-                        pass
-                if template.closing_sentences:
-                    try:
-                        all_closing.extend(json.loads(template.closing_sentences))
-                    except:
-                        pass
-                if template.transition_words:
-                    try:
-                        all_transitions.extend(json.loads(template.transition_words))
-                    except:
-                        pass
-                if template.advanced_vocabulary:
-                    try:
-                        vocab_data = json.loads(template.advanced_vocabulary)
-                        if isinstance(vocab_data, list):
-                            all_vocabulary.extend(vocab_data)
-                    except:
-                        pass
-
-        # 去重（保持顺序）
-        def unique_keep_order(lst):
-            seen = set()
-            result = []
-            for item in lst:
-                if isinstance(item, str) and item not in seen:
-                    seen.add(item)
-                    result.append(item)
-                elif isinstance(item, dict):
-                    # 处理字典格式的高级词汇
-                    key = item.get('word', '') or item.get('basic', '')
-                    if key and key not in seen:
-                        seen.add(key)
-                        result.append(item)
-            return result
-
-        expressions = []
-
-        if unique_keep_order(all_opening):
-            expressions.append({
-                "category": "开头句型",
-                "items": unique_keep_order(all_opening)[:10]
-            })
-
-        if unique_keep_order(all_closing):
-            expressions.append({
-                "category": "结尾句型",
-                "items": unique_keep_order(all_closing)[:10]
-            })
-
-        if unique_keep_order(all_transitions):
-            expressions.append({
-                "category": "过渡词汇",
-                "items": unique_keep_order(all_transitions)[:15]
-            })
-
-        if unique_keep_order(all_vocabulary):
-            expressions.append({
-                "category": "高级词汇",
-                "items": unique_keep_order(all_vocabulary)[:15]
-            })
-
-        # 如果没有模板数据，提供默认值
-        if not expressions:
-            expressions = [
-                {
-                    "category": "开头句型",
-                    "items": [
-                        "I am writing to tell you about...",
-                        "I would like to share my experience with you.",
-                        "Last weekend, I had an unforgettable experience."
-                    ]
-                },
-                {
-                    "category": "结尾句型",
-                    "items": [
-                        "I am looking forward to your reply.",
-                        "Best wishes!",
-                        "This experience taught me a lot."
-                    ]
-                },
-                {
-                    "category": "过渡词汇",
-                    "items": [
-                        "First of all,",
-                        "Besides,",
-                        "What's more,",
-                        "However,",
-                        "In conclusion,"
-                    ]
-                }
-            ]
-
-        return expressions
-
-    async def _get_topic_samples(
-        self,
-        grade: str,
-        topic: str,
-        edition: str,
-        paper_ids: Optional[List[int]] = None
-    ) -> List[Dict]:
-        """
-        获取话题范文（含重点句标注）
-
-        Args:
-            grade: 年级
-            topic: 话题
-            edition: teacher/student
-
-        Returns:
-            范文列表（教师版含重点句解析）
-        """
+    async def _load_tasks_for_handout(self, grade: str, paper_ids: Optional[List[int]]) -> List[WritingTask]:
         query = (
-            select(WritingTask, WritingSample, ExamPaper)
-            .join(WritingSample, WritingTask.id == WritingSample.task_id)
+            select(WritingTask)
             .join(ExamPaper, WritingTask.paper_id == ExamPaper.id)
+            .options(
+                selectinload(WritingTask.paper),
+                selectinload(WritingTask.samples),
+                selectinload(WritingTask.group_category),
+                selectinload(WritingTask.major_category),
+                selectinload(WritingTask.category),
+            )
             .where(ExamPaper.grade == grade)
-            .where(WritingTask.primary_topic == topic)
-            .order_by(ExamPaper.year.desc())
-            .limit(5)  # 最多5篇范文
+            .where(WritingTask.category_id.isnot(None))
+            .order_by(ExamPaper.year.desc().nullslast(), WritingTask.id.desc())
         )
         query = self._apply_exam_paper_filter(query, paper_ids)
-
         result = await self.db.execute(query)
-        rows = result.all()
+        return list(result.scalars().all())
+
+    async def _build_category_section(self, tasks: List[WritingTask], edition: str) -> Dict:
+        category = tasks[0].category
+        major_category = tasks[0].major_category
+        group_category = tasks[0].group_category
+        # 讲义接口只消费当前已生成的子类模板，避免在只读场景里触发整批模板重建。
+        template = await self.get_or_create_template(category.id, refresh_if_stale=False)
+
+        years = sorted({task.paper.year for task in tasks if task.paper and task.paper.year})
+        applicable_ranges = []
+        seen_ranges = set()
+        for task in tasks[:8]:
+            source = self._build_source_line(task.paper)
+            preview = self._shorten(task.task_content, 32)
+            line = f"{source}：{preview}" if source else preview
+            if line not in seen_ranges:
+                seen_ranges.add(line)
+                applicable_ranges.append(line)
 
         samples = []
-        for task, sample, paper in rows:
-            # 解析重点句
-            highlighted_sentences = []
-            if sample.highlights:
+        sorted_tasks = sorted(tasks, key=lambda item: ((item.paper.year if item.paper else 0), item.id), reverse=True)
+        for task in sorted_tasks:
+            for sample in task.samples:
+                highlighted = self._parse_json(sample.highlights) if edition == "teacher" else []
+                samples.append(
+                    {
+                        "id": sample.id,
+                        "task_content": task.task_content,
+                        "sample_content": sample.sample_content,
+                        "translation": sample.translation if edition == "teacher" else None,
+                        "word_count": sample.word_count,
+                        "highlighted_sentences": highlighted if isinstance(highlighted, list) else [],
+                        "source": {
+                            "year": task.paper.year if task.paper else None,
+                            "region": task.paper.region if task.paper else None,
+                            "exam_type": task.paper.exam_type if task.paper else None,
+                            "semester": task.paper.semester if task.paper else None,
+                        },
+                    }
+                )
+                if len(samples) >= 5:
+                    break
+            if len(samples) >= 5:
+                break
+
+        return {
+            "group_category": self._category_to_dict(group_category),
+            "major_category": self._category_to_dict(major_category),
+            "category": self._category_to_dict(category),
+            "summary": {
+                "group_name": group_category.name,
+                "major_category_name": major_category.name,
+                "category_name": category.name,
+                "task_count": len(tasks),
+                "sample_count": sum(len(task.samples) for task in tasks),
+                "recent_years": years[-3:],
+                "applicable_ranges": applicable_ranges,
+            },
+            "frameworks": [self._build_framework_from_template(category, template)],
+            "expressions": self._build_expressions_from_template(template),
+            "samples": samples,
+        }
+
+    def _build_framework_from_template(self, category: WritingCategory, template: WritingTemplate) -> Dict:
+        opening_sentences = self._parse_json_list(template.opening_sentences)
+        closing_sentences = self._parse_json_list(template.closing_sentences)
+        structure_text = template.structure or ""
+        sections = [
+            {
+                "name": "结构定位",
+                "description": structure_text or f"{category.name}常用写作结构",
+                "examples": opening_sentences[:2],
+            },
+            {
+                "name": "开头句",
+                "description": "适合该子类的开头方式",
+                "examples": opening_sentences[:4],
+            },
+            {
+                "name": "结尾句",
+                "description": "适合该子类的收束与升华方式",
+                "examples": closing_sentences[:4],
+            },
+        ]
+        return {
+            "title": f"{category.name}通用模板",
+            "category_name": category.name,
+            "sections": sections,
+        }
+
+    def _build_expressions_from_template(self, template: WritingTemplate) -> List[Dict]:
+        expressions = []
+        for label, raw_value, limit in (
+            ("开头句型", template.opening_sentences, 8),
+            ("结尾句型", template.closing_sentences, 8),
+            ("过渡词汇", template.transition_words, 12),
+            ("高级词汇", template.advanced_vocabulary, 12),
+        ):
+            items = self._normalize_expression_items(raw_value)[:limit]
+            if items:
+                expressions.append({"category": label, "items": items})
+        return expressions
+
+    def _normalize_expression_items(self, raw_value: Optional[str]) -> List[str]:
+        parsed = self._parse_json(raw_value)
+        if not parsed:
+            return []
+        items: List[str] = []
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, str):
+                    items.append(item)
+                elif isinstance(item, dict):
+                    word = item.get("word") or item.get("basic") or ""
+                    usage = item.get("usage") or ""
+                    items.append(f"{word}（{usage}）" if usage else str(word))
+        elif isinstance(parsed, dict):
+            for key, value in parsed.items():
+                items.append(f"{key}: {value}")
+        return [item for item in items if item]
+
+    def _parse_json(self, raw_value: Optional[str]):
+        if not raw_value:
+            return None
+        try:
+            return json.loads(raw_value)
+        except Exception:
+            return raw_value
+
+    def _parse_json_list(self, raw_value: Optional[str]) -> List[str]:
+        parsed = self._parse_json(raw_value)
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed if item]
+        return []
+
+    def _normalize_template_text(self, value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return ""
+            if stripped.startswith(("{", "[")):
                 try:
-                    highlighted_sentences = json.loads(sample.highlights)
-                except:
+                    parsed = json.loads(stripped)
+                    return self._normalize_template_text(parsed)
+                except Exception:
                     pass
+            dict_blocks = re.findall(r"\{[^{}]+\}", stripped)
+            if dict_blocks and len(dict_blocks) >= 2:
+                lines = []
+                for block in dict_blocks:
+                    try:
+                        parsed = ast.literal_eval(block)
+                    except Exception:
+                        continue
+                    line = self._format_structure_line(parsed)
+                    if line:
+                        lines.append(line)
+                if lines:
+                    return "\n".join(lines)
+            return value
+        if isinstance(value, list):
+            lines = []
+            for item in value:
+                if isinstance(item, dict):
+                    line = self._format_structure_line(item)
+                    if line:
+                        lines.append(line)
+                elif item:
+                    lines.append(str(item))
+            return "\n".join(lines)
+        if isinstance(value, dict):
+            line = self._format_structure_line(value)
+            return line if line else json.dumps(value, ensure_ascii=False)
+        return str(value)
 
-            sample_data = {
-                "id": sample.id,
-                "task_content": task.task_content,
-                "sample_content": sample.sample_content,
-                "translation": sample.translation,  # 中文翻译
-                "word_count": sample.word_count,
-                "highlighted_sentences": highlighted_sentences if edition == 'teacher' else [],
-                "source": {
-                    "year": paper.year,
-                    "region": paper.region,
-                    "exam_type": paper.exam_type,
-                    "semester": task.semester
-                }
-            }
-            samples.append(sample_data)
+    def _normalize_template_json(self, value) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, dict)):
+            return json.dumps(value, ensure_ascii=False)
+        return json.dumps(value, ensure_ascii=False)
 
-        return samples
-    def _normalize_paper_ids(self, paper_ids: Optional[List[int]]) -> Optional[List[int]]:
-        ids = [paper_id for paper_id in (paper_ids or []) if paper_id is not None]
-        return ids or None
+    def _build_source_line(self, paper: Optional[ExamPaper]) -> str:
+        if not paper:
+            return ""
+        parts = [str(paper.year) if paper.year else "", paper.region or "", paper.exam_type or ""]
+        return " ".join(part for part in parts if part)
+
+    def _format_structure_line(self, item: dict) -> str:
+        paragraph = item.get("paragraph") or item.get("section") or item.get("part")
+        function = item.get("function") or item.get("goal") or item.get("focus")
+        word_count = item.get("word_count") or item.get("suggestion_words") or item.get("suggested_words")
+        parts = []
+        if paragraph:
+            parts.append(f"第{paragraph}段")
+        if function:
+            parts.append(str(function))
+        line = "：".join(parts) if parts else ""
+        if word_count:
+            suffix = f"（建议 {word_count} 词）"
+            return f"{line}{suffix}" if line else suffix
+        return line
+
+    def _category_to_dict(self, category: WritingCategory) -> Dict:
+        return {
+            "id": category.id,
+            "code": category.code,
+            "name": category.name,
+            "level": category.level,
+            "parent_id": category.parent_id,
+            "path": category.path,
+            "template_key": category.template_key,
+        }
+
+    def _shorten(self, text: str, length: int) -> str:
+        cleaned = re.sub(r"\s+", " ", text or "").strip()
+        if len(cleaned) <= length:
+            return cleaned
+        return f"{cleaned[:length].rstrip()}..."
+
+    async def reclassify_all_tasks(self, limit: Optional[int] = None, batch_size: int = 25) -> Dict[str, int]:
+        """全量重分类旧作文数据。"""
+        query = select(WritingTask).order_by(WritingTask.id)
+        if limit:
+            query = query.limit(limit)
+        result = await self.db.execute(query)
+        tasks = list(result.scalars().all())
+
+        classified = 0
+        failed = 0
+        for index, task in enumerate(tasks, start=1):
+            category_result = await self.classify_task(task)
+            if category_result.success:
+                classified += 1
+            else:
+                failed += 1
+            if index % batch_size == 0:
+                await self.db.commit()
+                logger.info("作文重分类进度：%s/%s", index, len(tasks))
+        await self.db.commit()
+        return {"classified": classified, "failed": failed}
+
+    async def reset_templates_for_categories(self) -> int:
+        """将已有作文范文的模板重新指向按子类生成的新模板。"""
+        tasks_result = await self.db.execute(
+            select(WritingTask)
+            .options(
+                selectinload(WritingTask.samples),
+                selectinload(WritingTask.category),
+            )
+            .where(WritingTask.category_id.isnot(None))
+        )
+        tasks = list(tasks_result.scalars().all())
+
+        updated_samples = 0
+        for task in tasks:
+            template = await self.get_or_create_template(task.category_id)
+            for sample in task.samples:
+                if sample.template_id != template.id:
+                    sample.template_id = template.id
+                    updated_samples += 1
+        await self.db.commit()
+        return updated_samples
 
     def _apply_exam_paper_filter(self, query, paper_ids: Optional[List[int]]):
-        normalized_ids = self._normalize_paper_ids(paper_ids)
+        normalized_ids = [paper_id for paper_id in (paper_ids or []) if paper_id is not None]
         if normalized_ids:
             query = query.where(ExamPaper.id.in_(normalized_ids))
         return query

@@ -5,8 +5,10 @@
 """
 import os
 import json
+import re
+from difflib import SequenceMatcher
 from typing import Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from docx import Document
 
 from app.config import settings
@@ -25,16 +27,153 @@ class LLMParseResult:
 
 
 @dataclass
-class WritingExtractResult:
-    """作文提取结果"""
-    success: bool
+class WritingExtractTask:
+    """单道作文小题提取结果。"""
     content: str = ""                  # 作文题目完整内容
     requirements: str = ""             # 具体要求
     word_limit: str = ""               # 字数限制
     writing_type: str = "其他"         # 应用文/记叙文/其他
     application_type: str = ""         # 应用文子类型
+    task_label: str = ""               # 题目① / 题目② / 第一题 ...
+
+
+@dataclass
+class WritingExtractResult:
+    """作文提取结果（支持一道作文大题下的多道小题）。"""
+    success: bool
+    tasks: List[WritingExtractTask] = field(default_factory=list)
     error: str = ""
     raw_response: str = ""
+
+    @property
+    def content(self) -> str:
+        return self.tasks[0].content if self.tasks else ""
+
+    @property
+    def requirements(self) -> str:
+        return self.tasks[0].requirements if self.tasks else ""
+
+    @property
+    def word_limit(self) -> str:
+        return self.tasks[0].word_limit if self.tasks else ""
+
+    @property
+    def writing_type(self) -> str:
+        return self.tasks[0].writing_type if self.tasks else "其他"
+
+    @property
+    def application_type(self) -> str:
+        return self.tasks[0].application_type if self.tasks else ""
+
+
+def _normalize_writing_task_label(label: str) -> str:
+    """将题目①/第一题/Task 1 等标签标准化，便于去重比对。"""
+    normalized = re.sub(r"[\s：:]", "", label or "").strip().lower()
+    replacements = {
+        "题目1": "题目①",
+        "题目一": "题目①",
+        "第一题": "题目①",
+        "task1": "题目①",
+        "作文1": "题目①",
+        "作文一": "题目①",
+        "题目2": "题目②",
+        "题目二": "题目②",
+        "第二题": "题目②",
+        "task2": "题目②",
+        "作文2": "题目②",
+        "作文二": "题目②",
+    }
+    return replacements.get(normalized, normalized)
+
+
+def _normalize_writing_task_text(text: str, task_label: str = "") -> str:
+    """抽取作文小题的核心题意文本，弱化共享说明和格式差异。"""
+    normalized = (text or "").strip()
+    if not normalized:
+        return ""
+
+    normalized = normalized.replace("（", "(").replace("）", ")").replace("“", '"').replace("”", '"')
+    normalized = normalized.replace("‘", "'").replace("’", "'").replace("　", " ")
+
+    label = _normalize_writing_task_label(task_label)
+    if label:
+        normalized = re.sub(
+            rf"(?is)^.*?(?:{re.escape(label)}|{re.escape(task_label.strip())})[\s：:]*",
+            "",
+            normalized,
+            count=1,
+        )
+
+    lead_cues = (
+        "假设你是", "假如你是", "假定你是", "某英文网站", "你校英语社团", "你们学校",
+        "请用英语", "请你用英语", "请根据", "从下面两个题目中任选一题",
+    )
+    earliest_index = -1
+    for cue in lead_cues:
+        index = normalized.find(cue)
+        if index == -1:
+            continue
+        if earliest_index == -1 or index < earliest_index:
+            earliest_index = index
+    if earliest_index > 0:
+        normalized = normalized[earliest_index:]
+
+    normalized = re.sub(r"(?is)\|.*?\|", " ", normalized)
+    normalized = re.sub(
+        r"(?is)(提示词语|提示问题|写作提示|参考答案|范文|优秀范文|参考范文|参考例文|评分标准).*",
+        "",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?is)书面表达.*?请不要写出(?:真实的)?校名和姓名[。.]?",
+        "",
+        normalized,
+    )
+    normalized = re.sub(r"(?is)文中已给出内容不计入总词数[。.]?", "", normalized)
+    normalized = re.sub(r"(?is)所给提示词语仅供选用[。.]?", "", normalized)
+    normalized = re.sub(r"(?is)\(共\d+分\)", "", normalized)
+    normalized = re.sub(r"[\s\.,;:!?，。；：！？\"'“”‘’()（）【】\[\]_\-—~|]+", "", normalized)
+    return normalized.lower()
+
+
+def dedupe_writing_tasks(tasks: List[WritingExtractTask]) -> List[WritingExtractTask]:
+    """对作文小题做语义级去重，保留一张卷里的真实多题，过滤重复提取。"""
+    deduped: List[WritingExtractTask] = []
+    normalized_cache: List[str] = []
+
+    for task in tasks:
+        content = (task.content or "").strip()
+        if not content:
+            continue
+
+        normalized_text = _normalize_writing_task_text(content, task.task_label)
+        normalized_label = _normalize_writing_task_label(task.task_label)
+        is_duplicate = False
+
+        for existing_task, existing_text in zip(deduped, normalized_cache):
+            existing_label = _normalize_writing_task_label(existing_task.task_label)
+            if normalized_label and existing_label and normalized_label != existing_label:
+                continue
+            if normalized_text and existing_text:
+                if (
+                    normalized_text == existing_text
+                    or normalized_text in existing_text
+                    or existing_text in normalized_text
+                ):
+                    is_duplicate = True
+                    break
+                similarity = SequenceMatcher(None, normalized_text[:1200], existing_text[:1200]).ratio()
+                if similarity >= 0.93:
+                    is_duplicate = True
+                    break
+
+        if is_duplicate:
+            continue
+
+        deduped.append(task)
+        normalized_cache.append(normalized_text)
+
+    return deduped
 
 
 class LLMDocumentParser:
@@ -213,24 +352,30 @@ class LLMDocumentParser:
 
 ### 作文题目
 - found: 是否找到作文题目（true/false）
-- content: 作文题目的完整内容（包括题目描述、情景设置等）
-- requirements: 具体写作要求（如字数、格式等）
-- word_limit: 字数限制（如"80-100词"、"不少于60词"等）
+- tasks: 作文小题数组。一份试卷的作文大题下面可能有两道或更多小题（例如“题目① / 题目② / 从下面两个题目中任选一题”），必须逐题拆开输出，不能把多道小题合并成一条。
+- 每个 task 需要包含：
+  - content: 该作文小题的完整内容（包括该小题自己的题干、提示词、提示问题、已给开头等）
+  - requirements: 该小题适用的具体写作要求（如字数、格式等；如果是整道作文大题共享要求，也要复制到每个小题）
+  - word_limit: 字数限制（如"80-100词"、"不少于60词"等）
+  - writing_type: 文体类型
+  - application_type: 应用文子类型（如果适用）
+  - task_label: 小题标签（如"题目①"、"题目②"、"第一题"；如果没有则留空）
 
 ### 文体类型识别
-- writing_type: 文体类型，必须从以下三个选项中选择一个：
+- 每个 task 的 writing_type 必须从以下三个选项中选择一个：
   - "应用文"：书信、通知、邀请、邮件、回复、活动介绍、请假条、感谢信等
   - "记叙文"：讲述经历、描述事件、讲故事等
   - "其他"：无法归类或以上两者都不符合的
 
-- application_type: 仅当 writing_type 为"应用文"时填写，具体子类型如：
+- 每个 task 的 application_type 仅当 writing_type 为"应用文"时填写，具体子类型如：
   - 书信、通知、邀请函、电子邮件、回复信、活动介绍、日记、便条等
   - 如果不是应用文，此字段留空
 
 ## 注意事项
 1. 仔细识别作文题目的完整内容，包括所有背景信息和要求
 2. 文体类型必须准确分类，根据题目要求判断
-3. 如果找不到作文题目，将 found 设为 false
+3. 如果作文大题下有两道或以上小题，必须在 tasks 中逐条返回，不能只返回其中一道
+4. 如果找不到作文题目，将 found 设为 false
 
 ## 输出格式
 
@@ -239,11 +384,24 @@ class LLMDocumentParser:
 ```json
 {
     "found": true,
-    "content": "假设你是李华，你的英国笔友Tom对中国传统文化很感兴趣...",
-    "requirements": "1. 词数80-100；2. 可适当增加细节...",
-    "word_limit": "80-100词",
-    "writing_type": "应用文",
-    "application_type": "书信"
+    "tasks": [
+        {
+            "task_label": "题目①",
+            "content": "假设你是李华，你的英国笔友Tom对中国传统文化很感兴趣...",
+            "requirements": "1. 词数80-100；2. 可适当增加细节...",
+            "word_limit": "80-100词",
+            "writing_type": "应用文",
+            "application_type": "书信"
+        },
+        {
+            "task_label": "题目②",
+            "content": "某英文网站正在开展以“我梦想中的学校”为主题的征文活动...",
+            "requirements": "1. 词数80-100；2. 可适当增加细节...",
+            "word_limit": "80-100词",
+            "writing_type": "记叙文",
+            "application_type": ""
+        }
+    ]
 }
 ```
 
@@ -515,16 +673,21 @@ class LLMDocumentParser:
         """
         try:
             messages = self._build_file_messages(fileid, self.EXTRACT_WRITING_PROMPT)
-            content = await self._call_chat_completion(messages, max_tokens=2000)
-            return self._parse_writing_response(content)
+            content = await self._call_chat_completion(messages, max_tokens=4000)
+            result = self._parse_writing_response(content)
+            if result.success and file_path:
+                result = self._supplement_writing_tasks_from_docx(result, file_path)
+            return result
 
         except Exception as e:
             error = str(e)
             if file_path and self._should_fallback_to_text(error):
                 try:
                     messages = self._build_text_messages(file_path, self.EXTRACT_WRITING_PROMPT)
-                    content = await self._call_chat_completion(messages, max_tokens=2000)
+                    content = await self._call_chat_completion(messages, max_tokens=4000)
                     result = self._parse_writing_response(content)
+                    if result.success:
+                        result = self._supplement_writing_tasks_from_docx(result, file_path)
                     if not result.success and result.error:
                         result.error = f"{result.error} (fileid回退到文本解析)"
                     return result
@@ -549,25 +712,29 @@ class LLMDocumentParser:
                     error="未找到作文题目"
                 )
 
-            # 验证并规范化 writing_type
-            writing_type = data.get('writing_type', '其他')
-            if writing_type not in ('应用文', '记叙文', '其他'):
-                writing_type = '其他'
+            raw_tasks = data.get("tasks")
+            normalized_tasks: List[WritingExtractTask] = []
 
-            # application_type 仅在应用文时有效
-            application_type = data.get('application_type')
-            if writing_type != '应用文':
-                application_type = None
-            elif application_type == 'null' or application_type == '':
-                application_type = None
+            if isinstance(raw_tasks, list) and raw_tasks:
+                for item in raw_tasks:
+                    if not isinstance(item, dict):
+                        continue
+                    normalized_tasks.extend(self._split_combined_writing_task(self._normalize_writing_task(item)))
+            else:
+                normalized_tasks.extend(self._split_combined_writing_task(self._normalize_writing_task(data)))
+
+            deduped_tasks = dedupe_writing_tasks(normalized_tasks)
+
+            if not deduped_tasks:
+                return WritingExtractResult(
+                    success=False,
+                    error="未找到可用的作文小题"
+                )
 
             return WritingExtractResult(
                 success=True,
-                content=data.get('content', ''),
-                requirements=data.get('requirements', ''),
-                word_limit=data.get('word_limit', ''),
-                writing_type=writing_type,
-                application_type=application_type
+                tasks=deduped_tasks,
+                raw_response=content,
             )
 
         except json.JSONDecodeError as e:
@@ -575,6 +742,291 @@ class LLMDocumentParser:
                 success=False,
                 error=f"JSON解析失败: {str(e)}"
             )
+
+    def _normalize_writing_task(self, data: Dict) -> WritingExtractTask:
+        """规范化单道作文任务。"""
+        writing_type = data.get('writing_type', '其他')
+        if writing_type not in ('应用文', '记叙文', '其他'):
+            writing_type = '其他'
+
+        application_type = data.get('application_type')
+        if writing_type != '应用文':
+            application_type = None
+        elif application_type in ('null', ''):
+            application_type = None
+
+        return WritingExtractTask(
+            content=(data.get('content') or '').strip(),
+            requirements=(data.get('requirements') or '').strip(),
+            word_limit=(data.get('word_limit') or '').strip(),
+            writing_type=writing_type,
+            application_type=application_type or "",
+            task_label=(data.get('task_label') or '').strip(),
+        )
+
+    def _split_combined_writing_task(self, task: WritingExtractTask) -> List[WritingExtractTask]:
+        """
+        兼容模型把“题目① / 题目②”合并成一条的情况，按明显的小题标签拆分。
+        """
+        content = (task.content or "").strip()
+        if not content:
+            return []
+
+        marker_pattern = re.compile(
+            r'(?im)^\s*(题目\s*[①②③④⑤⑥⑦⑧⑨⑩]|题目\s*[1-9]|作文\s*[①②③④⑤⑥⑦⑧⑨⑩]|作文\s*[1-9]|第一题|第二题|第三题|Task\s*[1-9])[\s：:]*'
+        )
+        matches = list(marker_pattern.finditer(content))
+        if len(matches) < 2:
+            return [task]
+
+        shared_prefix = content[:matches[0].start()].strip()
+        split_tasks: List[WritingExtractTask] = []
+
+        for index, match in enumerate(matches):
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            segment = content[start:end].strip()
+            if not segment:
+                continue
+
+            merged_content = f"{shared_prefix}\n{segment}".strip() if shared_prefix else segment
+            split_tasks.append(
+                WritingExtractTask(
+                    content=merged_content,
+                    requirements=task.requirements,
+                    word_limit=task.word_limit,
+                    writing_type=task.writing_type,
+                    application_type=task.application_type,
+                    task_label=match.group(1).strip(),
+                )
+            )
+
+        return split_tasks or [task]
+
+    def _supplement_writing_tasks_from_docx(
+        self,
+        result: WritingExtractResult,
+        file_path: str,
+    ) -> WritingExtractResult:
+        """
+        当 LLM 只返回一道作文，但原始文档里明显存在“题目① / 题目②”时，
+        使用 DOCX 文本做兜底拆分，避免漏掉后续小题。
+        """
+        if not result.tasks or len(result.tasks) > 1:
+            return result
+
+        fallback_tasks = self._extract_writing_tasks_from_docx(file_path)
+        if len(fallback_tasks) <= len(result.tasks):
+            return result
+
+        base_task = result.tasks[0]
+        normalized_base = re.sub(r"\s+", " ", base_task.content or "").strip()
+        supplemented: List[WritingExtractTask] = []
+
+        for fallback_task in fallback_tasks:
+            normalized_fallback = re.sub(r"\s+", " ", fallback_task.content or "").strip()
+            if normalized_base and (
+                normalized_base in normalized_fallback or normalized_fallback in normalized_base
+            ):
+                fallback_task.requirements = base_task.requirements or fallback_task.requirements
+                fallback_task.word_limit = base_task.word_limit or fallback_task.word_limit
+                fallback_task.writing_type = base_task.writing_type or fallback_task.writing_type
+                fallback_task.application_type = base_task.application_type or fallback_task.application_type
+            supplemented.append(fallback_task)
+
+        return WritingExtractResult(
+            success=True,
+            tasks=dedupe_writing_tasks(supplemented),
+            raw_response=result.raw_response,
+        )
+
+    def _extract_writing_tasks_from_docx(self, file_path: str) -> List[WritingExtractTask]:
+        """从原始 docx 文本中兜底拆分作文小题。"""
+        try:
+            full_text = self._extract_docx_text(file_path)
+        except Exception:
+            return []
+
+        if not full_text:
+            return []
+
+        section_text = self._extract_writing_section_from_text(full_text)
+        if not section_text:
+            return []
+
+        matches = self._find_writing_task_markers(section_text)
+        if len(matches) < 2:
+            return []
+
+        shared_prefix = section_text[:matches[0].start()].strip()
+        shared_requirements = shared_prefix
+        shared_word_limit = self._extract_word_limit(shared_prefix)
+        tasks: List[WritingExtractTask] = []
+        seen_segments = set()
+        seen_labels = set()
+
+        for index, match in enumerate(matches):
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(section_text)
+            segment = section_text[start:end].strip()
+            if not segment or not self._looks_like_writing_prompt_segment(segment):
+                continue
+
+            merged_content = f"{shared_prefix}\n{segment}".strip() if shared_prefix else segment
+            normalized_content = re.sub(r"\s+", " ", merged_content)
+            if normalized_content in seen_segments:
+                continue
+            label = match.group(1).strip()
+            if label in seen_labels:
+                continue
+            seen_segments.add(normalized_content)
+            seen_labels.add(label)
+            writing_type, application_type = self._infer_writing_type_from_text(segment)
+            tasks.append(
+                WritingExtractTask(
+                    content=merged_content,
+                    requirements=shared_requirements,
+                    word_limit=shared_word_limit,
+                    writing_type=writing_type,
+                    application_type=application_type,
+                    task_label=label,
+                )
+            )
+
+        return dedupe_writing_tasks(tasks)
+
+    def _find_writing_task_markers(self, section_text: str) -> List[re.Match]:
+        """查找作文小题起始标记，兼容题目①/②和老卷中的 15．/16． 这类编号格式。"""
+        marker_pattern = re.compile(
+            r'(?im)^\s*(题目\s*[①②③④⑤⑥⑦⑧⑨⑩]|题目\s*[1-9]|题目\s+[1-9]|作文\s*[①②③④⑤⑥⑦⑧⑨⑩]|作文\s*[1-9]|作文\s+[1-9]|第一题|第二题|第三题|Task\s*[1-9])[\s：:]*'
+        )
+        matches = list(marker_pattern.finditer(section_text))
+        if len(matches) >= 2:
+            return matches
+
+        numbered_pattern = re.compile(r'(?im)^\s*(\d{1,2})[．\.、]\s*(?:（\d+分）)?')
+        numbered_matches: List[re.Match] = []
+        for match in numbered_pattern.finditer(section_text):
+            line_end = section_text.find("\n", match.start())
+            if line_end == -1:
+                line_end = min(len(section_text), match.start() + 120)
+            line_text = section_text[match.start():line_end].strip()
+            if len(re.findall(r"[\u4e00-\u9fff]", line_text)) < 8 and "题目" not in line_text:
+                continue
+            if any(cue in line_text for cue in ("提示问题", "提示词", "一档文", "二档文", "三档文", "评分")):
+                continue
+            segment_end = section_text.find("\n", line_end + 1)
+            if segment_end == -1:
+                segment_end = min(len(section_text), match.start() + 220)
+            preview = section_text[match.start():segment_end]
+            if not self._looks_like_writing_prompt_segment(preview):
+                continue
+            numbered_matches.append(match)
+
+        return numbered_matches
+
+    def _looks_like_writing_prompt_segment(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text or "")
+        if not normalized:
+            return False
+
+        prompt_cues = (
+            "假设你是", "请用英语", "提示词语", "提示问题", "征文活动", "根据中文和英文提示",
+            "根据所给提示", "写一封", "写一篇", "投稿", "活动举办的时间", "描述你梦想中的学校",
+        )
+        answer_cues = (
+            "参考答案", "范文", "一档文", "二档文", "三档文", "评分标准", "要点齐全",
+            "语言通顺", "扣分", "故选", "答案示例", "参考例文", "Yours,", "Best wishes", "Dear ", "Li Hua"
+        )
+
+        has_prompt_cue = any(cue in normalized for cue in prompt_cues)
+        has_answer_cue = any(cue in normalized for cue in answer_cues)
+
+        chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", normalized))
+        english_words = len(re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", normalized))
+
+        if has_answer_cue:
+            scoring_cues = ("一档文", "二档文", "三档文", "评分标准", "要点齐全", "语言通顺", "扣分", "答案示例")
+            if any(cue in normalized for cue in scoring_cues):
+                return False
+        if re.search(r"[\(（]\d+[\)）]\s*[A-Da-d]\b", normalized):
+            return False
+
+        if has_prompt_cue:
+            return True
+        if has_answer_cue and chinese_chars < 20 and english_words > 40:
+            return False
+        return chinese_chars >= 20
+
+    def _extract_writing_section_from_text(self, full_text: str) -> str:
+        """从整份文档文本中截取作文区域。"""
+        if not full_text:
+            return ""
+
+        section_cutoff_patterns = [
+            r'(?im)^\s*[一二三四五六七八九十百]+[、\.．]\s*(?:单项选择|选择填空|完形填空|阅读理解|阅读短文|任务型阅读|语法填空|词汇运用|根据短文内容回答问题|补全对话|听力理解)\b',
+            r'(?im)^\s*\d+\s*[、\.．]\s*(?:单项选择|选择填空|完形填空|阅读理解|阅读短文|任务型阅读|语法填空|词汇运用)\b',
+            r'(?im)^\s*(?:十一|十二|十三|十四|十五)[、\.．]\s*',
+        ]
+
+        patterns = [
+            r'(?is)(?:五[、\.．]\s*文段表达|文段表达|书面表达|作文|写作)(.*)$',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, full_text)
+            if match:
+                prefix = match.group(0).strip()
+                duplicate_heading = re.search(
+                    r'(?is)\n\s*(?:[一二三四五六七八九十]+[、\.．]\s*)?(?:书面表达|文段表达)',
+                    prefix[200:],
+                )
+                if duplicate_heading:
+                    prefix = prefix[:200 + duplicate_heading.start()].strip()
+                answer_cutoff = re.search(
+                    r'(?is)\n\s*(?:参考答案|答案及评分|评分标准|试题解析)\b',
+                    prefix,
+                )
+                if answer_cutoff:
+                    prefix = prefix[:answer_cutoff.start()].strip()
+                for cutoff_pattern in section_cutoff_patterns:
+                    section_cutoff = re.search(cutoff_pattern, prefix[80:])
+                    if section_cutoff:
+                        prefix = prefix[:80 + section_cutoff.start()].strip()
+                        break
+                return prefix
+        return full_text
+
+    def _extract_word_limit(self, text: str) -> str:
+        if not text:
+            return ""
+        match = re.search(
+            r'((?:不少于|不低于|约|至少)?\s*\d+\s*(?:[-~—至到]\s*\d+)?\s*词)',
+            text,
+        )
+        return match.group(1).replace(" ", "") if match else ""
+
+    def _infer_writing_type_from_text(self, text: str) -> tuple[str, str]:
+        normalized = re.sub(r"\s+", " ", text or "")
+        if re.search(r'(写一封|邮件|回信|书信|通知|倡议书|演讲稿|发言稿|邀请)', normalized):
+            application_type = ""
+            if "邀请" in normalized:
+                application_type = "邀请"
+            elif "回信" in normalized or "回复" in normalized:
+                application_type = "回复信"
+            elif "邮件" in normalized:
+                application_type = "电子邮件"
+            elif "通知" in normalized:
+                application_type = "通知"
+            elif "演讲稿" in normalized or "发言稿" in normalized:
+                application_type = "演讲稿"
+            elif "书信" in normalized or "信" in normalized:
+                application_type = "书信"
+            return "应用文", application_type
+
+        if re.search(r'(征文|投稿|短文|经历|故事|梦想中的学校|描述|讲述)', normalized):
+            return "记叙文", ""
+
+        return "其他", ""
 
 
 # 使用示例

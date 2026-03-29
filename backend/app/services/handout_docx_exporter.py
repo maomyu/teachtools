@@ -99,18 +99,36 @@ class HandoutDocxExporter:
             edition=edition,
             paper_ids=paper_ids,
         )
-        self._add_topics_overview(handout=document, topics=handout.get("topics", []), count_label="道题")
+        overview_items = []
+        for group in handout.get("groups", []):
+            for section in group.get("sections", []):
+                summary = section.get("summary", {})
+                overview_items.append(
+                    {
+                        "topic": f"{summary.get('group_name', '')} / {summary.get('major_category_name', '')} / {summary.get('category_name', '')}",
+                        "task_count": summary.get("task_count", 0),
+                        "recent_years": summary.get("recent_years", []),
+                    }
+                )
+        self._add_topics_overview(handout=document, topics=overview_items, count_label="道题")
 
-        for index, topic_content in enumerate(handout.get("content", []), start=1):
-            self._add_topic_title(document, index, topic_content.get("topic", "未命名话题"))
-            self._add_writing_topic_stats(document, topic_content.get("part1_topic_stats", {}))
-            self._add_writing_frameworks(document, topic_content.get("part2_frameworks", []))
-            self._add_writing_expressions(document, topic_content.get("part3_expressions", []))
-            self._add_writing_samples(
-                document,
-                topic_content.get("part4_samples", []),
-                edition,
-            )
+        section_index = 1
+        for group in handout.get("groups", []):
+            group_name = self._safe_text((group.get("group_category") or {}).get("name"))
+            document.add_heading(f"{section_index}. {group_name}", level=1)
+            section_index += 1
+            for section in group.get("sections", []):
+                summary = section.get("summary", {})
+                title = f"{summary.get('major_category_name', '')} / {summary.get('category_name', '')}"
+                document.add_heading(self._safe_text(title), level=2)
+                self._add_writing_topic_stats(document, summary)
+                self._add_writing_frameworks(document, section.get("frameworks", []))
+                self._add_writing_expressions(document, section.get("expressions", []))
+                self._add_writing_samples(
+                    document,
+                    section.get("samples", []),
+                    edition,
+                )
 
         return self._to_bytes(document)
 
@@ -372,10 +390,18 @@ class HandoutDocxExporter:
                 document.add_page_break()
 
     def _add_writing_topic_stats(self, document: Document, stats: dict[str, Any]) -> None:
-        self._add_section_heading(document, "Part 1 话题概览")
+        self._add_section_heading(document, "Part 1 分类概览")
+        document.add_paragraph(
+            f"文体组：{self._safe_text(stats.get('group_name'))} | 主类：{self._safe_text(stats.get('major_category_name'))} | 子类：{self._safe_text(stats.get('category_name'))}"
+        )
         document.add_paragraph(
             f"题目数：{self._safe_text(stats.get('task_count'))} | 范文数：{self._safe_text(stats.get('sample_count'))} | 近年：{', '.join(str(year) for year in (stats.get('recent_years') or []))}"
         )
+        applicable_ranges = stats.get("applicable_ranges") or []
+        if applicable_ranges:
+            document.add_paragraph("适用题目范围：")
+            for item in applicable_ranges:
+                document.add_paragraph(self._safe_text(item), style="List Bullet")
         document.add_paragraph()
 
     def _add_writing_frameworks(self, document: Document, frameworks: list[dict[str, Any]]) -> None:
@@ -385,7 +411,7 @@ class HandoutDocxExporter:
             return
 
         for framework in frameworks:
-            document.add_heading(self._safe_text(framework.get("writing_type")), level=3)
+            document.add_heading(self._safe_text(framework.get("title")), level=3)
             for section in framework.get("sections", []):
                 document.add_paragraph(
                     f"{self._safe_text(section.get('name'))}：{self._safe_text(section.get('description'))}",

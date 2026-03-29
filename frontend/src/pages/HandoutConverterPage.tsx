@@ -6,11 +6,10 @@
  * [POS]: frontend/src/pages 的讲义转换页面
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, type ChangeEvent } from 'react'
 import {
   Card,
   Typography,
-  Upload,
   Button,
   Progress,
   message,
@@ -30,7 +29,6 @@ import {
   ReloadOutlined,
   FileTextOutlined,
 } from '@ant-design/icons'
-import type { UploadFile, UploadProps } from 'antd/es/upload/interface'
 
 import {
   uploadHandout,
@@ -51,10 +49,11 @@ interface ProcessState {
 }
 
 export function HandoutConverterPage() {
-  const [file, setFile] = useState<UploadFile | null>(null)
-  const [watermarkDensity, setWatermarkDensity] = useState<'sparse' | 'medium' | 'dense'>('medium')
-  const [watermarkSize, setWatermarkSize] = useState<'small' | 'medium' | 'large'>('medium')
+  const [file, setFile] = useState<File | null>(null)
+  const [watermarkDensity, setWatermarkDensity] = useState<'sparse' | 'medium' | 'dense'>('sparse')
+  const [watermarkSize, setWatermarkSize] = useState<'small' | 'medium' | 'large'>('large')
   const watermarkPreviewUrl = getWatermarkPreviewUrl()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [processState, setProcessState] = useState<ProcessState>({
     status: 'idle',
     taskId: null,
@@ -64,37 +63,43 @@ export function HandoutConverterPage() {
     error: null,
   })
 
-  // 上传前验证
-  const beforeUpload: UploadProps['beforeUpload'] = (file) => {
-    if (!file.name.endsWith('.docx')) {
-      message.error('只支持 .docx 文件')
-      return false
-    }
-    // 阻止自动上传
-    return false
+  const resetProcessState = () => {
+    setProcessState({
+      status: 'idle',
+      taskId: null,
+      progress: 0,
+      message: '',
+      answersRemoved: 0,
+      error: null,
+    })
   }
 
-  // 处理文件选择
-  const handleFileChange: UploadProps['onChange'] = ({ fileList }) => {
-    if (fileList.length > 0) {
-      setFile(fileList[0])
-      // 重置状态
-      setProcessState({
-        status: 'idle',
-        taskId: null,
-        progress: 0,
-        message: '',
-        answersRemoved: 0,
-        error: null,
-      })
-    } else {
-      setFile(null)
+  const handleSelectFile = () => {
+    if (processState.status === 'processing') return
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0] ?? null
+    event.target.value = ''
+
+    if (!selectedFile) {
+      return
     }
+
+    if (!selectedFile.name.toLowerCase().endsWith('.docx')) {
+      message.error('只支持 .docx 文件')
+      return
+    }
+
+    setFile(selectedFile)
+    setWatermarkDensity('sparse')
+    resetProcessState()
   }
 
   // 上传文件
   const handleUpload = async () => {
-    if (!file || !file.originFileObj) {
+    if (!file) {
       message.warning('请先选择文件')
       return
     }
@@ -102,7 +107,7 @@ export function HandoutConverterPage() {
     try {
       setProcessState((prev) => ({ ...prev, status: 'processing', message: '正在上传...' }))
 
-      const result = await uploadHandout(file.originFileObj as File)
+      const result = await uploadHandout(file)
 
       setProcessState({
         status: 'uploaded',
@@ -198,14 +203,12 @@ export function HandoutConverterPage() {
   // 重置
   const handleReset = () => {
     setFile(null)
-    setProcessState({
-      status: 'idle',
-      taskId: null,
-      progress: 0,
-      message: '',
-      answersRemoved: 0,
-      error: null,
-    })
+    setWatermarkDensity('sparse')
+    setWatermarkSize('large')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+    resetProcessState()
   }
 
   return (
@@ -229,17 +232,16 @@ export function HandoutConverterPage() {
           <div>
             <Text strong>1. 选择文件</Text>
             <div style={{ marginTop: 12 }}>
-              <Upload
-                beforeUpload={beforeUpload}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".docx,.DOCX,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                style={{ display: 'none' }}
                 onChange={handleFileChange}
-                fileList={file ? [file] : []}
-                maxCount={1}
-                accept=".docx"
-              >
-                <Button icon={<UploadOutlined />} disabled={processState.status === 'processing'}>
-                  选择 Word 文件
-                </Button>
-              </Upload>
+              />
+              <Button icon={<UploadOutlined />} disabled={processState.status === 'processing'} onClick={handleSelectFile}>
+                选择 Word 文件
+              </Button>
               {file && (
                 <Text type="secondary" style={{ marginLeft: 12 }}>
                   已选择: {file.name}
@@ -292,11 +294,14 @@ export function HandoutConverterPage() {
                         style={{ width: '100%', marginTop: 4 }}
                         disabled={processState.status === 'processing'}
                         options={[
-                          { label: '稀疏', value: 'sparse' },
+                          { label: '默认（单页1个）', value: 'sparse' },
                           { label: '适中', value: 'medium' },
                           { label: '密集', value: 'dense' },
                         ]}
                       />
+                      <Text type="secondary" style={{ display: 'block', marginTop: 6, fontSize: 12 }}>
+                        默认会在每页居中放置 1 个较大的完整水印，只有手动切换为“适中/密集”才会平铺。
+                      </Text>
                     </div>
                   </Col>
                   <Col xs={24} md={6}>

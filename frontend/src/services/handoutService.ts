@@ -47,7 +47,7 @@ export async function uploadHandout(file: File): Promise<UploadResponse> {
  */
 export function getProcessEventSourceUrl(
   taskId: string,
-  watermarkDensity: 'sparse' | 'medium' | 'dense' = 'medium',
+  watermarkDensity: 'sparse' | 'medium' | 'dense' = 'sparse',
   watermarkSize: 'small' | 'medium' | 'large' = 'medium'
 ): string {
   const baseURL = import.meta.env.VITE_API_BASE_URL || ''
