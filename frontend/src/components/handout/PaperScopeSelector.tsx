@@ -13,6 +13,7 @@ interface PaperScopeSelectorProps {
   onLoadingChange?: (loading: boolean) => void
   onAvailablePaperIdsChange?: (paperIds: number[]) => void
   fillAvailableHeight?: boolean
+  excludePaperIds?: number[]  // 排除已生成的试卷 ID
 }
 
 function formatPaperLabel(paper: PaperSummary): string {
@@ -35,6 +36,7 @@ export function PaperScopeSelector({
   onLoadingChange,
   onAvailablePaperIdsChange,
   fillAvailableHeight = false,
+  excludePaperIds = [],
 }: PaperScopeSelectorProps) {
   const [papers, setPapers] = useState<PaperSummary[]>([])
   const [loading, setLoading] = useState(false)
@@ -86,7 +88,7 @@ export function PaperScopeSelector({
 
     if (initializedGradeRef.current !== grade) {
       initializedGradeRef.current = grade
-      onSelectedPaperIdsChange(allPaperIds)
+      onSelectedPaperIdsChange([])
       return
     }
 
@@ -94,21 +96,29 @@ export function PaperScopeSelector({
     const validSelectedIds = selectedPaperIds.filter((paperId) => availableIdSet.has(paperId))
 
     if (validSelectedIds.length !== selectedPaperIds.length) {
-      onSelectedPaperIdsChange(validSelectedIds.length > 0 ? validSelectedIds : allPaperIds)
+      onSelectedPaperIdsChange(validSelectedIds)
     }
   }, [grade, loading, onSelectedPaperIdsChange, papers, selectedPaperIds])
 
   const selectedCount = selectedPaperIds.length
-  const allPaperIds = useMemo(() => papers.map((paper) => paper.id), [papers])
+
+  // 过滤掉已生成的试卷
+  const displayPapers = useMemo(() => {
+    if (excludePaperIds.length === 0) return papers
+    const excludeSet = new Set(excludePaperIds)
+    return papers.filter((paper) => !excludeSet.has(paper.id))
+  }, [papers, excludePaperIds])
+
+  const allPaperIds = useMemo(() => displayPapers.map((paper) => paper.id), [displayPapers])
 
   const filteredPapers = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase()
-    if (!normalizedKeyword) return papers
+    if (!normalizedKeyword) return displayPapers
 
-    return papers.filter((paper) =>
+    return displayPapers.filter((paper) =>
       formatPaperLabel(paper).toLowerCase().includes(normalizedKeyword)
     )
-  }, [keyword, papers])
+  }, [keyword, displayPapers])
 
   return (
     <div style={{
@@ -145,7 +155,7 @@ export function PaperScopeSelector({
 
           <Space wrap>
             <Tag color="processing">当前年级：{grade}</Tag>
-            <Tag color="blue">已选 {selectedCount} / {papers.length} 份试卷</Tag>
+            <Tag color="blue">已选 {selectedCount} / {displayPapers.length} 份试卷</Tag>
           </Space>
         </div>
 

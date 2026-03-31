@@ -60,6 +60,7 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_exam_papers_nullable_metadata(conn)
         await _migrate_writing_schema(conn)
+        await _migrate_handout_fields(conn)
 
         # 迁移：添加 is_rare_meaning 列（如果不存在）
         # SQLite 不支持 IF NOT EXISTS，需要捕获异常
@@ -170,6 +171,13 @@ async def _migrate_writing_schema(conn):
     await _ensure_column(conn, "writing_templates", "template_key", "VARCHAR(100)")
 
     await _seed_writing_categories(conn)
+
+
+async def _migrate_handout_fields(conn):
+    """迁移：添加讲义生成状态字段"""
+    await _ensure_column(conn, "exam_papers", "reading_handout_at", "DATETIME")
+    await _ensure_column(conn, "exam_papers", "cloze_handout_at", "DATETIME")
+    await _ensure_column(conn, "exam_papers", "writing_handout_at", "DATETIME")
 
 
 async def _ensure_column(conn, table_name: str, column_name: str, definition: str) -> None:

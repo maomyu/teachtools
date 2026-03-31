@@ -456,15 +456,15 @@ from app.models.vocabulary_cloze import VocabularyCloze
 @router.get("/handouts/{grade}")
 async def get_grade_handout(
     grade: str,
-    edition: str = Query('teacher', pattern='^(teacher|student)$'),
+    edition: str = Query('teacher', pattern='^(teacher|student|both)$'),
     paper_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
     获取某年级的完整讲义（包含所有主题）
 
-    [INPUT]: 年级参数、版本（teacher/student）
-    [OUTPUT]: 年级讲义结构（目录 + 各主题内容）
+    [INPUT]: 年级参数、版本（teacher/student/both）
+    [OUTPUT]: 年级讲义结构（目录 + 各主题内容），both 时返回双版本
     [POS]: reading.py 的年级讲义端点
     [PROTOCOL]: 变更时更新此头部
     """
@@ -536,9 +536,47 @@ async def _build_grade_handout_payload(
     edition: str,
     paper_ids: Optional[List[int]] = None
 ):
-    """构建年级阅读讲义的统一数据结构。"""
+    """构建年级阅读讲义的统一数据结构。edition=both 时一次查询返回教师版+学生版。"""
     topics = await _get_topic_stats_for_grade(db, grade, paper_ids)
 
+    if edition == 'both':
+        # 一次查询，双版本输出
+        teacher_content = []
+        student_content = []
+        for topic_info in topics:
+            topic = topic_info["topic"]
+            article_sources = await _get_article_sources(db, grade, topic, paper_ids)
+            vocabulary = await _get_topic_vocabulary_with_source(db, grade, topic, paper_ids)
+            passages_full = await _get_topic_passages(db, grade, topic, 'teacher', paper_ids)
+
+            # 教师版：直接使用完整数据（含答案+解析）
+            teacher_content.append({
+                "topic": topic,
+                "part1_article_sources": article_sources,
+                "part2_vocabulary": vocabulary,
+                "part3_passages": passages_full,
+            })
+
+            # 学生版：从教师版数据剥离答案和解析
+            student_passages = _strip_answers_from_passages(passages_full)
+            student_content.append({
+                "topic": topic,
+                "part1_article_sources": article_sources,
+                "part2_vocabulary": vocabulary,
+                "part3_passages": student_passages,
+            })
+
+        return {
+            "grade": grade,
+            "edition": "both",
+            "topics": topics,
+            "content": {
+                "teacher": teacher_content,
+                "student": student_content,
+            }
+        }
+
+    # 单版本走原逻辑
     content = []
     for topic_info in topics:
         topic = topic_info["topic"]
@@ -556,6 +594,19 @@ async def _build_grade_handout_payload(
         "topics": topics,
         "content": content
     }
+
+
+def _strip_answers_from_passages(passages: list) -> list:
+    """从教师版 passage 数据中移除答案和解析，生成学生版。"""
+    student_passages = []
+    for p in passages:
+        sp = {k: v for k, v in p.items() if k != 'questions'}
+        sp["questions"] = [
+            {k: v for k, v in q.items() if k not in ('correct_answer', 'explanation')}
+            for q in p.get("questions", [])
+        ]
+        student_passages.append(sp)
+    return student_passages
 
 
 @router.get("/handouts/{grade}/topics")

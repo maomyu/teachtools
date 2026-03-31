@@ -128,7 +128,7 @@ export async function getHandoutDetail(
  */
 export async function getGradeHandout(
   grade: string,
-  edition: 'teacher' | 'student' = 'teacher',
+  edition: 'teacher' | 'student' | 'both' = 'teacher',
   paperIds?: number[]
 ): Promise<GradeHandoutResponse> {
   const response = await api.get<GradeHandoutResponse>(

@@ -9,6 +9,7 @@ import json
 import asyncio
 import logging
 import tempfile
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -134,7 +135,7 @@ from app.models.vocabulary import Vocabulary, VocabularyPassage
 from app.models.cloze import ClozePassage, ClozePoint, ClozeSecondaryPoint, ClozeRejectionPoint
 from app.models.vocabulary_cloze import VocabularyCloze
 from app.models.writing import WritingTask, WritingSample
-from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse
+from app.schemas.paper import PaperCreate, PaperResponse, PaperListResponse, PaperHandoutStatus, HandoutStatusResponse, BatchHandoutUpdateRequest
 from app.services.docx_parser import DocxParser
 from app.services.llm_parser import LLMDocumentParser, WritingExtractResult, dedupe_writing_tasks
 from app.services.topic_classifier import TopicClassifier
@@ -1338,6 +1339,90 @@ async def list_papers(
     papers = result.scalars().all()
 
     return {"total": total, "items": papers}
+
+
+@router.get("/handout-status", response_model=HandoutStatusResponse)
+async def get_handout_status(
+    grade: str,
+    handout_type: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取某年级试卷的讲义生成状态"""
+    if handout_type not in ("reading", "cloze", "writing"):
+        raise HTTPException(status_code=400, detail="handout_type 必须是 reading、cloze 或 writing")
+
+    query = (
+        select(ExamPaper)
+        .where(ExamPaper.grade == grade)
+        .where(ExamPaper.import_status == "completed")
+        .order_by(ExamPaper.created_at.desc())
+    )
+    result = await db.execute(query)
+    papers = result.scalars().all()
+
+    generated = []
+    not_generated = []
+
+    time_field_map = {
+        "reading": "reading_handout_at",
+        "cloze": "cloze_handout_at",
+        "writing": "writing_handout_at",
+    }
+    time_field = time_field_map[handout_type]
+
+    for paper in papers:
+        generated_at = getattr(paper, time_field, None)
+        paper_info = {
+            "id": paper.id,
+            "filename": paper.filename,
+            "year": paper.year,
+            "region": paper.region,
+            "exam_type": paper.exam_type,
+        }
+        if generated_at:
+            paper_info["generated_at"] = generated_at.isoformat()
+            generated.append(paper_info)
+        else:
+            not_generated.append(paper_info)
+
+    return {"generated": generated, "not_generated": not_generated}
+
+
+@router.post("/batch-update-handout")
+async def batch_update_handout_status(
+    request: BatchHandoutUpdateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """批量更新讲义生成状态"""
+    if request.handout_type not in ("reading", "cloze", "writing"):
+        raise HTTPException(status_code=400, detail="handout_type 必须是 reading、cloze 或 writing")
+
+    now = datetime.utcnow()
+
+    time_field_map = {
+        "reading": "reading_handout_at",
+        "cloze": "cloze_handout_at",
+        "writing": "writing_handout_at",
+    }
+    time_field = time_field_map[request.handout_type]
+
+    updated_count = 0
+    for paper_id in request.paper_ids:
+        result = await db.execute(
+            select(ExamPaper).where(ExamPaper.id == paper_id)
+        )
+        paper = result.scalar_one_or_none()
+        if not paper:
+            continue
+        setattr(paper, time_field, now)
+        updated_count += 1
+
+    await db.commit()
+
+    return {
+        "message": f"已更新 {updated_count} 份试卷的生成状态",
+        "updated_at": now.isoformat()
+    }
 
 
 @router.get("/{paper_id}", response_model=PaperResponse)

@@ -780,9 +780,9 @@ export interface TopicContent {
 // 年级讲义响应（包含所有主题）
 export interface GradeHandoutResponse {
   grade: string
-  edition: 'teacher' | 'student'
+  edition: 'teacher' | 'student' | 'both'
   topics: TopicStats[]
-  content: TopicContent[]
+  content: TopicContent[] | { teacher: TopicContent[]; student: TopicContent[] }
 }
 
 // ============================================================================
@@ -1128,4 +1128,24 @@ export interface WritingGradeHandoutResponse {
   edition: string
   total_task_count: number
   groups: WritingHandoutGroup[]
+}
+
+// ============================================================================
+//  讲义生成状态类型
+// ============================================================================
+
+/** 试卷讲义状态 */
+export interface PaperHandoutStatus {
+  id: number
+  filename: string
+  year?: number
+  region?: string
+  exam_type?: string
+  generated_at?: string
+}
+
+/** 讲义状态响应 */
+export interface HandoutStatusResponse {
+  generated: PaperHandoutStatus[]
+  not_generated: PaperHandoutStatus[]
 }

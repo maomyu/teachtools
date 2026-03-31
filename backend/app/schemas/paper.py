@@ -42,3 +42,32 @@ class PaperListResponse(BaseModel):
     """试卷列表响应"""
     total: int
     items: List[PaperResponse]
+
+
+# ============================================================================
+#  讲义生成状态相关 Schema
+# ============================================================================
+
+class PaperHandoutStatus(BaseModel):
+    """试卷讲义状态"""
+    id: int
+    filename: str
+    year: Optional[int] = None
+    region: Optional[str] = None
+    exam_type: Optional[str] = None
+    generated_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class HandoutStatusResponse(BaseModel):
+    """讲义状态响应"""
+    generated: List[PaperHandoutStatus]
+    not_generated: List[PaperHandoutStatus]
+
+
+class BatchHandoutUpdateRequest(BaseModel):
+    """批量更新讲义生成状态请求"""
+    paper_ids: List[int]
+    handout_type: str  # reading | cloze | writing

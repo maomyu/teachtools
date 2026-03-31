@@ -1,22 +1,23 @@
 /**
  * 完形填空讲义视图容器
  *
- * [INPUT]: 依赖 antd, clozeService
+ * [INPUT]: 依赖 antd, clozeService, paperService, PaperScopeSelector, GeneratedPaperList
  * [OUTPUT]: 对外提供 ClozeHandoutView 组件
  * [POS]: frontend/src/components/clozeHandout 的入口组件
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useEffect } from 'react'
-import { Alert, Button, Card, Empty, Grid, Radio, Space, Tag } from 'antd'
-import { ArrowLeftOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Alert, Badge, Button, Card, Empty, Grid, Radio, Space, Tabs, Tag } from 'antd'
+import { ArrowLeftOutlined, CheckCircleOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
 import { GradeSelector } from '@/components/handout/GradeSelector'
 import { PaperScopeSelector } from '@/components/handout/PaperScopeSelector'
+import { GeneratedPaperList } from '@/components/handout/GeneratedPaperList'
 import { ClozeGradeHandout } from './ClozeGradeHandout'
 import { getClozeFilters } from '@/services/clozeService'
-import {
-  getEffectiveHandoutPaperIds,
-  getHandoutSelectionToken,
-} from '@/utils/handoutSelection'
+import { getHandoutStatus, batchUpdateHandoutStatus } from '@/services/paperService'
+import type { HandoutStatusResponse } from '@/types'
+
+type TabKey = 'not_generated' | 'generated'
 
 export function ClozeHandoutView() {
   const screens = Grid.useBreakpoint()
@@ -32,10 +33,41 @@ export function ClozeHandoutView() {
   const [grades, setGrades] = useState<string[]>([])
   const [loadingGrades, setLoadingGrades] = useState(true)
 
+  // === 生成记录追踪 ===
+  const [activeTab, setActiveTab] = useState<TabKey>('not_generated')
+  const [handoutStatus, setHandoutStatus] = useState<HandoutStatusResponse | null>(null)
+  const [loadingStatus, setLoadingStatus] = useState(false)
+
+  // === 已生成 Tab 勾选 ===
+  const [generatedCheckedIds, setGeneratedCheckedIds] = useState<number[]>([])
+
+  // 已生成试卷的 ID 集合（提前计算，供合并与排除使用）
+  const generatedPaperIdList = useMemo(
+    () => handoutStatus?.generated.map((p) => p.id) || [],
+    [handoutStatus]
+  )
+
+  // 合并两个 Tab 的选中试卷（过滤掉 selectedPaperIds 中已属于"已生成"的部分）
+  const combinedPaperIds = useMemo(
+    () => [...new Set([
+      ...selectedPaperIds.filter((id) => !generatedPaperIdList.includes(id)),
+      ...generatedCheckedIds,
+    ])],
+    [selectedPaperIds, generatedCheckedIds, generatedPaperIdList]
+  )
+  const combinedToken = combinedPaperIds.sort((a, b) => a - b).join(',')
+
   // 加载年级列表
+  useEffect(() => { loadGrades() }, [])
+
+  // 加载讲义生成状态
   useEffect(() => {
-    loadGrades()
-  }, [])
+    if (selectedGrade) {
+      loadHandoutStatus()
+    } else {
+      setHandoutStatus(null)
+    }
+  }, [selectedGrade])
 
   useEffect(() => {
     setPaperLoading(Boolean(selectedGrade))
@@ -44,16 +76,12 @@ export function ClozeHandoutView() {
     }
   }, [selectedGrade])
 
-  const effectivePaperIds = getEffectiveHandoutPaperIds(selectedPaperIds, availablePaperIds)
-  const currentSelectionToken = getHandoutSelectionToken(selectedPaperIds, availablePaperIds)
   const hasGenerated = generatedEdition !== null && generatedSelectionToken !== null
-  const generationDirty = hasGenerated && (
-    generatedEdition !== edition || generatedSelectionToken !== currentSelectionToken
-  )
-  const selectedCount = selectedPaperIds.length
-  const totalCount = availablePaperIds.length || selectedPaperIds.length
+  const generationDirty = hasGenerated && generatedSelectionToken !== combinedToken
+  const selectedCount = combinedPaperIds.length
+  const totalCount = (availablePaperIds.length || selectedPaperIds.length) + generatedPaperIdList.length
 
-  const resetSelectionState = () => {
+  const resetSelectionState = useCallback(() => {
     setSelectedGrade(null)
     setSelectedPaperIds([])
     setAvailablePaperIds([])
@@ -61,14 +89,27 @@ export function ClozeHandoutView() {
     setGeneratedPaperIds(undefined)
     setGeneratedEdition(null)
     setGeneratedSelectionToken(null)
-  }
+    setActiveTab('not_generated')
+    setHandoutStatus(null)
+    setGeneratedCheckedIds([])
+  }, [])
 
-  const handleGenerate = () => {
-    if (!selectedGrade || selectedPaperIds.length === 0 || paperLoading) return
+  // === 核心生成逻辑 ===
+  const doGenerate = useCallback(async (paperIds: number[]) => {
+    if (!selectedGrade || paperIds.length === 0) return
 
-    setGeneratedPaperIds(effectivePaperIds)
+    setGeneratedPaperIds(paperIds)
     setGeneratedEdition(edition)
-    setGeneratedSelectionToken(currentSelectionToken)
+    setGeneratedSelectionToken([...paperIds].sort((a, b) => a - b).join(','))
+
+    await batchUpdateHandoutStatus(paperIds, 'cloze')
+    await loadHandoutStatus()
+  }, [selectedGrade, edition])
+
+  // 底部按钮：合并两 Tab 选中
+  const handleGenerate = () => {
+    if (combinedPaperIds.length === 0) return
+    doGenerate(combinedPaperIds)
   }
 
   const loadGrades = async () => {
@@ -80,6 +121,20 @@ export function ClozeHandoutView() {
       console.error('加载年级失败:', error)
     } finally {
       setLoadingGrades(false)
+    }
+  }
+
+  const loadHandoutStatus = async () => {
+    if (!selectedGrade) return
+    try {
+      setLoadingStatus(true)
+      const status = await getHandoutStatus(selectedGrade, 'cloze')
+      setHandoutStatus(status)
+    } catch (error) {
+      console.error('加载讲义状态失败:', error)
+      setHandoutStatus({ generated: [], not_generated: [] })
+    } finally {
+      setLoadingStatus(false)
     }
   }
 
@@ -142,14 +197,69 @@ export function ClozeHandoutView() {
                 minHeight: 0,
               }}
             >
-              <PaperScopeSelector
-                grade={selectedGrade}
-                selectedPaperIds={selectedPaperIds}
-                onSelectedPaperIdsChange={setSelectedPaperIds}
-                onLoadingChange={setPaperLoading}
-                onAvailablePaperIdsChange={setAvailablePaperIds}
-                fillAvailableHeight={isSplitLayout}
+              {/* Tab 切换 */}
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <Tabs
+                activeKey={activeTab}
+                onChange={(key) => setActiveTab(key as TabKey)}
+                className="handout-flex-tabs"
+                style={{ marginBottom: 0 }}
+                items={[
+                  {
+                    key: 'not_generated',
+                    label: (
+                      <Space size={4}>
+                        <FileTextOutlined />
+                        <span>未生成</span>
+                        {handoutStatus && (
+                          <Badge
+                            count={handoutStatus.not_generated.length}
+                            style={{ marginLeft: 4 }}
+                            size="small"
+                          />
+                        )}
+                      </Space>
+                    ),
+                    children: (
+                      <PaperScopeSelector
+                        grade={selectedGrade}
+                        selectedPaperIds={selectedPaperIds}
+                        onSelectedPaperIdsChange={setSelectedPaperIds}
+                        onLoadingChange={setPaperLoading}
+                        onAvailablePaperIdsChange={setAvailablePaperIds}
+                        fillAvailableHeight={isSplitLayout}
+                        excludePaperIds={generatedPaperIdList}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'generated',
+                    label: (
+                      <Space size={4}>
+                        <CheckCircleOutlined />
+                        <span>已生成</span>
+                        {handoutStatus && (
+                          <Badge
+                            count={handoutStatus.generated.length}
+                            style={{ marginLeft: 4 }}
+                            size="small"
+                            color="#52c41a"
+                          />
+                        )}
+                      </Space>
+                    ),
+                    children: (
+                      <GeneratedPaperList
+                        papers={handoutStatus?.generated || []}
+                        checkedIds={generatedCheckedIds}
+                        onCheckedChange={setGeneratedCheckedIds}
+                      />
+                    ),
+                  },
+                ]}
               />
+              </div>
+
               <Card style={{ flexShrink: 0 }}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <div
@@ -167,11 +277,11 @@ export function ClozeHandoutView() {
                       </Button>
                       <Button
                         type="primary"
-                        icon={hasGenerated ? <ReloadOutlined /> : <FileTextOutlined />}
+                        icon={generatedCheckedIds.length > 0 ? <ReloadOutlined /> : <FileTextOutlined />}
                         onClick={handleGenerate}
-                        disabled={paperLoading || selectedCount === 0}
+                        disabled={paperLoading || combinedPaperIds.length === 0 || loadingStatus}
                       >
-                        {hasGenerated ? '重新生成讲义' : '生成讲义'}
+                        {generatedCheckedIds.length > 0 ? '重新生成讲义' : '生成讲义'}
                       </Button>
                     </Space>
 
@@ -180,39 +290,26 @@ export function ClozeHandoutView() {
                       <Tag color={hasGenerated ? (generationDirty ? 'warning' : 'success') : 'default'}>
                         {hasGenerated ? (generationDirty ? '待重新生成' : '已生成') : '未生成'}
                       </Tag>
-                      {hasGenerated && generatedEdition && (
-                        <Tag color={generatedEdition === 'teacher' ? 'blue' : 'green'}>
-                          当前结果：{generatedEdition === 'teacher' ? '教师版' : '学生版'}
-                        </Tag>
-                      )}
                     </Space>
                   </div>
 
                   {paperLoading ? (
                     <Alert showIcon type="info" message="正在同步试卷列表，请稍候后生成讲义。" />
-                  ) : selectedCount === 0 ? (
-                    <Alert showIcon type="warning" message="请至少保留一份试卷，否则无法生成完形讲义。" />
+                  ) : combinedPaperIds.length === 0 ? (
+                    <Alert showIcon type="warning" message="请在「未生成」Tab 选择试卷，或在「已生成」Tab 勾选后生成。" />
                   ) : !hasGenerated ? (
-                    <Alert showIcon type="info" message={`已选 ${selectedCount} 份试卷，点击“生成讲义”后再加载完形讲义。`} />
+                    <Alert showIcon type="info" message={`已选 ${selectedCount} 份试卷，点击「生成讲义」后将自动记录到「已生成」列表。`} />
                   ) : generationDirty ? (
-                    <Alert
-                      showIcon
-                      type="warning"
-                      message={`筛选条件或版本已变更，当前仍显示上次生成的${generatedEdition === 'teacher' ? '教师版' : '学生版'}讲义。点击“重新生成讲义”后更新。`}
-                    />
+                    <Alert showIcon type="warning" message="试卷选择已变更，点击「重新生成讲义」更新。" />
                   ) : (
-                    <Alert
-                      showIcon
-                      type="success"
-                      message="完形讲义已根据当前试卷选择生成完成。调整筛选后，可点击“重新生成讲义”更新。"
-                    />
+                    <Alert showIcon type="success" message="完形讲义已生成完成。调整筛选后，可点击「重新生成讲义」更新。" />
                   )}
                 </Space>
               </Card>
             </div>
 
             <div style={{ flex: '1 1 880px', minWidth: 0, overflow: isSplitLayout ? 'auto' : 'visible', minHeight: 0, height: isSplitLayout ? '100%' : 'auto' }}>
-              {hasGenerated && selectedCount > 0 && generatedEdition ? (
+              {hasGenerated && generatedEdition ? (
                 <ClozeGradeHandout
                   grade={selectedGrade}
                   edition={generatedEdition}
@@ -223,7 +320,7 @@ export function ClozeHandoutView() {
                 <Card>
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="左侧先筛选试卷，再点击“生成讲义”。右侧会在生成后展示完形讲义内容。"
+                    description="左侧先筛选试卷，再点击「生成讲义」。右侧会在生成后展示完形讲义内容。"
                   />
                 </Card>
               )}

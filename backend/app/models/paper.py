@@ -32,6 +32,11 @@ class ExamPaper(Base):
     confidence = Column(Float, default=0.0)
     error_message = Column(Text)
 
+    # 讲义生成状态（记录最后生成时间）
+    reading_handout_at = Column(DateTime, nullable=True)   # 阅读讲义最后生成时间
+    cloze_handout_at = Column(DateTime, nullable=True)     # 完形讲义最后生成时间
+    writing_handout_at = Column(DateTime, nullable=True)   # 作文讲义最后生成时间
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

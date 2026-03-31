@@ -60,3 +60,17 @@ body {
   background-color: #e6f7ff;
   border-left: 3px solid #1890ff;
 }
+
+/* 讲义 Tabs 在 flex 容器中正确填充 */
+.handout-flex-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.handout-flex-tabs > .ant-tabs-content-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

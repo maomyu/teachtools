@@ -344,10 +344,32 @@ export function ClozePage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff' }}>
-      {/* 视图切换 + 筛选器 */}
-      <Card style={{ marginBottom: 16, flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {/* 筛选器 */}
+      {/* 视图切换器 - 独立行 */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
+        <Radio.Group
+          value={viewMode}
+          onChange={(e) => setViewMode(e.target.value)}
+          buttonStyle="solid"
+          size="small"
+        >
+          <Radio.Button value="list">
+            <Space size={4}>
+              <UnorderedListOutlined />
+              列表视图
+            </Space>
+          </Radio.Button>
+          <Radio.Button value="handout">
+            <Space size={4}>
+              <BookOutlined />
+              讲义视图
+            </Space>
+          </Radio.Button>
+        </Radio.Group>
+      </div>
+
+      {/* 筛选器 - 仅列表视图 */}
+      {viewMode === 'list' && (
+        <Card style={{ marginBottom: 16, flexShrink: 0 }}>
           <Space wrap>
             {/* 批量删除按钮 */}
             {selectedRowKeys.length > 0 && (
@@ -452,29 +474,8 @@ export function ClozePage() {
               expandTrigger="hover"
             />
           </Space>
-
-          {/* 视图切换器 */}
-          <Radio.Group
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value)}
-            buttonStyle="solid"
-            size="small"
-          >
-            <Radio.Button value="list">
-              <Space size={4}>
-                <UnorderedListOutlined />
-                列表视图
-              </Space>
-            </Radio.Button>
-            <Radio.Button value="handout">
-              <Space size={4}>
-                <BookOutlined />
-                讲义视图
-              </Space>
-            </Radio.Button>
-          </Radio.Group>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       {/* 根据视图模式显示不同内容 */}
       {viewMode === 'list' ? (

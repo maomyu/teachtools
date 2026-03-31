@@ -69,20 +69,32 @@ interface GradeHandoutProps {
   edition: 'teacher' | 'student'
   paperIds?: number[]
   onBack: () => void
+  initialData?: GradeHandoutResponse
 }
 
 // ============================================================================
 //  主组件：年级讲义（A4 文档）
 // ============================================================================
 
-export function GradeHandout({ grade, edition, paperIds, onBack }: GradeHandoutProps) {
-  const [handout, setHandout] = useState<GradeHandoutResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+export function GradeHandout({ grade, edition, paperIds, onBack, initialData }: GradeHandoutProps) {
+  const [handout, setHandout] = useState<GradeHandoutResponse | null>(initialData ?? null)
+  const [loading, setLoading] = useState(!initialData)
   const [exporting, setExporting] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
+  // 外部传入数据时直接使用，跳过 API 请求
   useEffect(() => {
-    loadHandout()
+    if (initialData) {
+      setHandout(initialData)
+      setLoading(false)
+    }
+  }, [initialData])
+
+  // 无初始数据时走 API 加载
+  useEffect(() => {
+    if (!initialData) {
+      loadHandout()
+    }
   }, [grade, edition, paperIds?.join(',')])
 
   const loadHandout = async () => {
