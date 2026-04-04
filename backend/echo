@@ -1,1 +1,16 @@
-(eval):1: command not found: lso
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import py_compile; import app.services.writing_service
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import py_compile; import app.services.writing_service
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/maoyu/Downloads/personal/项目-code/teachtools/backend/app/services/writing_service.py", line 1090
+    def # ------------------------------------------------------------------
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SyntaxError: invalid syntax
+  File "/Users/maoyu/Downloads/personal/项目-code/teachtools/backend/app/services/writing_service.py", line 1090
+    def # ------------------------------------------------------------------
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SyntaxError: invalid syntax

@@ -15,7 +15,7 @@ import { GradeHandout } from './GradeHandout'
 import { PaperScopeSelector } from './PaperScopeSelector'
 import { GeneratedPaperList } from './GeneratedPaperList'
 import { getGradeHandout, getPassageFilters } from '@/services/readingService'
-import { getHandoutStatus, batchUpdateHandoutStatus } from '@/services/paperService'
+import { getHandoutStatus, batchUpdateHandoutStatus, resetHandoutStatus } from '@/services/paperService'
 import type { GradeHandoutResponse, HandoutStatusResponse } from '@/types'
 
 const { Text } = Typography
@@ -163,6 +163,13 @@ export function HandoutView() {
     doGenerate(combinedPaperIds)
   }
 
+  // 撤回已生成记录
+  const handleRevoke = async (paperId: number) => {
+    await resetHandoutStatus([paperId], 'reading')
+    setGeneratedCheckedIds((prev) => prev.filter((id) => id !== paperId))
+    await loadHandoutStatus()
+  }
+
   return (
     <div style={{ padding: 24, height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 版本切换器（始终显示） */}
@@ -261,6 +268,7 @@ export function HandoutView() {
                     children: (
                       <PaperScopeSelector
                         grade={selectedGrade}
+                        moduleType="reading"
                         selectedPaperIds={selectedPaperIds}
                         onSelectedPaperIdsChange={setSelectedPaperIds}
                         onLoadingChange={setPaperLoading}
@@ -291,6 +299,7 @@ export function HandoutView() {
                         papers={handoutStatus?.generated || []}
                         checkedIds={generatedCheckedIds}
                         onCheckedChange={setGeneratedCheckedIds}
+                        onRevoke={handleRevoke}
                       />
                     ),
                   },

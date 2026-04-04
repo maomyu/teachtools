@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Checkbox, Empty, Input, Space, Spin, Tag, Typography } from 'antd'
+import { Button, Checkbox, Empty, Input, Select, Space, Spin, Tag, Typography } from 'antd'
 
 import { listPapersByGrade } from '@/services/paperService'
+import type { ModuleType } from '@/services/paperService'
 import type { PaperSummary } from '@/types'
 
 const { Text } = Typography
 
 interface PaperScopeSelectorProps {
   grade: string
+  moduleType: ModuleType
   selectedPaperIds: number[]
   onSelectedPaperIdsChange: (paperIds: number[]) => void
   onLoadingChange?: (loading: boolean) => void
@@ -31,6 +33,7 @@ function formatPaperLabel(paper: PaperSummary): string {
 
 export function PaperScopeSelector({
   grade,
+  moduleType,
   selectedPaperIds,
   onSelectedPaperIdsChange,
   onLoadingChange,
@@ -41,6 +44,13 @@ export function PaperScopeSelector({
   const [papers, setPapers] = useState<PaperSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [keyword, setKeyword] = useState('')
+  const [filters, setFilters] = useState({
+    year: undefined as number | undefined,
+    region: undefined as string | undefined,
+    school: undefined as string | undefined,
+    examType: undefined as string | undefined,
+    semester: undefined as string | undefined,
+  })
   const initializedGradeRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -51,7 +61,7 @@ export function PaperScopeSelector({
         setLoading(true)
         onLoadingChange?.(true)
         onAvailablePaperIdsChange?.([])
-        const response = await listPapersByGrade(grade)
+        const response = await listPapersByGrade(grade, 500, moduleType)
         if (!alive) return
         setPapers(response.items || [])
       } catch (error) {
@@ -76,6 +86,13 @@ export function PaperScopeSelector({
 
   useEffect(() => {
     setKeyword('')
+    setFilters({
+      year: undefined,
+      region: undefined,
+      school: undefined,
+      examType: undefined,
+      semester: undefined,
+    })
   }, [grade])
 
   useEffect(() => {
@@ -111,14 +128,45 @@ export function PaperScopeSelector({
 
   const allPaperIds = useMemo(() => displayPapers.map((paper) => paper.id), [displayPapers])
 
-  const filteredPapers = useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLowerCase()
-    if (!normalizedKeyword) return displayPapers
-
-    return displayPapers.filter((paper) =>
-      formatPaperLabel(paper).toLowerCase().includes(normalizedKeyword)
+  const filterOptions = useMemo(() => {
+    const years = [...new Set(displayPapers.map((p) => p.year).filter(Boolean))].sort(
+      (a, b) => (b as number) - (a as number)
     )
-  }, [keyword, displayPapers])
+    const regions = [...new Set(displayPapers.map((p) => p.region).filter(Boolean))].sort()
+    const schools = [...new Set(displayPapers.map((p) => p.school).filter(Boolean))].sort()
+    const examTypes = [...new Set(displayPapers.map((p) => p.exam_type).filter(Boolean))].sort()
+    const semesters = [...new Set(displayPapers.map((p) => p.semester).filter(Boolean))].sort()
+    return { years, regions, schools, examTypes, semesters }
+  }, [displayPapers])
+
+  const filteredPapers = useMemo(() => {
+    let result = displayPapers
+
+    if (filters.year !== undefined) {
+      result = result.filter((p) => p.year === filters.year)
+    }
+    if (filters.region !== undefined) {
+      result = result.filter((p) => p.region === filters.region)
+    }
+    if (filters.school !== undefined) {
+      result = result.filter((p) => p.school === filters.school)
+    }
+    if (filters.examType !== undefined) {
+      result = result.filter((p) => p.exam_type === filters.examType)
+    }
+    if (filters.semester !== undefined) {
+      result = result.filter((p) => p.semester === filters.semester)
+    }
+
+    const normalizedKeyword = keyword.trim().toLowerCase()
+    if (normalizedKeyword) {
+      result = result.filter((paper) =>
+        formatPaperLabel(paper).toLowerCase().includes(normalizedKeyword)
+      )
+    }
+
+    return result
+  }, [keyword, filters, displayPapers])
 
   return (
     <div style={{
@@ -165,6 +213,58 @@ export function PaperScopeSelector({
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', minHeight: 0, flex: 1 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <Select
+                placeholder="年份"
+                allowClear
+                size="small"
+                style={{ width: 80 }}
+                value={filters.year}
+                onChange={(value) => setFilters((prev) => ({ ...prev, year: value }))}
+                options={filterOptions.years.map((y) => ({ value: y, label: `${y}` }))}
+              />
+              <Select
+                placeholder="区县"
+                allowClear
+                size="small"
+                style={{ width: 90 }}
+                value={filters.region}
+                onChange={(value) => setFilters((prev) => ({ ...prev, region: value }))}
+                options={filterOptions.regions.map((r) => ({ value: r, label: r }))}
+              />
+              <Select
+                placeholder="考试类型"
+                allowClear
+                size="small"
+                style={{ width: 90 }}
+                value={filters.examType}
+                onChange={(value) => setFilters((prev) => ({ ...prev, examType: value }))}
+                options={filterOptions.examTypes.map((e) => ({ value: e, label: e }))}
+              />
+              <Select
+                placeholder="学期"
+                allowClear
+                size="small"
+                style={{ width: 75 }}
+                value={filters.semester}
+                onChange={(value) => setFilters((prev) => ({ ...prev, semester: value }))}
+                options={filterOptions.semesters.map((s) => ({ value: s, label: `${s}学期` }))}
+              />
+              <Select
+                placeholder="学校"
+                allowClear
+                showSearch
+                size="small"
+                style={{ width: 100 }}
+                value={filters.school}
+                onChange={(value) => setFilters((prev) => ({ ...prev, school: value }))}
+                options={filterOptions.schools.map((s) => ({ value: s, label: s }))}
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+              />
+            </div>
+
             <Input
               allowClear
               value={keyword}

@@ -1316,6 +1316,9 @@ async def list_papers(
     year: Optional[int] = None,
     region: Optional[str] = None,
     grade: Optional[str] = None,
+    has_cloze: Optional[bool] = None,
+    has_reading: Optional[bool] = None,
+    has_writing: Optional[bool] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """获取试卷列表"""
@@ -1327,6 +1330,24 @@ async def list_papers(
         query = query.where(ExamPaper.region == region)
     if grade:
         query = query.where(ExamPaper.grade == grade)
+    if has_cloze:
+        query = query.where(
+            ExamPaper.id.in_(
+                select(ClozePassage.paper_id).where(ClozePassage.paper_id.isnot(None))
+            )
+        )
+    if has_reading:
+        query = query.where(
+            ExamPaper.id.in_(
+                select(ReadingPassage.paper_id).where(ReadingPassage.paper_id.isnot(None))
+            )
+        )
+    if has_writing:
+        query = query.where(
+            ExamPaper.id.in_(
+                select(WritingTask.paper_id).where(WritingTask.paper_id.isnot(None))
+            )
+        )
 
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
@@ -1351,10 +1372,22 @@ async def get_handout_status(
     if handout_type not in ("reading", "cloze", "writing"):
         raise HTTPException(status_code=400, detail="handout_type 必须是 reading、cloze 或 writing")
 
+    MODULE_TABLE_MAP = {
+        "reading": ReadingPassage,
+        "cloze": ClozePassage,
+        "writing": WritingTask,
+    }
+    module_table = MODULE_TABLE_MAP[handout_type]
+
     query = (
         select(ExamPaper)
         .where(ExamPaper.grade == grade)
         .where(ExamPaper.import_status == "completed")
+        .where(
+            ExamPaper.id.in_(
+                select(module_table.paper_id).where(module_table.paper_id.isnot(None))
+            )
+        )
         .order_by(ExamPaper.created_at.desc())
     )
     result = await db.execute(query)
@@ -1422,6 +1455,40 @@ async def batch_update_handout_status(
     return {
         "message": f"已更新 {updated_count} 份试卷的生成状态",
         "updated_at": now.isoformat()
+    }
+
+
+@router.post("/batch-reset-handout")
+async def batch_reset_handout_status(
+    request: BatchHandoutUpdateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """批量重置讲义生成状态（撤回到未生成）"""
+    if request.handout_type not in ("reading", "cloze", "writing"):
+        raise HTTPException(status_code=400, detail="handout_type 必须是 reading、cloze 或 writing")
+
+    time_field_map = {
+        "reading": "reading_handout_at",
+        "cloze": "cloze_handout_at",
+        "writing": "writing_handout_at",
+    }
+    time_field = time_field_map[request.handout_type]
+
+    reset_count = 0
+    for paper_id in request.paper_ids:
+        result = await db.execute(
+            select(ExamPaper).where(ExamPaper.id == paper_id)
+        )
+        paper = result.scalar_one_or_none()
+        if not paper:
+            continue
+        setattr(paper, time_field, None)
+        reset_count += 1
+
+    await db.commit()
+
+    return {
+        "message": f"已重置 {reset_count} 份试卷的生成状态",
     }
 
 

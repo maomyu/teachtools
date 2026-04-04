@@ -263,8 +263,8 @@ class QwenService:
 5. 如果是记叙或表达类，要突出段落组织、叙事顺序或观点展开方式。
 6. 高频表达要偏中考高频、学生可直接替换套用，避免虚浮大词。
 7. 输出结构要能直接用于教师讲义。
-8. template_content 必须是“通用模板”，要大量使用占位符，如 [event] / [reason] / [activity] / [feeling]，不要直接抄成某一道题的完整范文。
-9. structure 请写成清晰的分段说明文本，每段一行，包含段落功能和建议词数，不要输出 Python dict 字面量。
+8. template_content 必须是"通用模板"，要大量使用占位符，如 [event] / [reason] / [activity] / [feeling]，不要直接抄成某一道题的完整范文。template_content 的每个段落必须与 structure 数组中的段落一一对应。
+9. structure 必须输出 JSON 数组，每段包含 paragraph（段落序号）、purpose（段落功能）、word_range（建议词数范围）。不要输出 Python dict 字面量或纯文本。
 
 ## 输出格式（JSON）
 
@@ -272,7 +272,11 @@ class QwenService:
 {{
     "template_name": "该子类通用模板名称",
     "template_content": "可直接套用的英文模板正文，使用占位符",
-    "structure": "分段说明，每段功能和建议词数",
+    "structure": [
+        {{"paragraph": 1, "purpose": "称呼并说明写作目的", "word_range": "30-40"}},
+        {{"paragraph": 2, "purpose": "围绕核心信息展开", "word_range": "70-80"}},
+        {{"paragraph": 3, "purpose": "表达期待并署名", "word_range": "30-40"}}
+    ],
     "tips": "3-5条适合该子类的写作提醒",
     "opening_sentences": ["2-4个适合该子类的开头句"],
     "closing_sentences": ["2-4个适合该子类的结尾句"],
@@ -291,7 +295,7 @@ class QwenService:
             return {}
         result = json.loads(json_match.group())
         for key in ['opening_sentences', 'closing_sentences', 'transition_words',
-                    'advanced_vocabulary', 'grammar_points', 'scoring_criteria']:
+                    'advanced_vocabulary', 'grammar_points', 'scoring_criteria', 'structure']:
             if key in result and isinstance(result[key], (list, dict)):
                 result[key] = json.dumps(result[key], ensure_ascii=False)
         return result

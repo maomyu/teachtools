@@ -14,7 +14,7 @@ import { PaperScopeSelector } from '@/components/handout/PaperScopeSelector'
 import { GeneratedPaperList } from '@/components/handout/GeneratedPaperList'
 import { ClozeGradeHandout } from './ClozeGradeHandout'
 import { getClozeFilters } from '@/services/clozeService'
-import { getHandoutStatus, batchUpdateHandoutStatus } from '@/services/paperService'
+import { getHandoutStatus, batchUpdateHandoutStatus, resetHandoutStatus } from '@/services/paperService'
 import type { HandoutStatusResponse } from '@/types'
 
 type TabKey = 'not_generated' | 'generated'
@@ -110,6 +110,13 @@ export function ClozeHandoutView() {
   const handleGenerate = () => {
     if (combinedPaperIds.length === 0) return
     doGenerate(combinedPaperIds)
+  }
+
+  // 撤回已生成记录
+  const handleRevoke = async (paperId: number) => {
+    await resetHandoutStatus([paperId], 'cloze')
+    setGeneratedCheckedIds((prev) => prev.filter((id) => id !== paperId))
+    await loadHandoutStatus()
   }
 
   const loadGrades = async () => {
@@ -223,6 +230,7 @@ export function ClozeHandoutView() {
                     children: (
                       <PaperScopeSelector
                         grade={selectedGrade}
+                        moduleType="cloze"
                         selectedPaperIds={selectedPaperIds}
                         onSelectedPaperIdsChange={setSelectedPaperIds}
                         onLoadingChange={setPaperLoading}
@@ -253,6 +261,7 @@ export function ClozeHandoutView() {
                         papers={handoutStatus?.generated || []}
                         checkedIds={generatedCheckedIds}
                         onCheckedChange={setGeneratedCheckedIds}
+                        onRevoke={handleRevoke}
                       />
                     ),
                   },

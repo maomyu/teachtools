@@ -381,28 +381,32 @@ async def list_points(
             aggregated[key] = []
         aggregated[key].append(pt)
 
+    # ── 预加载全部考点类型定义（仅 16 条），消除 N+1 ──
+    pt_def_result = await db.execute(select(PointTypeDefinition))
+    pt_def_map = {d.code: d for d in pt_def_result.scalars().all()}
+
+    def _build_point_type(code: str):
+        """从预加载 dict 构建 PointTypeBase，消除重复代码"""
+        pt_def = pt_def_map.get(code)
+        if not pt_def:
+            return None
+        return PointTypeBase(
+            code=pt_def.code,
+            category=pt_def.category,
+            category_name=pt_def.category_name,
+            name=pt_def.name,
+            priority=pt_def.priority,
+            description=pt_def.description
+        )
+
     # 构建聚合后的列表
     summaries = []
     for (word, agg_key), points in aggregated.items():
         occurrences = []
         first_point = points[0]
 
-        # 查询 V5 考点定义
-        primary_point = None
-        if first_point.primary_point_code:
-            pt_def_result = await db.execute(
-                select(PointTypeDefinition).where(PointTypeDefinition.code == first_point.primary_point_code)
-            )
-            pt_def = pt_def_result.scalar_one_or_none()
-            if pt_def:
-                primary_point = PointTypeBase(
-                    code=pt_def.code,
-                    category=pt_def.category,
-                    category_name=pt_def.category_name,
-                    name=pt_def.name,
-                    priority=pt_def.priority,
-                    description=pt_def.description
-                )
+        # 主考点信息
+        primary_point = _build_point_type(first_point.primary_point_code) if first_point.primary_point_code else None
 
         # V5: 使用编码和名称作为显示
         point_type_display = f"{primary_point.code} {primary_point.name}" if primary_point else agg_key
@@ -432,22 +436,8 @@ async def list_points(
                 similar_words=json.loads(pt.similar_words) if hasattr(pt, 'similar_words') and pt.similar_words else None,
             )
 
-            # 每个出现位置也包含 v2 考点信息
-            occurrence_point = None
-            if hasattr(pt, 'primary_point_code') and pt.primary_point_code:
-                pt_def_occ_result = await db.execute(
-                    select(PointTypeDefinition).where(PointTypeDefinition.code == pt.primary_point_code)
-                )
-                pt_def_occ = pt_def_occ_result.scalar_one_or_none()
-                if pt_def_occ:
-                    occurrence_point = PointTypeBase(
-                        code=pt_def_occ.code,
-                        category=pt_def_occ.category,
-                        category_name=pt_def_occ.category_name,
-                        name=pt_def_occ.name,
-                        priority=pt_def_occ.priority,
-                        description=pt_def_occ.description
-                    )
+            # 每个出现位置的 v2 考点信息（dict lookup，不再逐条查 DB）
+            occurrence_point = _build_point_type(pt.primary_point_code) if hasattr(pt, 'primary_point_code') and pt.primary_point_code else None
 
             occurrences.append(PointOccurrence(
                 sentence=pt.sentence or "",

@@ -352,7 +352,7 @@ class HandoutDocxExporter:
     def _add_cloze_passages(
         self,
         document: Document,
-        passages: list[dict[str, Any]],
+        passages: list[Any],
         edition: str
     ) -> None:
         self._add_section_heading(document, "Part 4 完形原文")
@@ -365,29 +365,114 @@ class HandoutDocxExporter:
             document.add_paragraph(self._format_source_line(self._lookup(passage, "source")))
             self._add_multiline_text(document, self._lookup(passage, "content"))
 
+            points = self._lookup(passage, "points") or []
+            sorted_points = sorted(points, key=lambda p: self._lookup(p, "blank_number") or 0)
+
+            # 选项词表格（所有版本）
+            self._add_cloze_options_table(document, sorted_points)
+
             if edition == "teacher":
-                document.add_paragraph("空格考点：")
-                for point in sorted(self._lookup(passage, "points") or [], key=lambda item: self._lookup(item, "blank_number") or 0):
-                    summary = (
-                        f"第 {self._safe_text(self._lookup(point, 'blank_number'))} 空 | "
-                        f"答案：{self._safe_text(self._lookup(point, 'correct_answer'))} / {self._safe_text(self._lookup(point, 'correct_word'))} | "
-                        f"考点：{self._safe_text(self._lookup(point, 'primary_point_code') or self._lookup(point, 'point_type'))}"
-                    )
-                    document.add_paragraph(summary, style="List Bullet")
-                    if self._lookup(point, "translation"):
-                        document.add_paragraph(f"释义：{self._safe_text(self._lookup(point, 'translation'))}")
-                    if self._lookup(point, "explanation"):
-                        document.add_paragraph(f"解析：{self._safe_text(self._lookup(point, 'explanation'))}")
-                    rejection_points = self._lookup(point, "rejection_points") or []
-                    if rejection_points:
-                        reasons = "；".join(
-                            f"{self._safe_text(self._lookup(item, 'option_word'))}: {self._safe_text(self._lookup(item, 'rejection_reason') or self._lookup(item, 'explanation'))}"
-                            for item in rejection_points
-                        )
-                        document.add_paragraph(f"排错：{reasons}")
+                # 参考答案汇总
+                self._add_cloze_answer_summary(document, sorted_points)
+                # 逐空详细解析
+                document.add_paragraph("答案解析：")
+                for point in sorted_points:
+                    self._add_cloze_point_analysis(document, point)
 
             if index < len(passages):
                 document.add_page_break()
+
+    def _add_cloze_options_table(self, document: Document, points: list[Any]) -> None:
+        """选项词表格：题号 | A | B | C | D"""
+        if not points:
+            return
+
+        document.add_paragraph("选项词：")
+        table = document.add_table(rows=1, cols=5)
+        table.style = "Table Grid"
+        headers = ["题号", "A", "B", "C", "D"]
+        for cell, title in zip(table.rows[0].cells, headers):
+            cell.text = title
+
+        for point in points:
+            options = self._lookup(point, "options") or {}
+            row = table.add_row().cells
+            row[0].text = self._safe_text(self._lookup(point, "blank_number"))
+            row[1].text = self._safe_text(options.get("A", ""))
+            row[2].text = self._safe_text(options.get("B", ""))
+            row[3].text = self._safe_text(options.get("C", ""))
+            row[4].text = self._safe_text(options.get("D", ""))
+
+        document.add_paragraph()
+
+    def _add_cloze_answer_summary(self, document: Document, points: list[Any]) -> None:
+        """参考答案汇总"""
+        if not points:
+            return
+
+        document.add_paragraph("参考答案：")
+        for point in points:
+            num = self._safe_text(self._lookup(point, "blank_number"))
+            word = self._safe_text(self._lookup(point, "correct_word"))
+            answer = self._safe_text(self._lookup(point, "correct_answer"))
+            label = f"{num}. {word}" if word else f"{num}. {answer}"
+            document.add_paragraph(label, style="List Number")
+
+        document.add_paragraph()
+
+    def _add_cloze_point_analysis(self, document: Document, point: Any) -> None:
+        """单空详细解析：选项对比表格 + 解析 + 技巧"""
+        num = self._safe_text(self._lookup(point, "blank_number"))
+        correct_word = self._safe_text(self._lookup(point, "correct_word"))
+
+        # 标题
+        title = f"第 {num} 空" if num else "空格"
+        if correct_word:
+            title += f" — {correct_word}"
+        document.add_heading(title, level=4)
+
+        # 选项对比表格：选项 | 选项词 | 排除理由
+        options = self._lookup(point, "options") or {}
+        rejection_points = self._lookup(point, "rejection_points") or []
+        if options:
+            # 构建排错映射：option_word → [code] reason
+            rejection_map: dict[str, str] = {}
+            for rp in rejection_points:
+                rp_word = self._safe_text(self._lookup(rp, "option_word"))
+                rp_code = self._safe_text(
+                    self._lookup(rp, "rejection_code") or self._lookup(rp, "point_code")
+                )
+                rp_reason = self._safe_text(
+                    self._lookup(rp, "rejection_reason") or self._lookup(rp, "explanation")
+                )
+                display = f"[{rp_code}] {rp_reason}" if rp_code and rp_reason else (rp_reason or rp_code or "")
+                rejection_map[rp_word] = display
+
+            table = document.add_table(rows=1, cols=3)
+            table.style = "Table Grid"
+            for cell, h in zip(table.rows[0].cells, ["选项", "选项词", "排除理由"]):
+                cell.text = h
+
+            for opt_key in ("A", "B", "C", "D"):
+                opt_word = self._safe_text(options.get(opt_key, ""))
+                if not opt_word:
+                    continue
+                row = table.add_row().cells
+                row[0].text = opt_key
+                row[1].text = opt_word
+                row[2].text = "" if opt_word == correct_word else rejection_map.get(opt_word, "")
+
+        # 解析
+        explanation = self._lookup(point, "explanation")
+        if explanation:
+            document.add_paragraph(f"解析：{self._safe_text(explanation)}")
+
+        # 解题技巧
+        tips = self._lookup(point, "tips")
+        if tips:
+            document.add_paragraph(f"解题技巧：{self._safe_text(tips)}")
+
+        document.add_paragraph()
 
     def _add_writing_topic_stats(self, document: Document, stats: dict[str, Any]) -> None:
         self._add_section_heading(document, "Part 1 分类概览")

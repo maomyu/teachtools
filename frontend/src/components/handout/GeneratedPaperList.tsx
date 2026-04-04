@@ -1,15 +1,15 @@
 /**
  * 已生成试卷列表组件
  *
- * [INPUT]: 依赖 antd List/Checkbox/Badge, @ant-design/icons, PaperHandoutStatus
+ * [INPUT]: 依赖 antd List/Checkbox/Badge/Popconfirm/Button, @ant-design/icons, PaperHandoutStatus
  * [OUTPUT]: 对外提供 GeneratedPaperList 组件
- * [POS]: frontend/src/components/handout 的已生成试卷列表，支持勾选，底部统一按钮处理生成
+ * [POS]: frontend/src/components/handout 的已生成试卷列表，支持勾选和撤回
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import { useMemo } from 'react'
-import { Badge, Checkbox, Empty, List, Space, Typography } from 'antd'
-import { CheckCircleOutlined } from '@ant-design/icons'
+import { Badge, Button, Checkbox, Empty, List, Popconfirm, Space, Typography } from 'antd'
+import { CheckCircleOutlined, UndoOutlined } from '@ant-design/icons'
 import type { PaperHandoutStatus } from '@/types'
 
 const { Text } = Typography
@@ -18,9 +18,10 @@ interface GeneratedPaperListProps {
   papers: PaperHandoutStatus[]
   checkedIds: number[]
   onCheckedChange: (ids: number[]) => void
+  onRevoke?: (paperId: number) => void
 }
 
-export function GeneratedPaperList({ papers, checkedIds, onCheckedChange }: GeneratedPaperListProps) {
+export function GeneratedPaperList({ papers, checkedIds, onCheckedChange, onRevoke }: GeneratedPaperListProps) {
   const allIds = useMemo(() => papers.map((p) => p.id), [papers])
 
   const allChecked = allIds.length > 0 && allIds.every((id) => checkedIds.includes(id))
@@ -98,6 +99,25 @@ export function GeneratedPaperList({ papers, checkedIds, onCheckedChange }: Gene
                     {paper.exam_type && <Text type="secondary" style={{ fontSize: 11 }}>{paper.exam_type}</Text>}
                   </Space>
                 </div>
+                {onRevoke && (
+                  <Popconfirm
+                    title="确定撤回该记录？"
+                    description="撤回后该试卷将回到「未生成」列表"
+                    onConfirm={() => onRevoke(paper.id)}
+                    okText="确定"
+                    cancelText="取消"
+                  >
+                    <Button
+                      size="small"
+                      type="link"
+                      danger
+                      icon={<UndoOutlined />}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      撤回
+                    </Button>
+                  </Popconfirm>
+                )}
               </div>
             </List.Item>
           )

@@ -8,7 +8,6 @@
 """
 from __future__ import annotations
 
-import ast
 import json
 import logging
 import re
@@ -103,10 +102,12 @@ class WritingService:
         group_category: Optional[WritingCategory],
         template_content: str = "",
         tips: str = "",
+        structure: str = "",
     ) -> str:
         """构建中考 150 词左右范文生成 Prompt。"""
         category_path = category.path
         structure_hint = f"\n通用模板：\n{template_content}\n" if template_content else ""
+        structure_para_hint = f"\n模板段落结构：\n{structure}\n" if structure else ""
         tips_hint = f"\n写作提醒：\n{tips}\n" if tips else ""
         original_limit = task.word_limit or "以题目原始要求为准"
         return f"""你是北京中考英语写作教研专家。请根据下面的作文题，生成一篇适合初中生背诵迁移的高质量英文范文，并附中文翻译。
@@ -124,7 +125,7 @@ class WritingService:
 
 ## 写作要求
 {task.requirements or "无"}
-{structure_hint}{tips_hint}
+{structure_hint}{structure_para_hint}{tips_hint}
 ## 生成要求
 1. 输出必须是英文范文 + 中文翻译。
 2. 英文部分请严格控制在 130-170 词之间，理想目标约 150 词；最佳输出区间是 145-155 词。
@@ -274,6 +275,7 @@ class WritingService:
         result = await self.db.execute(
             select(WritingTask)
             .options(
+                selectinload(WritingTask.paper),
                 selectinload(WritingTask.category),
                 selectinload(WritingTask.major_category),
                 selectinload(WritingTask.group_category),
@@ -307,6 +309,7 @@ class WritingService:
             group_category=task.group_category,
             template_content=template.template_content if template else "",
             tips=template.tips if template and template.tips else "",
+            structure=template.structure if template and template.structure else "",
         )
 
         result_text = ""
@@ -326,6 +329,7 @@ class WritingService:
             english_essay, chinese_translation = self._parse_essay_with_translation(result_text)
             word_count = self._count_english_words(english_essay)
             logger.info("作文范文生成尝试 %s/3，字数=%s", attempt + 1, word_count)
+
             if SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS:
                 break
             prompt = (
@@ -333,6 +337,20 @@ class WritingService:
                 f"⚠️ 上一次英文范文约 {word_count} 词，不符合要求。请重新生成，并将英文部分控制在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间，"
                 "不要省略要点，也不要写成长篇教学范文。"
             )
+            # 段落结构校验
+            template_para_count = self._parse_template_paragraph_count(template.structure if template else "")
+            if template_para_count > 0:
+                essay_para_count = self._count_paragraphs(english_essay)
+                if essay_para_count != template_para_count:
+                    logger.warning(
+                        "范文段落数(%s)与模板(%s)不一致, task_id=%s",
+                        essay_para_count, template_para_count, task.id,
+                    )
+                    if attempt < 2:
+                        prompt += (
+                            f"\n\n⚠️ 上一次范文有 {essay_para_count} 个段落，"
+                            f"但模板要求 {template_para_count} 个段落。请严格对齐。"
+                        )
 
         revision_round = 0
         while english_essay and not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS) and revision_round < 3:
@@ -349,8 +367,8 @@ class WritingService:
 
         if english_essay and not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS):
             fallback_prompt = (
-                f"{self._build_sample_prompt(task, task.category, task.major_category, task.group_category, template.template_content if template else '', template.tips if template and template.tips else '')}\n\n"
-                f"⚠️ 最终要求再强调一次：只输出英文范文和中文翻译，英文部分必须在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间，"
+                f"{self._build_sample_prompt(task, task.category, task.major_category, task.group_category, template.template_content if template else '', template.tips if template and template.tips else '', template.structure if template and template.structure else '')}\n\n"
+                f"⚠️ 最终要求再强调一次：只输出英文范文和中文翻译，英文部分必须在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间,"
                 "理想区间为 145-155 词。请适度增加细节、原因、感受和结尾升华。"
             )
             result_text = await self.ai_service.chat_async(
@@ -1053,8 +1071,8 @@ class WritingService:
                 lines = []
                 for block in dict_blocks:
                     try:
-                        parsed = ast.literal_eval(block)
-                    except Exception:
+                        parsed = json.loads(block)
+                    except json.JSONDecodeError:
                         continue
                     line = self._format_structure_line(parsed)
                     if line:
@@ -1085,6 +1103,25 @@ class WritingService:
         if isinstance(value, (list, dict)):
             return json.dumps(value, ensure_ascii=False)
         return json.dumps(value, ensure_ascii=False)
+
+    def _parse_template_paragraph_count(self, structure_text: Optional[str]) -> int:
+        """从模板 structure 字段解析段落数。"""
+        if not structure_text:
+            return 0
+        stripped = structure_text.strip()
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+                return len([p for p in parsed if isinstance(p, dict)])
+            except (json.JSONDecodeError):
+                pass
+        return len(re.findall(r"第\d+段", structure_text))
+
+    def _count_paragraphs(self, text: str) -> int:
+        """统计英文范文的段落数（以空行分隔）。"""
+        if not text:
+            return 0
+        return len([p.strip() for p in text.split("\n\n") if p.strip()])
 
     def _build_source_line(self, paper: Optional[ExamPaper]) -> str:
         if not paper:
