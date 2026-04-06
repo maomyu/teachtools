@@ -109,6 +109,13 @@ class WritingTemplate(Base):
     tips = Column(Text)  # 写作技巧
     structure = Column(Text)  # 结构说明
     template_key = Column(String(100))
+    template_schema_json = Column(Text)  # 结构化模板骨架（JSON）
+    template_version = Column(Integer, default=1)
+    quality_status = Column(String(20), default="pending")
+    representative_sample_content = Column(Text)
+    representative_translation = Column(Text)
+    representative_rendered_slots_json = Column(Text)
+    representative_word_count = Column(Integer)
 
     # === 新增专业要素字段 ===
     opening_sentences = Column(Text)    # 开头句型（JSON数组）
@@ -119,13 +126,14 @@ class WritingTemplate(Base):
     scoring_criteria = Column(Text)     # 评分标准提示（JSON）
 
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关系
     samples = relationship("WritingSample", back_populates="template")
     category = relationship("WritingCategory", back_populates="templates")
 
     __table_args__ = (
-        UniqueConstraint("category_id", "template_key", name="uq_writing_templates_category_template_key"),
+        UniqueConstraint("category_id", name="uq_writing_templates_category_id"),
     )
 
     def __repr__(self):
@@ -150,6 +158,10 @@ class WritingSample(Base):
     grammar_analysis = Column(Text)       # 语法分析（JSON）
     issues = Column(Text)                 # 存在问题（JSON数组，用于三档文）
     translation = Column(Text)            # 中文翻译
+    rendered_slots_json = Column(Text)    # 按模板槽位填充后的结果（JSON）
+    template_version = Column(Integer, default=1)
+    generation_mode = Column(String(30), default="slot_fill")
+    quality_status = Column(String(20), default="pending")
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -158,6 +170,7 @@ class WritingSample(Base):
     template = relationship("WritingTemplate", back_populates="samples")
 
     __table_args__ = (
+        UniqueConstraint("task_id", name="uq_writing_samples_task_id"),
         CheckConstraint(
             "sample_type IN ('AI生成', '人工编写', '真题范文')",
             name="ck_sample_type"

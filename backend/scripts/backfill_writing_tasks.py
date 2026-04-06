@@ -57,6 +57,7 @@ class BackfillResult:
     status: str = "pending"
     error: str = ""
     task_ids: list[int] = field(default_factory=list)
+    trigger_reason: str = ""
 
 
 def normalize_filename(name: str) -> str:
@@ -93,6 +94,28 @@ def pick_best_source(matches: list[Path], paper: ExamPaper) -> Optional[Path]:
     return sorted(matches, key=score, reverse=True)[0]
 
 
+def _has_multiple_exam_numbers(text: str) -> bool:
+    matches = re.findall(r"(?:^|\s)(\d{2})\.", text or "")
+    unique_numbers = []
+    for item in matches:
+        if item not in unique_numbers:
+            unique_numbers.append(item)
+    return len(unique_numbers) >= 2
+
+
+def is_dirty_writing_task_content(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text or "")
+    if not normalized:
+        return False
+
+    has_dual_topic_markers = (
+        ("题目①" in normalized or "题目 ①" in normalized)
+        and ("题目②" in normalized or "题目 ②" in normalized)
+    )
+    has_choice_and_two_numbers = "任选一题" in normalized and _has_multiple_exam_numbers(normalized[:1200])
+    return has_dual_topic_markers or has_choice_and_two_numbers
+
+
 async def extract_tasks_for_file(parser: LLMDocumentParser, file_path: Path) -> list[WritingExtractTask]:
     tasks = parser._extract_writing_tasks_from_docx(str(file_path))
     if tasks:
@@ -109,6 +132,8 @@ async def rebuild_paper_writing(
     session,
     paper: ExamPaper,
     tasks: list[WritingExtractTask],
+    *,
+    generate_assets: bool = True,
 ) -> list[int]:
     service = WritingService(session)
 
@@ -140,19 +165,20 @@ async def rebuild_paper_writing(
             extracted_writing_type=extracted_task.writing_type,
             extracted_application_type=extracted_task.application_type,
         )
-        await service.ensure_task_assets(
-            task,
-            force_template_refresh=False,
-            regenerate_sample=False,
-            score_level="一档",
-        )
+        if generate_assets:
+            await service.ensure_task_assets(
+                task,
+                force_template_refresh=False,
+                regenerate_sample=False,
+                score_level="一档",
+            )
         created_ids.append(task.id)
 
     await session.commit()
     return created_ids
 
 
-async def backfill(limit: Optional[int], paper_id: Optional[int], dry_run: bool) -> dict:
+async def backfill(limit: Optional[int], paper_id: Optional[int], dry_run: bool, dirty_only: bool = False) -> dict:
     source_index = build_source_index()
     parser = LLMDocumentParser()
     results: list[BackfillResult] = []
@@ -182,8 +208,23 @@ async def backfill(limit: Optional[int], paper_id: Optional[int], dry_run: bool)
             local_tasks = parser._extract_writing_tasks_from_docx(str(source_path))
             expected_count = max(1, len(local_tasks)) if local_tasks else 1
 
-            if writing_count == expected_count:
+            existing_tasks_result = await session.execute(
+                select(WritingTask.task_content).where(WritingTask.paper_id == paper.id)
+            )
+            existing_task_contents = [row[0] or "" for row in existing_tasks_result.all()]
+            dirty_existing = any(is_dirty_writing_task_content(content) for content in existing_task_contents)
+
+            if dirty_only and not dirty_existing:
                 continue
+
+            if writing_count == expected_count and not dirty_existing:
+                continue
+
+            trigger_reason = "count_mismatch"
+            if dirty_existing and writing_count == expected_count:
+                trigger_reason = "dirty_tasks"
+            elif dirty_existing:
+                trigger_reason = "count_mismatch_and_dirty_tasks"
 
             results.append(
                 BackfillResult(
@@ -192,6 +233,7 @@ async def backfill(limit: Optional[int], paper_id: Optional[int], dry_run: bool)
                     source_path=str(source_path),
                     expected_count=expected_count,
                     old_count=int(writing_count or 0),
+                    trigger_reason=trigger_reason,
                 )
             )
 
@@ -249,9 +291,17 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="只处理前 N 份试卷")
     parser.add_argument("--paper-id", type=int, default=None, help="只处理指定试卷 ID")
     parser.add_argument("--dry-run", action="store_true", help="仅扫描，不落库")
+    parser.add_argument("--dirty-only", action="store_true", help="仅处理题目内容混入多道作文的历史脏数据")
     args = parser.parse_args()
 
-    summary = asyncio.run(backfill(limit=args.limit, paper_id=args.paper_id, dry_run=args.dry_run))
+    summary = asyncio.run(
+        backfill(
+            limit=args.limit,
+            paper_id=args.paper_id,
+            dry_run=args.dry_run,
+            dirty_only=args.dirty_only,
+        )
+    )
     summary_path = save_summary(summary)
 
     print("=" * 80)

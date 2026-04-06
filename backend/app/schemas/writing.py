@@ -141,6 +141,13 @@ class TemplateResponse(BaseModel):
     template_content: str
     tips: Optional[str] = None
     structure: Optional[str] = None
+    template_schema_json: Optional[str] = None
+    template_version: int = 1
+    quality_status: str = "pending"
+    representative_sample_content: Optional[str] = None
+    representative_translation: Optional[str] = None
+    representative_rendered_slots_json: Optional[str] = None
+    representative_word_count: Optional[int] = None
     opening_sentences: Optional[str] = None
     closing_sentences: Optional[str] = None
     transition_words: Optional[str] = None
@@ -161,6 +168,10 @@ class SampleResponse(BaseModel):
     score_level: Optional[str] = None
     word_count: Optional[int] = None
     translation: Optional[str] = None
+    rendered_slots_json: Optional[str] = None
+    template_version: int = 1
+    generation_mode: str = "slot_fill"
+    quality_status: str = "pending"
     created_at: datetime
 
 
@@ -291,3 +302,60 @@ class WritingGradeHandoutResponse(BaseModel):
     edition: str
     total_task_count: int = 0
     groups: List[WritingHandoutGroupResponse] = []
+
+
+class WritingTemplateListItem(BaseModel):
+    """作文模板列表项"""
+
+    id: int
+    group_category: WritingCategoryResponse
+    major_category: WritingCategoryResponse
+    category: WritingCategoryResponse
+    template_name: str
+    template_content: str
+    structure: Optional[str] = None
+    template_schema_json: Optional[str] = None
+    template_version: int = 1
+    quality_status: str = "pending"
+    representative_sample_content: Optional[str] = None
+    representative_translation: Optional[str] = None
+    representative_word_count: Optional[int] = None
+    paper_count: int = 0
+    task_count: int = 0
+    updated_at: Optional[datetime] = None
+
+
+class WritingTemplateListResponse(BaseModel):
+    """作文模板列表响应"""
+
+    total: int
+    items: List[WritingTemplateListItem] = []
+
+
+class WritingTemplatePaperItem(BaseModel):
+    """模板下的试卷列表项"""
+
+    paper_id: int
+    filename: str
+    year: Optional[int] = None
+    region: Optional[str] = None
+    school: Optional[str] = None
+    grade: Optional[str] = None
+    exam_type: Optional[str] = None
+    semester: Optional[str] = None
+    task_count: int = 0
+
+
+class WritingTemplatePaperListResponse(BaseModel):
+    """模板下试卷列表响应"""
+
+    template: WritingTemplateListItem
+    papers: List[WritingTemplatePaperItem] = []
+
+
+class WritingTemplatePaperDetailResponse(BaseModel):
+    """模板下单张试卷详情"""
+
+    template: TemplateResponse
+    paper: SourceInfo
+    tasks: List[WritingTaskDetailResponse] = []

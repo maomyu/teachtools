@@ -426,6 +426,7 @@ async def upload_paper_with_progress(
         tmp_path = None
         saved_passages = []
         metadata = {}
+        writing_step_failed = False
 
         def emit():
             """发送进度事件"""
@@ -854,6 +855,7 @@ async def upload_paper_with_progress(
                         writing_service = WritingService(db)
                         created_count = 0
                         category_labels: list[str] = []
+                        writing_errors: list[str] = []
                         extracted_tasks = dedupe_writing_tasks(writing_result.tasks)
 
                         for extracted_task in extracted_tasks:
@@ -877,16 +879,25 @@ async def upload_paper_with_progress(
                                     extracted_application_type=extracted_task.application_type,
                                 )
                                 if not category_result.success:
-                                    logger.warning(f"作文分类失败（不影响导入）: {category_result.error}")
+                                    error_message = category_result.error or "作文分类失败"
+                                    logger.warning("作文分类失败: %s", error_message)
+                                    writing_errors.append(f"task_id={writing_task.id}: {error_message}")
                                 elif category_result.category:
                                     category_label = category_result.category.path
                             except Exception as category_error:
-                                logger.warning(f"作文分类失败（不影响导入）: {category_error}")
+                                logger.warning("作文分类失败: %s", category_error)
+                                writing_errors.append(f"task_id={writing_task.id}: {category_error}")
+
+                            if not writing_task.category_id:
+                                created_count += 1
+                                if category_label and category_label not in category_labels:
+                                    category_labels.append(category_label)
+                                continue
 
                             try:
                                 _, template, sample = await writing_service.ensure_task_assets(
                                     writing_task,
-                                    force_template_refresh=True,
+                                    force_template_refresh=False,
                                     regenerate_sample=False,
                                     score_level="一档",
                                 )
@@ -896,8 +907,13 @@ async def upload_paper_with_progress(
                                     template.id,
                                     sample.id,
                                 )
+                                if (sample.quality_status or "").strip() != "passed":
+                                    raise ValueError("正式范文质检未通过")
                             except Exception as sample_error:
-                                logger.warning(f"自动生成子类模板或范文失败（不影响导入）: {sample_error}")
+                                logger.warning(f"自动生成子类模板或范文失败: {sample_error}")
+                                writing_errors.append(
+                                    f"task_id={writing_task.id}: {sample_error}"
+                                )
 
                             created_count += 1
                             if category_label and category_label not in category_labels:
@@ -907,15 +923,23 @@ async def upload_paper_with_progress(
                         category_summary = "；".join(category_labels[:3]) if category_labels else "未分类"
                         if len(category_labels) > 3:
                             category_summary += " 等"
-                        reporter.complete_step(
-                            "writing_extract",
-                            f"已提取{created_count}道作文，并归类生成模板/范文：{category_summary}",
-                        )
+                        if writing_errors:
+                            writing_step_failed = True
+                            reporter.fail_step(
+                                "writing_extract",
+                                f"已提取{created_count}道作文，但仍有{len(writing_errors)}道未完成正式模板/范文生成"
+                            )
+                        else:
+                            reporter.complete_step(
+                                "writing_extract",
+                                f"已提取{created_count}道作文，并归类生成模板/范文：{category_summary}",
+                            )
                         await db.commit()
                     else:
                         reporter.skip_step("writing_extract", writing_result.error or "未找到作文题目")
                 except Exception as e:
-                    reporter.skip_step("writing_extract", f"跳过: {str(e)}")
+                    writing_step_failed = True
+                    reporter.fail_step("writing_extract", str(e))
                 yield emit()
 
                 # ===== Step 8: 考点分析 =====
@@ -1260,13 +1284,13 @@ async def upload_paper_with_progress(
                     yield emit()
 
                 # 所有后处理完成后，才将试卷标记为 completed。
-                paper.import_status = "completed"
-                paper.error_message = None
+                paper.import_status = "partial" if writing_step_failed else "completed"
+                paper.error_message = "作文模板/范文未全部生成完成" if writing_step_failed else None
                 await db.commit()
 
                 # 发送最终结果
                 result_data = {
-                    "status": "success",
+                    "status": "partial" if writing_step_failed else "success",
                     "filename": file.filename,
                     "paper_id": paper.id,
                     "passages_created": passages_created,

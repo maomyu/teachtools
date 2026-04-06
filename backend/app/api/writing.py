@@ -23,6 +23,11 @@ from app.schemas.writing import (
     SampleResponse,
     SourceInfo,
     TemplateResponse,
+    WritingTemplateListItem,
+    WritingTemplateListResponse,
+    WritingTemplatePaperDetailResponse,
+    WritingTemplatePaperItem,
+    WritingTemplatePaperListResponse,
     WritingCategoryResponse,
     WritingFiltersResponse,
     WritingGradeHandoutResponse,
@@ -87,6 +92,53 @@ def _to_task_response(task: WritingTask) -> WritingTaskResponse:
     )
 
 
+def _to_template_response(template) -> TemplateResponse:
+    return TemplateResponse(
+        id=template.id,
+        category=_to_category_response(template.category),
+        template_name=template.template_name,
+        template_content=template.template_content,
+        tips=template.tips,
+        structure=template.structure,
+        template_schema_json=template.template_schema_json,
+        template_version=template.template_version or 1,
+        quality_status=template.quality_status or "pending",
+        representative_sample_content=template.representative_sample_content,
+        representative_translation=template.representative_translation,
+        representative_rendered_slots_json=template.representative_rendered_slots_json,
+        representative_word_count=template.representative_word_count,
+        opening_sentences=template.opening_sentences,
+        closing_sentences=template.closing_sentences,
+        transition_words=template.transition_words,
+        advanced_vocabulary=template.advanced_vocabulary,
+        grammar_points=template.grammar_points,
+        scoring_criteria=template.scoring_criteria,
+        created_at=template.created_at,
+    )
+
+
+def _to_sample_response(
+    sample: WritingSample,
+    *,
+    quality_status: Optional[str] = None,
+) -> SampleResponse:
+    return SampleResponse(
+        id=sample.id,
+        task_id=sample.task_id,
+        template_id=sample.template_id,
+        sample_content=sample.sample_content,
+        sample_type=sample.sample_type,
+        score_level=sample.score_level,
+        word_count=sample.word_count,
+        translation=sample.translation,
+        rendered_slots_json=sample.rendered_slots_json,
+        template_version=sample.template_version or 1,
+        generation_mode=sample.generation_mode or "slot_fill",
+        quality_status=quality_status or sample.quality_status or "pending",
+        created_at=sample.created_at,
+    )
+
+
 @router.get("/filters", response_model=WritingFiltersResponse)
 async def get_writing_filters(db: AsyncSession = Depends(get_db)):
     """获取作文筛选项。"""
@@ -148,6 +200,143 @@ async def get_writing_handout(
     return WritingGradeHandoutResponse(**payload)
 
 
+@router.get("/templates", response_model=WritingTemplateListResponse)
+async def get_writing_templates(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    grade: Optional[str] = Query(None),
+    semester: Optional[str] = Query(None),
+    exam_type: Optional[str] = Query(None),
+    group_category_id: Optional[int] = Query(None),
+    major_category_id: Optional[int] = Query(None),
+    category_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """按模板维度获取作文汇编列表。"""
+    service = WritingService(db)
+    items, total = await service.get_template_list(
+        page=page,
+        size=size,
+        grade=grade,
+        semester=semester,
+        exam_type=exam_type,
+        group_category_id=group_category_id,
+        major_category_id=major_category_id,
+        category_id=category_id,
+        search=search,
+    )
+    return WritingTemplateListResponse(
+        total=total,
+        items=[
+            WritingTemplateListItem(
+                id=item["template"].id,
+                group_category=_to_category_response(item["group_category"]),
+                major_category=_to_category_response(item["major_category"]),
+                category=_to_category_response(item["category"]),
+                template_name=item["template"].template_name,
+                template_content=item["template"].template_content,
+                structure=item["template"].structure,
+                template_schema_json=item["template"].template_schema_json,
+                template_version=item["template"].template_version or 1,
+                quality_status=item["template"].quality_status or "pending",
+                representative_sample_content=item["template"].representative_sample_content,
+                representative_translation=item["template"].representative_translation,
+                representative_word_count=item["template"].representative_word_count,
+                paper_count=item["paper_count"],
+                task_count=item["task_count"],
+                updated_at=item["template"].updated_at or item["template"].created_at,
+            )
+            for item in items
+        ],
+    )
+
+
+@router.get("/templates/{template_id}/papers", response_model=WritingTemplatePaperListResponse)
+async def get_writing_template_papers(template_id: int, db: AsyncSession = Depends(get_db)):
+    """获取某个模板下的试卷列表。"""
+    service = WritingService(db)
+    try:
+        payload = await service.get_template_papers(template_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    template = payload["template"]
+    return WritingTemplatePaperListResponse(
+        template=WritingTemplateListItem(
+            id=template.id,
+            group_category=_to_category_response(payload["group_category"]),
+            major_category=_to_category_response(payload["major_category"]),
+            category=_to_category_response(payload["category"]),
+            template_name=template.template_name,
+            template_content=template.template_content,
+            structure=template.structure,
+            template_schema_json=template.template_schema_json,
+            template_version=template.template_version or 1,
+            quality_status=template.quality_status or "pending",
+            representative_sample_content=template.representative_sample_content,
+            representative_translation=template.representative_translation,
+            representative_word_count=template.representative_word_count,
+            paper_count=len(payload["papers"]),
+            task_count=sum(item["task_count"] for item in payload["papers"]),
+            updated_at=template.updated_at or template.created_at,
+        ),
+        papers=[
+            WritingTemplatePaperItem(
+                paper_id=item["paper_id"],
+                filename=item["filename"],
+                year=item["year"],
+                region=item["region"],
+                school=item["school"],
+                grade=item["grade"],
+                exam_type=item["exam_type"],
+                semester=item["semester"],
+                task_count=item["task_count"],
+            )
+            for item in payload["papers"]
+        ],
+    )
+
+
+@router.get("/templates/{template_id}/papers/{paper_id}", response_model=WritingTemplatePaperDetailResponse)
+async def get_writing_template_paper_detail(template_id: int, paper_id: int, db: AsyncSession = Depends(get_db)):
+    """获取某个模板下某张试卷的全部作文题与正式范文。"""
+    service = WritingService(db)
+    try:
+        payload = await service.get_template_paper_detail(template_id, paper_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    tasks = []
+    template_response = _to_template_response(payload["template"])
+    for task in payload["tasks"]:
+        display_sample = service._select_display_sample(  # noqa: SLF001
+            task.samples,
+            expected_template_id=payload["template"].id,
+            template=payload["template"],
+        )
+        display_status = service._sample_display_quality_status(  # noqa: SLF001
+            display_sample,
+            expected_template_id=payload["template"].id,
+            template=payload["template"],
+        )
+        tasks.append(
+            WritingTaskDetailResponse(
+                **_to_task_response(task).model_dump(),
+                templates=[template_response],
+                samples=[
+                    _to_sample_response(display_sample, quality_status=display_status)
+                ] if display_sample else [],
+            )
+        )
+
+    return WritingTemplatePaperDetailResponse(
+        template=template_response,
+        paper=_to_source_info(payload["tasks"][0]),
+        tasks=tasks,
+    )
+
+
 @router.get("/handouts/{grade}/categories")
 async def get_writing_handout_categories(
     grade: str,
@@ -193,40 +382,35 @@ async def get_writing_detail(task_id: int, db: AsyncSession = Depends(get_db)):
     if not task:
         raise HTTPException(status_code=404, detail="作文不存在")
 
-    templates = []
+    latest_sample = next(iter(sorted(task.samples or [], key=lambda item: item.id or 0, reverse=True)), None)
     if task.category_id:
         template = await service.get_or_create_template(task.category_id, refresh_if_stale=False)
-        templates.append(
-            TemplateResponse(
-                id=template.id,
-                category=_to_category_response(template.category),
-                template_name=template.template_name,
-                template_content=template.template_content,
-                tips=template.tips,
-                structure=template.structure,
-                opening_sentences=template.opening_sentences,
-                closing_sentences=template.closing_sentences,
-                transition_words=template.transition_words,
-                advanced_vocabulary=template.advanced_vocabulary,
-                grammar_points=template.grammar_points,
-                scoring_criteria=template.scoring_criteria,
-                created_at=template.created_at,
-            )
+
+    templates = []
+    if task.category_id:
+        templates.append(_to_template_response(template))
+
+    display_sample = None
+    display_status = "pending"
+    if task.category_id:
+        display_sample = service._select_display_sample(  # noqa: SLF001
+            task.samples,
+            expected_template_id=template.id,
+            template=template,
         )
+        display_status = service._sample_display_quality_status(  # noqa: SLF001
+            display_sample,
+            expected_template_id=template.id,
+            template=template,
+        )
+    elif latest_sample:
+        display_sample = latest_sample
+        display_status = latest_sample.quality_status or "pending"
 
     samples = [
-        SampleResponse(
-            id=sample.id,
-            task_id=sample.task_id,
-            template_id=sample.template_id,
-            sample_content=sample.sample_content,
-            sample_type=sample.sample_type,
-            score_level=sample.score_level,
-            word_count=sample.word_count,
-            translation=sample.translation,
-            created_at=sample.created_at,
-        )
-        for sample in (task.samples or [])
+        _to_sample_response(display_sample, quality_status=display_status)
+        for _ in [1]
+        if display_sample is not None
     ]
 
     base = _to_task_response(task)
@@ -275,15 +459,7 @@ async def generate_sample(
             score_level=request.score_level,
         )
         return SampleResponse(
-            id=sample.id,
-            task_id=sample.task_id,
-            template_id=sample.template_id,
-            sample_content=sample.sample_content,
-            sample_type=sample.sample_type,
-            score_level=sample.score_level,
-            word_count=sample.word_count,
-            translation=sample.translation,
-            created_at=sample.created_at,
+            **_to_sample_response(sample).model_dump()
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

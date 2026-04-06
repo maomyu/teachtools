@@ -11,10 +11,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+from copy import deepcopy
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Tuple
+from difflib import SequenceMatcher
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,6 +33,30 @@ SAMPLE_MIN_WORDS = 130
 SAMPLE_MAX_WORDS = 170
 LETTER_CATEGORY_KEYWORDS = ("信", "邮件", "回信")
 SPEECH_CATEGORY_KEYWORDS = ("演讲稿", "发言稿", "倡议书", "通知")
+OFFICIAL_GENERATION_MODE = "slot_fill"
+QUALITY_PENDING = "pending"
+QUALITY_PASSED = "passed"
+QUALITY_FAILED = "failed"
+PROHIBITED_PHRASE_PATTERNS = (
+    r"(?i)\bDear the\b",
+    r"(?i)\bI hope my ideas can be taken\b",
+    r"(?i)\bis my dream and goal\b",
+)
+CANONICAL_TEMPLATE_CATEGORIES = {
+    "活动邀请邮件",
+    "建议信",
+    "回信",
+    "介绍信",
+    "人物介绍",
+    "活动介绍",
+    "演讲稿",
+    "通知",
+    "倡议书",
+    "问题解决建议",
+    "意见反馈",
+    "规则说明",
+    "行程安排",
+}
 
 
 class WritingService:
@@ -179,11 +205,1203 @@ class WritingService:
     def _count_english_words(self, text: str) -> int:
         return len(re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text or ""))
 
+    def _normalize_similarity_text(self, text: str) -> str:
+        normalized = re.sub(r"\s+", " ", (text or "").strip().lower())
+        normalized = re.sub(r"[^a-z0-9 ,.?!']", "", normalized)
+        return normalized.strip()
+
+    def _essay_similarity(self, left: str, right: str) -> float:
+        left_normalized = self._normalize_similarity_text(left)
+        right_normalized = self._normalize_similarity_text(right)
+        if not left_normalized or not right_normalized:
+            return 0.0
+        return SequenceMatcher(None, left_normalized, right_normalized).ratio()
+
+    async def _load_peer_sample_contexts(
+        self,
+        *,
+        category_id: int,
+        exclude_task_id: Optional[int] = None,
+        limit: int = 3,
+    ) -> List[Dict[str, str]]:
+        """加载同子类下已通过质检的其他真题范文，用于避免不同试卷生成出近似文章。"""
+        query = (
+            select(
+                WritingSample.sample_content,
+                WritingTask.task_content,
+                WritingTask.requirements,
+                WritingTask.id.label("task_id"),
+            )
+            .join(WritingTask, WritingTask.id == WritingSample.task_id)
+            .where(WritingTask.category_id == category_id)
+            .where(WritingSample.quality_status == QUALITY_PASSED)
+            .where(WritingSample.generation_mode == OFFICIAL_GENERATION_MODE)
+            .order_by(WritingSample.id.desc())
+            .limit(max(limit * 2, limit))
+        )
+        if exclude_task_id is not None:
+            query = query.where(WritingTask.id != exclude_task_id)
+
+        result = await self.db.execute(query)
+        items: List[Dict[str, str]] = []
+        for sample_content, task_content, requirements, task_id in result.all():
+            if not (sample_content or "").strip():
+                continue
+            items.append(
+                {
+                    "task_id": str(task_id),
+                    "task_content": self._shorten(re.sub(r"\s+", " ", task_content or ""), 120),
+                    "requirements": self._shorten(re.sub(r"\s+", " ", requirements or ""), 100),
+                    "sample_excerpt": self._shorten(re.sub(r"\s+", " ", sample_content or ""), 180),
+                }
+            )
+            if len(items) >= limit:
+                break
+        return items
+
+    def _parse_json_value(self, raw_value: Any) -> Any:
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, (dict, list)):
+            return raw_value
+        if isinstance(raw_value, str):
+            stripped = raw_value.strip()
+            if not stripped:
+                return None
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                return None
+        return None
+
+    def _extract_placeholder_labels(self, text: str) -> List[str]:
+        return re.findall(r"\[[^\]]+\]", text or "")
+
+    def _split_template_sentences(self, paragraph_text: str) -> List[str]:
+        lines = [line.strip() for line in re.split(r"\n+", paragraph_text or "") if line.strip()]
+        if len(lines) > 1:
+            return lines
+        text = (paragraph_text or "").strip()
+        if not text:
+            return []
+        return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+
+    def _split_essay_sentences(self, paragraph_text: str) -> List[str]:
+        text = (paragraph_text or "").strip()
+        if text.lower().startswith("dear "):
+            text = re.sub(r"^(Dear [^,\n]+,)\s+", r"\1\n", text, count=1, flags=re.IGNORECASE)
+        text = re.sub(
+            r"\s+(Yours sincerely,|Best wishes,|Yours,|Sincerely,)",
+            r"\n\1",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"(Yours sincerely,|Best wishes,|Yours,|Sincerely,)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)$",
+            r"\1\n\2",
+            text,
+            flags=re.IGNORECASE,
+        )
+        lines = [line.strip() for line in re.split(r"\n+", text) if line.strip()]
+        if len(lines) > 1:
+            return lines
+        if not text:
+            return []
+        parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+        return parts or [text]
+
+    def _expand_segments_to_target(self, segments: List[str], target: int) -> List[str]:
+        expanded = [segment.strip() for segment in segments if segment and segment.strip()]
+        while len(expanded) < target and expanded:
+            longest_index = max(range(len(expanded)), key=lambda index: len(expanded[index]))
+            longest = expanded[longest_index]
+            split_candidates = [
+                part.strip()
+                for part in re.split(r"(?<=[,;:])\s+|\s+(?=and\b|but\b|so\b|because\b)", longest, maxsplit=1, flags=re.IGNORECASE)
+                if part.strip()
+            ]
+            if len(split_candidates) < 2:
+                break
+            expanded = expanded[:longest_index] + split_candidates + expanded[longest_index + 1:]
+        return expanded
+
+    def _distribute_segments_to_slot_count(self, segments: List[str], slot_count: int) -> List[str]:
+        if slot_count <= 0:
+            return []
+        prepared = self._expand_segments_to_target(segments, slot_count)
+        prepared = prepared or [""]
+        if len(prepared) < slot_count:
+            prepared.extend([prepared[-1]] * (slot_count - len(prepared)))
+
+        if len(prepared) == slot_count:
+            return prepared
+
+        groups: List[str] = []
+        total_segments = len(prepared)
+        base = total_segments // slot_count
+        remainder = total_segments % slot_count
+        cursor = 0
+        for index in range(slot_count):
+            take = base + (1 if index < remainder else 0)
+            chunk = prepared[cursor: cursor + take]
+            cursor += take
+            groups.append(" ".join(chunk).strip())
+        return groups
+
+    def _build_rendered_slots_from_essay(
+        self,
+        schema: Dict[str, Any],
+        essay: str,
+    ) -> Dict[str, Any]:
+        essay_paragraphs = [part.strip() for part in re.split(r"\n\s*\n", essay or "") if part.strip()]
+        schema_paragraphs = schema.get("paragraphs") or []
+        rendered_paragraphs: List[Dict[str, Any]] = []
+
+        if len(essay_paragraphs) == len(schema_paragraphs):
+            paragraph_sentence_groups = [
+                self._split_essay_sentences(paragraph_text)
+                for paragraph_text in essay_paragraphs
+            ]
+        else:
+            flat_sentences: List[str] = []
+            for paragraph_text in essay_paragraphs:
+                flat_sentences.extend(self._split_essay_sentences(paragraph_text))
+            paragraph_sentence_groups = []
+            cursor = 0
+            remaining_sentences = list(flat_sentences)
+            for index, schema_paragraph in enumerate(schema_paragraphs):
+                slot_count = len(schema_paragraph.get("slots") or [])
+                remaining_paragraphs = len(schema_paragraphs) - index
+                take = max(slot_count, len(remaining_sentences) // max(remaining_paragraphs, 1))
+                current = remaining_sentences[:take]
+                remaining_sentences = remaining_sentences[take:]
+                paragraph_sentence_groups.append(current)
+
+        for schema_paragraph, paragraph_sentences in zip(schema_paragraphs, paragraph_sentence_groups):
+            schema_slots = schema_paragraph.get("slots") or []
+            grouped_sentences = self._distribute_segments_to_slot_count(paragraph_sentences, len(schema_slots))
+            rendered_paragraphs.append(
+                {
+                    "paragraph": int(schema_paragraph.get("paragraph") or 0),
+                    "slots": [
+                        {
+                            "slot_key": str(schema_slot.get("slot_key") or ""),
+                            "rendered_text": grouped_sentences[index].strip(),
+                            "placeholder_values": {},
+                        }
+                        for index, schema_slot in enumerate(schema_slots)
+                    ],
+                }
+            )
+
+        return {"paragraphs": rendered_paragraphs}
+
+    def _build_schema_from_text_template(
+        self,
+        template_content: str,
+        structure_text: str = "",
+    ) -> Dict[str, Any]:
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", template_content or "") if part.strip()]
+        structure_lines = [line.strip() for line in (structure_text or "").splitlines() if line.strip()]
+        schema_paragraphs: List[Dict[str, Any]] = []
+
+        for index, paragraph_text in enumerate(paragraphs, start=1):
+            purpose = ""
+            word_range = ""
+            if index - 1 < len(structure_lines):
+                structure_line = structure_lines[index - 1]
+                purpose_match = re.search(r"第\d+段[:：]?\s*(.+?)(?:（|$)", structure_line)
+                if purpose_match:
+                    purpose = purpose_match.group(1).strip()
+                range_match = re.search(r"(\d+\s*-\s*\d+)", structure_line)
+                if range_match:
+                    word_range = range_match.group(1).replace(" ", "")
+
+            sentences = self._split_template_sentences(paragraph_text)
+            slots = []
+            for sentence_index, sentence in enumerate(sentences, start=1):
+                slot_key = f"p{index}_s{sentence_index}"
+                slots.append(
+                    {
+                        "slot_key": slot_key,
+                        "purpose": purpose or f"第{index}段第{sentence_index}句",
+                        "required_points": [purpose] if purpose else [],
+                        "fallback_pattern": sentence,
+                        "placeholder_labels": self._extract_placeholder_labels(sentence),
+                    }
+                )
+
+            schema_paragraphs.append(
+                {
+                    "paragraph": index,
+                    "purpose": purpose or f"第{index}段",
+                    "word_range": word_range,
+                    "slots": slots,
+                }
+            )
+
+        return {"format": "slot_template_v1", "paragraphs": schema_paragraphs}
+
+    def _normalize_template_schema(
+        self,
+        raw_schema: Any,
+        *,
+        fallback_content: str = "",
+        fallback_structure: str = "",
+    ) -> Dict[str, Any]:
+        parsed = self._parse_json_value(raw_schema)
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        paragraphs = parsed.get("paragraphs")
+        normalized_paragraphs: List[Dict[str, Any]] = []
+        if isinstance(paragraphs, list):
+            for paragraph_index, paragraph in enumerate(paragraphs, start=1):
+                if not isinstance(paragraph, dict):
+                    continue
+                slots = []
+                for slot_index, slot in enumerate(paragraph.get("slots") or [], start=1):
+                    if not isinstance(slot, dict):
+                        continue
+                    fallback_pattern = str(slot.get("fallback_pattern") or "").strip()
+                    if not fallback_pattern:
+                        continue
+                    # 只信任 fallback_pattern 中真实存在的占位符，避免 AI 输出伪占位符。
+                    placeholder_labels = self._extract_placeholder_labels(fallback_pattern)
+                    slots.append(
+                        {
+                            "slot_key": str(slot.get("slot_key") or f"p{paragraph_index}_s{slot_index}"),
+                            "purpose": str(slot.get("purpose") or f"第{paragraph_index}段第{slot_index}句"),
+                            "required_points": [str(item) for item in (slot.get("required_points") or []) if str(item).strip()],
+                            "fallback_pattern": fallback_pattern,
+                            "placeholder_labels": [str(item) for item in placeholder_labels if str(item).strip()],
+                        }
+                    )
+
+                if slots:
+                    normalized_paragraphs.append(
+                        {
+                            "paragraph": int(paragraph.get("paragraph") or paragraph_index),
+                            "purpose": str(paragraph.get("purpose") or f"第{paragraph_index}段"),
+                            "word_range": str(paragraph.get("word_range") or "").strip(),
+                            "slots": slots,
+                        }
+                    )
+
+        if not normalized_paragraphs:
+            fallback_schema = self._build_schema_from_text_template(fallback_content, fallback_structure)
+            normalized_paragraphs = fallback_schema.get("paragraphs", [])
+
+        return {"format": "slot_template_v1", "paragraphs": normalized_paragraphs}
+
+    def _render_template_content_from_schema(self, schema: Dict[str, Any]) -> str:
+        paragraphs = []
+        for paragraph in schema.get("paragraphs", []):
+            slots = paragraph.get("slots") or []
+            lines = [str(slot.get("fallback_pattern") or "").strip() for slot in slots if str(slot.get("fallback_pattern") or "").strip()]
+            if lines:
+                paragraphs.append("\n".join(lines))
+        return "\n\n".join(paragraphs).strip()
+
+    def _render_structure_text_from_schema(self, schema: Dict[str, Any]) -> str:
+        lines = []
+        for paragraph in schema.get("paragraphs", []):
+            index = paragraph.get("paragraph")
+            purpose = str(paragraph.get("purpose") or "").strip()
+            word_range = str(paragraph.get("word_range") or "").strip()
+            line = f"第{index}段"
+            if purpose:
+                line = f"{line}：{purpose}"
+            if word_range:
+                line = f"{line}（建议 {word_range} 词）"
+            lines.append(line)
+        return "\n".join(lines).strip()
+
+    def _extract_sentence_bank_from_schema(self, schema: Dict[str, Any]) -> tuple[List[str], List[str]]:
+        sentences: List[str] = []
+        for paragraph in schema.get("paragraphs", []):
+            for slot in paragraph.get("slots", []):
+                sentence = str(slot.get("fallback_pattern") or "").strip()
+                if sentence:
+                    sentences.append(sentence)
+        opening = sentences[: min(3, len(sentences))]
+        closing = sentences[-min(3, len(sentences)):] if sentences else []
+        return opening, closing
+
+    def _count_template_slots(self, schema: Dict[str, Any]) -> int:
+        return sum(len(paragraph.get("slots") or []) for paragraph in schema.get("paragraphs", []))
+
+    def _minimum_slot_count(self, category: WritingCategory) -> int:
+        path = category.path or category.name
+        if any(keyword in path for keyword in LETTER_CATEGORY_KEYWORDS):
+            return 10
+        return 9
+
+    def _cleanup_rendered_text(self, text: str) -> str:
+        cleaned = (text or "").strip()
+        cleaned = re.sub(r"(?i)^Dear the ([^,\n]+),$", r"Dear members of the \1,", cleaned)
+        cleaned = re.sub(r"\s+,", ",", cleaned)
+        return cleaned.strip()
+
+    def _should_keep_multiline_paragraph(self, lines: List[str]) -> bool:
+        cues = ("dear ", "best wishes", "yours", "sincerely", "li hua", "best regards")
+        return any("\n" in line for line in lines) or any(
+            line.strip().lower().startswith(cue)
+            for line in lines
+            for cue in cues
+        )
+
+    def _build_density_slots(
+        self,
+        category: WritingCategory,
+        count: int,
+    ) -> List[Dict[str, Any]]:
+        path = category.path or category.name
+        if any(keyword in path for keyword in LETTER_CATEGORY_KEYWORDS):
+            patterns = [
+                ("补充活动背景或联系场景", "In addition, [background detail] is also important for this topic."),
+                ("补充具体安排或示例", "For example, [specific arrangement or example] can make the message clearer."),
+                ("补充预期结果或收获", "In this way, [expected result or personal gain] can be achieved."),
+                ("补充请求或期待回复", "I would really appreciate it if [specific request or expected reply]."),
+            ]
+        else:
+            patterns = [
+                ("补充背景细节", "To begin with, [background detail] made the whole experience more meaningful."),
+                ("补充具体例子", "For example, [specific example or action] showed me what to do next."),
+                ("补充感受或变化", "Because of this, [feeling or personal change] became stronger and clearer."),
+                ("补充收获与启发", "As a result, [lesson or result] has stayed in my mind ever since."),
+            ]
+
+        slots: List[Dict[str, Any]] = []
+        for index in range(count):
+            purpose, fallback_pattern = patterns[index % len(patterns)]
+            slots.append(
+                {
+                    "purpose": purpose,
+                    "required_points": [purpose],
+                    "fallback_pattern": fallback_pattern,
+                    "placeholder_labels": self._extract_placeholder_labels(fallback_pattern),
+                }
+            )
+        return slots
+
+    def _ensure_minimum_slot_density(
+        self,
+        schema: Dict[str, Any],
+        category: WritingCategory,
+    ) -> Dict[str, Any]:
+        minimum = self._minimum_slot_count(category)
+        current = self._count_template_slots(schema)
+        if current >= minimum:
+            return schema
+
+        normalized = deepcopy(schema)
+        paragraphs = normalized.get("paragraphs") or []
+        if not paragraphs:
+            return normalized
+
+        target_index = 1 if len(paragraphs) >= 2 else 0
+        target_paragraph = paragraphs[target_index]
+        existing_slots = target_paragraph.get("slots") or []
+        next_slot_index = len(existing_slots) + 1
+        for offset, slot in enumerate(self._build_density_slots(category, minimum - current), start=0):
+            existing_slots.append(
+                {
+                    "slot_key": f"p{target_paragraph.get('paragraph')}_s{next_slot_index + offset}",
+                    **slot,
+                }
+            )
+        target_paragraph["slots"] = existing_slots
+        return normalized
+
+    def _normalize_placeholder_key(self, key: str) -> str:
+        normalized = str(key or "").strip()
+        if not normalized:
+            return ""
+        if normalized.startswith("[") and normalized.endswith("]"):
+            return normalized
+        return f"[{normalized.strip('[]')}]"
+
+    def _normalize_placeholder_values(self, raw_values: Any) -> Dict[str, str]:
+        if not isinstance(raw_values, dict):
+            return {}
+        normalized: Dict[str, str] = {}
+        for key, value in raw_values.items():
+            normalized_key = self._normalize_placeholder_key(str(key))
+            normalized_value = str(value or "").strip()
+            if normalized_key and normalized_value:
+                normalized[normalized_key] = normalized_value
+        return normalized
+
+    def _infer_placeholder_values_from_rendered_text(
+        self,
+        schema_slot: Dict[str, Any],
+        rendered_text: str,
+    ) -> Dict[str, str]:
+        fallback_pattern = str(schema_slot.get("fallback_pattern") or "").strip()
+        placeholder_labels = [
+            self._normalize_placeholder_key(str(label))
+            for label in (schema_slot.get("placeholder_labels") or [])
+            if str(label).strip()
+        ]
+        if not fallback_pattern or not placeholder_labels or not (rendered_text or "").strip():
+            return {}
+
+        escaped_pattern_parts: List[str] = []
+        cursor = 0
+        group_names: List[str] = []
+        for index, placeholder in enumerate(placeholder_labels):
+            placeholder_index = fallback_pattern.find(placeholder, cursor)
+            if placeholder_index < 0:
+                return {}
+            static_text = fallback_pattern[cursor:placeholder_index]
+            escaped_pattern_parts.append(re.escape(static_text))
+            group_name = f"slot_{index}"
+            group_names.append(group_name)
+            escaped_pattern_parts.append(f"(?P<{group_name}>.+?)")
+            cursor = placeholder_index + len(placeholder)
+        escaped_pattern_parts.append(re.escape(fallback_pattern[cursor:]))
+        regex = "^" + "".join(escaped_pattern_parts) + "$"
+        match = re.match(regex, rendered_text.strip(), flags=re.DOTALL)
+        if not match:
+            return {}
+
+        inferred: Dict[str, str] = {}
+        for placeholder, group_name in zip(placeholder_labels, group_names):
+            value = str(match.group(group_name) or "").strip()
+            if value:
+                inferred[placeholder] = value
+        return inferred
+
+    def _render_slot_text_from_template(
+        self,
+        schema_slot: Dict[str, Any],
+        placeholder_values: Dict[str, str],
+        source_rendered_text: str = "",
+    ) -> str:
+        fallback_pattern = str(schema_slot.get("fallback_pattern") or "").strip()
+        placeholder_labels = [
+            self._normalize_placeholder_key(str(label))
+            for label in (schema_slot.get("placeholder_labels") or [])
+            if str(label).strip()
+        ]
+
+        if placeholder_labels:
+            rendered_text = fallback_pattern
+            for placeholder in placeholder_labels:
+                rendered_text = rendered_text.replace(
+                    placeholder,
+                    placeholder_values.get(placeholder) or placeholder,
+                )
+            return self._cleanup_rendered_text(rendered_text.strip())
+
+        if source_rendered_text.strip():
+            return self._cleanup_rendered_text(source_rendered_text.strip())
+
+        return self._cleanup_rendered_text(fallback_pattern)
+
+    def _hydrate_rendered_slots(
+        self,
+        schema: Dict[str, Any],
+        rendered_slots: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        paragraph_map = {
+            int(paragraph.get("paragraph") or 0): paragraph
+            for paragraph in rendered_slots.get("paragraphs", [])
+            if isinstance(paragraph, dict)
+        }
+        normalized_paragraphs: List[Dict[str, Any]] = []
+
+        for schema_paragraph in schema.get("paragraphs", []):
+            paragraph_index = int(schema_paragraph.get("paragraph") or 0)
+            source_paragraph = paragraph_map.get(paragraph_index, {})
+            source_slot_map = {
+                str(slot.get("slot_key") or ""): slot
+                for slot in source_paragraph.get("slots", [])
+                if isinstance(slot, dict)
+            }
+
+            normalized_slots: List[Dict[str, Any]] = []
+            for schema_slot in schema_paragraph.get("slots", []):
+                slot_key = str(schema_slot.get("slot_key") or "")
+                source_slot = source_slot_map.get(slot_key, {})
+                placeholder_values = self._normalize_placeholder_values(source_slot.get("placeholder_values"))
+                source_rendered_text = str(source_slot.get("rendered_text") or "").strip()
+                if not placeholder_values and source_rendered_text:
+                    placeholder_values = self._infer_placeholder_values_from_rendered_text(
+                        schema_slot,
+                        source_rendered_text,
+                    )
+
+                rendered_text = self._render_slot_text_from_template(
+                    schema_slot,
+                    placeholder_values,
+                    source_rendered_text,
+                )
+
+                normalized_slots.append(
+                    {
+                        "slot_key": slot_key,
+                        "rendered_text": rendered_text,
+                        "placeholder_values": placeholder_values,
+                    }
+                )
+
+            normalized_paragraphs.append(
+                {
+                    "paragraph": paragraph_index,
+                    "slots": normalized_slots,
+                }
+            )
+
+        return {"paragraphs": normalized_paragraphs}
+
+    def _render_essay_from_schema(
+        self,
+        schema: Dict[str, Any],
+        rendered_slots: Dict[str, Any],
+    ) -> str:
+        rendered_slots = self._hydrate_rendered_slots(schema, rendered_slots)
+        paragraph_map = {
+            int(paragraph.get("paragraph") or 0): paragraph
+            for paragraph in rendered_slots.get("paragraphs", [])
+            if isinstance(paragraph, dict)
+        }
+        rendered_paragraphs: List[str] = []
+
+        for schema_paragraph in schema.get("paragraphs", []):
+            paragraph_index = int(schema_paragraph.get("paragraph") or 0)
+            rendered_paragraph = paragraph_map.get(paragraph_index, {})
+            slot_map = {
+                str(slot.get("slot_key") or ""): slot
+                for slot in rendered_paragraph.get("slots", [])
+                if isinstance(slot, dict)
+            }
+            lines: List[str] = []
+            for slot in schema_paragraph.get("slots", []):
+                slot_key = str(slot.get("slot_key") or "")
+                rendered_slot = slot_map.get(slot_key, {})
+                rendered_text = str(rendered_slot.get("rendered_text") or "").strip()
+                if rendered_text:
+                    lines.append(rendered_text)
+            cleaned_lines = [line.strip() for line in lines if line and line.strip()]
+            if not cleaned_lines:
+                continue
+            if len(cleaned_lines) == 1:
+                paragraph_text = cleaned_lines[0]
+            elif self._should_keep_multiline_paragraph(cleaned_lines):
+                paragraph_text = "\n".join(cleaned_lines)
+            else:
+                paragraph_text = " ".join(cleaned_lines)
+            rendered_paragraphs.append(paragraph_text.strip())
+
+        return "\n\n".join([paragraph for paragraph in rendered_paragraphs if paragraph.strip()]).strip()
+
+    def _build_slot_fill_prompt(
+        self,
+        task: WritingTask,
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+        template: WritingTemplate,
+        template_schema: Dict[str, Any],
+        peer_samples: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        original_limit = task.word_limit or "以题目原始要求为准"
+        schema_text = json.dumps(template_schema, ensure_ascii=False, indent=2)
+        peer_sample_block = ""
+        if peer_samples:
+            peer_lines = []
+            for index, item in enumerate(peer_samples, start=1):
+                peer_lines.append(
+                    f"{index}. 真题：{item['task_content']}\n"
+                    f"   要求：{item['requirements'] or '无'}\n"
+                    f"   已有范文片段：{item['sample_excerpt']}"
+                )
+            peer_sample_block = (
+                "\n## 同子类已有真题范文（只用于避免写得太像）\n"
+                + "\n".join(peer_lines)
+                + "\n"
+            )
+        return f"""你是北京中考英语写作模板填充专家。请严格根据给定模板骨架，为这道作文题逐槽位填充值。
+
+## 分类信息
+- 文体组：{group_category.name if group_category else "未分类"}
+- 主类：{major_category.name if major_category else "未分类"}
+- 子类：{category.name}
+- 分类路径：{category.path}
+- 训练范文字数目标：约 {DEFAULT_WORD_TARGET} 词
+- 原题字数要求：{original_limit}
+
+## 作文题目
+{task.task_content}
+
+## 写作要求
+{task.requirements or "无"}
+
+## 子类模板名称
+{template.template_name}
+
+## 严格模板骨架
+```json
+{schema_text}
+```
+{peer_sample_block}
+
+## 填充要求
+1. 你只能按上面的 paragraph 和 slot_key 顺序输出，不能新增、删除或改名。
+2. 对于带占位符的模板句，你必须保留模板句骨架本身，只能填写 placeholder_values；rendered_text 必须等于“fallback_pattern 替换占位符后的最终句子”，不能改写句骨架。
+3. 对于没有占位符的模板句，rendered_text 必须保留该模板句本身，或只做极少量格式性调整。
+4. placeholder_values 里只能放“纯占位内容”，不能把模板里已经存在的引导词重复写进去。
+5. 最终渲染出的整篇英文作文必须能覆盖题目要求，并且整体字数要落在 130-170 词之间。
+6. 书信/邮件类必须保留称呼、正文、结尾、署名槽位；不能把书信写成普通短文。
+7. 除标题、日期、称呼、署名外，其余正文信息 slot 请尽量写成 12-24 个英文词的完整表达，优先补足原因、细节、感受、结果和期待，避免只写空泛套话。
+8. 绝对不要写出 Dear the ...、I hope my ideas can be taken、My dream school is my dream and goal 这类不自然表达。
+9. 如果上面给了“同子类已有真题范文”，你必须写出明显不同的场景细节、理由、例子和感受，不能只是改几个词后复用同一篇内容。
+10. 只输出 JSON，不要输出解释。
+
+## 输出格式
+```json
+{{
+  "paragraphs": [
+    {{
+      "paragraph": 1,
+      "slots": [
+        {{
+          "slot_key": "p1_s1",
+          "rendered_text": "Dear Peter,",
+          "placeholder_values": {{"[recipient]": "Peter"}}
+        }},
+        {{
+          "slot_key": "p1_s2",
+          "rendered_text": "I am writing to invite you to our English festival next Friday.",
+          "placeholder_values": {{"[purpose]": "invite you to our English festival next Friday"}}
+        }}
+      ]
+    }}
+  ]
+}}
+```"""
+
+    def _build_slot_expand_prompt(
+        self,
+        task: WritingTask,
+        template_schema: Dict[str, Any],
+        rendered_slots: Dict[str, Any],
+        current_word_count: int,
+    ) -> str:
+        target_low = max(SAMPLE_MIN_WORDS, DEFAULT_WORD_TARGET - 5)
+        target_high = min(SAMPLE_MAX_WORDS, DEFAULT_WORD_TARGET + 10)
+        missing_words = max(0, target_low - current_word_count)
+        current_essay = self._render_essay_from_schema(template_schema, rendered_slots)
+        return f"""你是北京中考英语写作扩写专家。下面这道作文已经按固定模板槽位填好，但当前渲染后只有 {current_word_count} 词，偏短。
+
+请在不改变 paragraph 数量、slot_key、slot 顺序的前提下，只通过扩充 placeholder_values 或 rendered_text，让最终英文作文达到 {target_low}-{target_high} 词，理想约 {DEFAULT_WORD_TARGET} 词。
+当前至少还需要补足约 {missing_words} 个英文词。
+
+## 原题
+{task.task_content}
+
+## 写作要求
+{task.requirements or "无"}
+
+## 当前英文成文
+```text
+{current_essay}
+```
+
+## 模板骨架
+```json
+{json.dumps(template_schema, ensure_ascii=False, indent=2)}
+```
+
+## 当前槽位填充
+```json
+{json.dumps(rendered_slots, ensure_ascii=False, indent=2)}
+```
+
+## 扩写要求
+1. 不能新增、删除、重排任何 paragraph 或 slot_key。
+2. 对于带占位符的模板句，只能扩充 placeholder_values，让 rendered_text 继续等于“模板句骨架 + 替换后的占位内容”。
+3. 尽量补足背景、原因、细节、感受、结果、期待。
+4. 不能把模板句骨架整体改写成另一种句子。
+5. 标题、日期、称呼、署名类 slot 可以简短；其余正文信息 slot 请尽量扩到 12-24 个英文词，并优先写成“信息 + 细节/原因/结果”的完整表达。
+6. 如果是通知、演讲稿、倡议书、建议信、回信等应用文，请把“原因、安排、规则、建议、期待”写得更具体，避免只写一句很短的泛泛提醒。
+7. 只输出更新后的 JSON，不要解释。
+"""
+
+    async def _expand_rendered_slots_to_target(
+        self,
+        *,
+        task_content: str,
+        requirements: str,
+        word_limit: Optional[str],
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+        template_schema: Dict[str, Any],
+        rendered_slots: Dict[str, Any],
+        current_word_count: int,
+        operation_prefix: str,
+        peer_samples: Optional[List[Dict[str, str]]] = None,
+    ) -> tuple[Dict[str, Any], str, int, List[str]]:
+        """在不改模板骨架的前提下，多轮扩充 slot 填充值直到达到目标字数。"""
+        latest_slots = rendered_slots
+        latest_essay = self._render_essay_from_schema(template_schema, latest_slots)
+        latest_word_count = current_word_count
+        latest_issues = self._detect_quality_issues(
+            essay=latest_essay,
+            category=category,
+            template_schema=template_schema,
+            rendered_slots=latest_slots,
+            peer_samples=peer_samples,
+        )
+        expand_prompt = self._build_slot_expand_prompt(
+            task=WritingTask(
+                task_content=task_content,
+                requirements=requirements,
+                word_limit=word_limit,
+            ),
+            template_schema=template_schema,
+            rendered_slots=latest_slots,
+            current_word_count=current_word_count,
+        )
+
+        for attempt in range(3):
+            expand_text = await self.ai_service.chat_async(
+                expand_prompt,
+                system_prompt="你是严格保持模板槽位不变的英文扩写专家。",
+                operation=f"{operation_prefix}.expand_slots_{attempt + 1}",
+            )
+            expanded_slots = self._hydrate_rendered_slots(
+                template_schema,
+                self._parse_slot_fill_result(expand_text),
+            )
+            if not self._validate_rendered_slots(template_schema, expanded_slots, category=category):
+                expand_prompt += "\n\n⚠️ 上一次扩写没有保持模板槽位和句骨架完全一致，请只扩充占位内容后重试。"
+                continue
+
+            hydrated_slots = expanded_slots
+            expanded_essay = self._render_essay_from_schema(template_schema, hydrated_slots)
+            expanded_word_count = self._count_english_words(expanded_essay)
+            expanded_issues = self._detect_quality_issues(
+                essay=expanded_essay,
+                category=category,
+                template_schema=template_schema,
+                rendered_slots=hydrated_slots,
+                peer_samples=peer_samples,
+            )
+
+            latest_slots = hydrated_slots
+            latest_essay = expanded_essay
+            latest_word_count = expanded_word_count
+            latest_issues = expanded_issues
+
+            if not any("字数不在" in issue for issue in expanded_issues):
+                return latest_slots, latest_essay, latest_word_count, latest_issues
+
+            expand_prompt = self._build_slot_expand_prompt(
+                task=WritingTask(
+                    task_content=task_content,
+                    requirements=requirements,
+                    word_limit=word_limit,
+                ),
+                template_schema=template_schema,
+                rendered_slots=latest_slots,
+                current_word_count=latest_word_count,
+            )
+            expand_prompt += (
+                "\n\n⚠️ 这次扩写后仍然没有进入 130-170 词。"
+                "请继续保持模板句骨架不变，只把各 slot 的占位内容写得更具体、更完整。"
+            )
+
+        return latest_slots, latest_essay, latest_word_count, latest_issues
+
+    def _parse_slot_fill_result(self, result_text: str) -> Dict[str, Any]:
+        if not result_text:
+            return {}
+        json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
+        if not json_match:
+            return {}
+        try:
+            parsed = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def _validate_rendered_slots(
+        self,
+        template_schema: Dict[str, Any],
+        rendered_slots: Dict[str, Any],
+        *,
+        category: Optional[WritingCategory] = None,
+    ) -> bool:
+        rendered_paragraphs = rendered_slots.get("paragraphs")
+        if not isinstance(rendered_paragraphs, list):
+            return False
+
+        schema_paragraphs = template_schema.get("paragraphs", [])
+        if len(rendered_paragraphs) != len(schema_paragraphs):
+            return False
+
+        paragraph_map = {
+            int(item.get("paragraph") or 0): item
+            for item in rendered_paragraphs
+            if isinstance(item, dict)
+        }
+
+        ordered_slot_texts: List[str] = []
+        for schema_paragraph in schema_paragraphs:
+            paragraph_index = int(schema_paragraph.get("paragraph") or 0)
+            rendered_paragraph = paragraph_map.get(paragraph_index)
+            if not rendered_paragraph:
+                return False
+
+            rendered_slot_items = [
+                slot
+                for slot in rendered_paragraph.get("slots", [])
+                if isinstance(slot, dict)
+            ]
+            schema_slots = schema_paragraph.get("slots") or []
+            if len(rendered_slot_items) != len(schema_slots):
+                return False
+
+            for index, schema_slot in enumerate(schema_slots):
+                slot_key = str(schema_slot.get("slot_key") or "")
+                rendered_slot = rendered_slot_items[index]
+                if str(rendered_slot.get("slot_key") or "") != slot_key:
+                    return False
+                rendered_text = str(rendered_slot.get("rendered_text") or "").strip()
+                if not rendered_text:
+                    return False
+                if self._extract_placeholder_labels(rendered_text):
+                    return False
+                placeholder_values = self._normalize_placeholder_values(rendered_slot.get("placeholder_values"))
+                if not placeholder_values:
+                    placeholder_values = self._infer_placeholder_values_from_rendered_text(
+                        schema_slot,
+                        rendered_text,
+                    )
+                expected_text = self._render_slot_text_from_template(
+                    schema_slot,
+                    placeholder_values,
+                    rendered_text,
+                )
+                if expected_text != self._cleanup_rendered_text(rendered_text):
+                    return False
+                if any(
+                    not placeholder_values.get(self._normalize_placeholder_key(str(label)))
+                    for label in (schema_slot.get("placeholder_labels") or [])
+                    if str(label).strip()
+                ):
+                    return False
+                ordered_slot_texts.append(rendered_text)
+
+        if category:
+            ordered_text = "\n".join(ordered_slot_texts)
+            is_letter = any(keyword in (category.path or category.name) for keyword in LETTER_CATEGORY_KEYWORDS)
+            is_speech = any(keyword in (category.path or category.name) for keyword in SPEECH_CATEGORY_KEYWORDS)
+            if is_letter:
+                if not ordered_slot_texts or not re.match(r"(?i)^Dear\b.+,$", ordered_slot_texts[0].strip()):
+                    return False
+                if not any(
+                    re.match(
+                        r"(?is)^(Best wishes,|Yours sincerely,|Yours,|Sincerely,|Best regards,)(\s*\n.+)?$",
+                        text.strip(),
+                    )
+                    for text in ordered_slot_texts[-3:]
+                ):
+                    return False
+            else:
+                if re.search(r"(?i)^Dear\b", ordered_text):
+                    return False
+            if is_speech and re.search(r"(?i)^Dear\b", ordered_text):
+                return False
+        return True
+
+    def _detect_quality_issues(
+        self,
+        *,
+        essay: str,
+        category: WritingCategory,
+        template_schema: Dict[str, Any],
+        rendered_slots: Dict[str, Any],
+        peer_samples: Optional[List[Dict[str, str]]] = None,
+    ) -> List[str]:
+        issues: List[str] = []
+        if not essay.strip():
+            return ["英文范文为空"]
+
+        if self._extract_placeholder_labels(essay):
+            issues.append("仍有未替换占位符")
+
+        for pattern in PROHIBITED_PHRASE_PATTERNS:
+            if re.search(pattern, essay):
+                issues.append(f"命中禁用表达: {pattern}")
+
+        for exact_phrase in (
+            "I would like to mention It",
+            "is also worth noting.",
+            "I hope my ideas can be taken.",
+            "My dream school is my dream and goal.",
+        ):
+            if exact_phrase in essay:
+                issues.append(f"命中不自然表达: {exact_phrase}")
+
+        sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", essay) if sentence.strip()]
+        duplicates = [sentence for sentence in set(sentences) if sentences.count(sentence) > 1]
+        if duplicates:
+            issues.append("存在重复句")
+
+        is_letter = any(keyword in (category.path or category.name) for keyword in LETTER_CATEGORY_KEYWORDS)
+        if is_letter:
+            if not essay.strip().startswith("Dear "):
+                issues.append("书信类缺少自然称呼")
+            if "Dear the " in essay:
+                issues.append("书信称呼不自然")
+            if not re.search(r"(?im)^(Best wishes,|Yours sincerely,|Yours,|Sincerely,|Best regards,)\s*$", essay):
+                issues.append("书信类缺少自然收尾")
+        else:
+            if re.search(r"(?im)^Dear\b", essay):
+                issues.append("非书信类误用了书信格式")
+
+        if not self._validate_rendered_slots(template_schema, rendered_slots, category=category):
+            issues.append("槽位结构与模板骨架不一致")
+
+        word_count = self._count_english_words(essay)
+        if word_count < SAMPLE_MIN_WORDS or word_count > SAMPLE_MAX_WORDS:
+            issues.append(f"字数不在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间")
+
+        if peer_samples:
+            highest_similarity = 0.0
+            for item in peer_samples:
+                similarity = self._essay_similarity(essay, item.get("sample_excerpt") or "")
+                highest_similarity = max(highest_similarity, similarity)
+            if highest_similarity >= 0.86:
+                issues.append(f"与同子类既有真题范文过于相似（{highest_similarity:.2f}）")
+
+        return list(dict.fromkeys(issues))
+
+    def _build_slot_review_prompt(
+        self,
+        *,
+        task_content: str,
+        requirements: str,
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+        template_schema: Dict[str, Any],
+        rendered_slots: Dict[str, Any],
+        issues: List[str],
+        word_count: int,
+        peer_samples: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        peer_sample_block = ""
+        if peer_samples:
+            peer_lines = []
+            for index, item in enumerate(peer_samples, start=1):
+                peer_lines.append(
+                    f"{index}. 真题：{item['task_content']}\n"
+                    f"   范文片段：{item['sample_excerpt']}"
+                )
+            peer_sample_block = (
+                "\n## 同子类已有真题范文（请避免写得过于相似）\n"
+                + "\n".join(peer_lines)
+                + "\n"
+            )
+        return f"""你是北京中考英语写作教研审稿专家。下面这篇作文已经按固定模板槽位填充完成，但还需要做最终英语质检。
+
+请只修改各 slot 的 rendered_text，使最终作文：
+1. 继续完全遵守原 paragraph 和 slot_key；
+2. 英语自然、地道、适合初中生背诵迁移；
+3. 严格符合“{category.path}”这个子类；
+4. 最终字数保持在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间，理想约 {DEFAULT_WORD_TARGET} 词；
+5. 不能出现 Dear the、I hope my ideas can be taken、My dream school is my dream and goal 这类表达。
+
+## 分类信息
+- 文体组：{group_category.name if group_category else "未分类"}
+- 主类：{major_category.name if major_category else "未分类"}
+- 子类：{category.name}
+- 分类路径：{category.path}
+
+## 题目
+{task_content}
+
+## 写作要求
+{requirements or "无"}
+
+## 模板骨架
+```json
+{json.dumps(template_schema, ensure_ascii=False, indent=2)}
+```
+
+## 当前槽位填充
+```json
+{json.dumps(rendered_slots, ensure_ascii=False, indent=2)}
+```
+{peer_sample_block}
+
+## 当前问题
+- 当前字数：{word_count}
+- 需要修正：{"；".join(issues) if issues else "无，但请继续提升为教研级英文"}
+
+## 输出要求
+1. 只能输出 JSON。
+2. 不能新增、删除、重排 paragraph 或 slot。
+3. 对于带占位符的模板句，只能修正 placeholder_values，并让 rendered_text 严格等于模板句骨架填充后的结果。
+4. 每个 slot 都必须是完整、自然、功能明确的英文句子或格式行。
+5. 如果给了同子类其他真题范文，请确保本题的细节、理由、事件安排、情感变化和结尾表达与它们明显不同。
+"""
+
+    async def _generate_slot_filled_official_sample(
+        self,
+        *,
+        task_content: str,
+        requirements: str,
+        word_limit: Optional[str],
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+        template: WritingTemplate,
+        template_schema: Dict[str, Any],
+        operation_prefix: str,
+        peer_samples: Optional[List[Dict[str, str]]] = None,
+        allow_peerless_fallback: bool = True,
+    ) -> tuple[Dict[str, Any], str, int, str]:
+        prompt = self._build_slot_fill_prompt(
+            task=WritingTask(
+                task_content=task_content,
+                requirements=requirements,
+                word_limit=word_limit,
+            ),
+            category=category,
+            major_category=major_category,
+            group_category=group_category,
+            template=template,
+            template_schema=template_schema,
+            peer_samples=peer_samples,
+        )
+
+        last_issues: List[str] = []
+        for attempt in range(3):
+            result_text = await self.ai_service.chat_async(
+                prompt,
+                system_prompt="你是严格执行模板骨架的北京中考英语写作专家。",
+                operation=f"{operation_prefix}.generate_slots",
+            )
+            rendered_slots = self._hydrate_rendered_slots(
+                template_schema,
+                self._parse_slot_fill_result(result_text),
+            )
+            if not self._validate_rendered_slots(template_schema, rendered_slots, category=category):
+                prompt += "\n\n⚠️ 上一次输出没有严格遵守模板槽位顺序，请逐 paragraph / slot_key 原样重试。"
+                continue
+
+            essay = self._render_essay_from_schema(template_schema, rendered_slots)
+            word_count = self._count_english_words(essay)
+            issues = self._detect_quality_issues(
+                essay=essay,
+                category=category,
+                template_schema=template_schema,
+                rendered_slots=rendered_slots,
+                peer_samples=peer_samples,
+            )
+            if any("字数不在" in issue for issue in issues):
+                rendered_slots, essay, word_count, issues = await self._expand_rendered_slots_to_target(
+                    task_content=task_content,
+                    requirements=requirements,
+                    word_limit=word_limit,
+                    category=category,
+                    major_category=major_category,
+                    group_category=group_category,
+                    template_schema=template_schema,
+                    rendered_slots=rendered_slots,
+                    current_word_count=word_count,
+                    operation_prefix=operation_prefix,
+                    peer_samples=peer_samples,
+                )
+            if issues:
+                review_prompt = self._build_slot_review_prompt(
+                    task_content=task_content,
+                    requirements=requirements,
+                    category=category,
+                    major_category=major_category,
+                    group_category=group_category,
+                    template_schema=template_schema,
+                    rendered_slots=rendered_slots,
+                    issues=issues,
+                    word_count=word_count,
+                    peer_samples=peer_samples,
+                )
+                review_text = await self.ai_service.chat_async(
+                    review_prompt,
+                    system_prompt="你是只允许改写槽位文本的英语写作审稿专家。",
+                    operation=f"{operation_prefix}.review_slots",
+                )
+                reviewed_slots = self._hydrate_rendered_slots(
+                    template_schema,
+                    self._parse_slot_fill_result(review_text),
+                )
+                if self._validate_rendered_slots(template_schema, reviewed_slots, category=category):
+                    rendered_slots = reviewed_slots
+                    essay = self._render_essay_from_schema(template_schema, rendered_slots)
+                    word_count = self._count_english_words(essay)
+                    issues = self._detect_quality_issues(
+                        essay=essay,
+                        category=category,
+                        template_schema=template_schema,
+                        rendered_slots=rendered_slots,
+                        peer_samples=peer_samples,
+                    )
+            if not issues:
+                translation = await self._translate_essay(essay)
+                if not translation or not translation.strip():
+                    raise ValueError("AI 生成范文失败：中文翻译为空")
+                return rendered_slots, essay, word_count, translation
+
+            last_issues = issues
+            prompt += (
+                "\n\n⚠️ 上一次结果仍未达标："
+                + "；".join(issues)
+                + "。请继续保持 paragraph 和 slot_key 完全不变，只修正 rendered_text。"
+            )
+
+        if allow_peerless_fallback and peer_samples:
+            logger.info(
+                "正式范文生成退回无同类参考模式 category=%s template_id=%s",
+                category.path,
+                template.id,
+            )
+            return await self._generate_slot_filled_official_sample(
+                task_content=task_content,
+                requirements=requirements,
+                word_limit=word_limit,
+                category=category,
+                major_category=major_category,
+                group_category=group_category,
+                template=template,
+                template_schema=template_schema,
+                operation_prefix=operation_prefix,
+                peer_samples=None,
+                allow_peerless_fallback=False,
+            )
+
+        raise ValueError("AI 生成范文失败：" + ("；".join(last_issues) if last_issues else "槽位输出未通过质检"))
+
+    async def _translate_essay(self, essay: str) -> str:
+        prompt = f"请将下面英文范文翻译成自然流畅的中文，保持段落对应，并只输出中文翻译：\n\n{essay}"
+        return await self.ai_service.chat_async(
+            prompt,
+            system_prompt="你是专业英汉翻译。",
+            operation="writing_service.translate_sample",
+        )
+
     def _sample_meets_quality_bar(
         self,
         sample: Optional[WritingSample],
         *,
         expected_template_id: Optional[int] = None,
+        template: Optional[WritingTemplate] = None,
     ) -> bool:
         """判断现有范文是否满足当前质量门槛。"""
         if not sample:
@@ -198,10 +1416,132 @@ class WritingService:
         if not sample.translation or not sample.translation.strip():
             return False
 
+        if (sample.generation_mode or "").strip() != OFFICIAL_GENERATION_MODE:
+            return False
+
+        if (sample.quality_status or "").strip() != QUALITY_PASSED:
+            return False
+
         actual_word_count = sample.word_count or self._count_english_words(sample.sample_content)
         if not (SAMPLE_MIN_WORDS <= actual_word_count <= SAMPLE_MAX_WORDS):
             return False
 
+        if template is not None:
+            if sample.template_version != (template.template_version or 1):
+                return False
+            template_schema = self._normalize_template_schema(
+                template.template_schema_json,
+                fallback_content=template.template_content or "",
+                fallback_structure=template.structure or "",
+            )
+            rendered_slots = self._hydrate_rendered_slots(
+                template_schema,
+                self._parse_json_value(sample.rendered_slots_json) or {},
+            )
+            if not isinstance(rendered_slots, dict):
+                return False
+            if not self._validate_rendered_slots(template_schema, rendered_slots, category=template.category):
+                return False
+            rendered_essay = self._render_essay_from_schema(template_schema, rendered_slots)
+            if rendered_essay.strip() != (sample.sample_content or "").strip():
+                return False
+            if self._detect_quality_issues(
+                essay=rendered_essay,
+                category=template.category,
+                template_schema=template_schema,
+                rendered_slots=rendered_slots,
+            ):
+                return False
+
+        return True
+
+    def _select_official_sample(
+        self,
+        samples: Optional[List[WritingSample]],
+        *,
+        template: Optional[WritingTemplate] = None,
+        expected_template_id: Optional[int] = None,
+    ) -> Optional[WritingSample]:
+        ordered_samples = sorted(samples or [], key=lambda item: item.id or 0, reverse=True)
+        for sample in ordered_samples:
+            if self._sample_meets_quality_bar(
+                sample,
+                expected_template_id=expected_template_id,
+                template=template,
+            ):
+                return sample
+        return None
+
+    def _select_display_sample(
+        self,
+        samples: Optional[List[WritingSample]],
+        *,
+        template: Optional[WritingTemplate] = None,
+        expected_template_id: Optional[int] = None,
+    ) -> Optional[WritingSample]:
+        """读接口只返回当前模板版本下的正式范文。"""
+        return self._select_official_sample(
+            samples,
+            template=template,
+            expected_template_id=expected_template_id,
+        )
+
+    def _sample_display_quality_status(
+        self,
+        sample: Optional[WritingSample],
+        *,
+        template: Optional[WritingTemplate] = None,
+        expected_template_id: Optional[int] = None,
+    ) -> str:
+        if not sample:
+            return QUALITY_PENDING
+        if self._sample_meets_quality_bar(
+            sample,
+            expected_template_id=expected_template_id,
+            template=template,
+        ):
+            return sample.quality_status or QUALITY_PASSED
+        return QUALITY_PENDING
+
+    def _repair_sample_from_rendered_slots(
+        self,
+        sample: WritingSample,
+        template: WritingTemplate,
+    ) -> bool:
+        template_schema = self._normalize_template_schema(
+            template.template_schema_json,
+            fallback_content=template.template_content or "",
+            fallback_structure=template.structure or "",
+        )
+        rendered_slots = self._hydrate_rendered_slots(
+            template_schema,
+            self._parse_json_value(sample.rendered_slots_json) or {},
+        )
+        if not isinstance(rendered_slots, dict):
+            return False
+        if not self._validate_rendered_slots(template_schema, rendered_slots, category=template.category):
+            return False
+
+        rendered_essay = self._render_essay_from_schema(template_schema, rendered_slots)
+        word_count = self._count_english_words(rendered_essay)
+        if (
+            not rendered_essay.strip()
+            or not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS)
+            or self._detect_quality_issues(
+                essay=rendered_essay,
+                category=template.category,
+                template_schema=template_schema,
+                rendered_slots=rendered_slots,
+            )
+        ):
+            return False
+
+        sample.sample_content = rendered_essay
+        sample.word_count = word_count
+        sample.template_id = template.id
+        sample.template_version = template.template_version or 1
+        sample.generation_mode = OFFICIAL_GENERATION_MODE
+        sample.quality_status = QUALITY_PASSED
         return True
 
     async def _revise_essay_length(
@@ -271,10 +1611,11 @@ class WritingService:
         score_level: str = "一档",
         force_template_refresh: bool = False,
     ) -> WritingSample:
-        """按作文子类模板生成范文。"""
+        """按作文子类模板逐槽位生成正式范文。"""
         result = await self.db.execute(
             select(WritingTask)
             .options(
+                selectinload(WritingTask.samples),
                 selectinload(WritingTask.paper),
                 selectinload(WritingTask.category),
                 selectinload(WritingTask.major_category),
@@ -291,125 +1632,84 @@ class WritingService:
             if not category_result.success or not category_result.category:
                 raise ValueError(category_result.error or "作文分类失败")
 
+        category = task.category
+        if category is None and task.category_id:
+            category = await self.db.get(WritingCategory, task.category_id)
+        major_category = task.major_category
+        if major_category is None and task.major_category_id:
+            major_category = await self.db.get(WritingCategory, task.major_category_id)
+        group_category = task.group_category
+        if group_category is None and task.group_category_id:
+            group_category = await self.db.get(WritingCategory, task.group_category_id)
+
         template: Optional[WritingTemplate] = None
         if template_id:
-            template_result = await self.db.execute(select(WritingTemplate).where(WritingTemplate.id == template_id))
+            template_result = await self.db.execute(
+                select(WritingTemplate)
+                .options(selectinload(WritingTemplate.category))
+                .where(WritingTemplate.id == template_id)
+            )
             template = template_result.scalar_one_or_none()
         if template is None:
             template = await self.get_or_create_template(
                 task.category_id,
                 anchor_task=task,
                 force_refresh=force_template_refresh,
+                refresh_if_stale=force_template_refresh,
             )
 
-        prompt = self._build_sample_prompt(
-            task=task,
-            category=task.category,
-            major_category=task.major_category,
-            group_category=task.group_category,
-            template_content=template.template_content if template else "",
-            tips=template.tips if template and template.tips else "",
-            structure=template.structure if template and template.structure else "",
+        template_schema = self._normalize_template_schema(
+            template.template_schema_json,
+            fallback_content=template.template_content or "",
+            fallback_structure=template.structure or "",
         )
+        if not template_schema.get("paragraphs"):
+            raise ValueError("作文模板骨架为空，无法生成正式范文")
 
-        result_text = ""
-        english_essay = ""
-        chinese_translation: Optional[str] = None
-        word_count = 0
-
-        for attempt in range(3):
-            result_text = await self.ai_service.chat_async(
-                prompt,
-                system_prompt="你是北京中考英语写作教学专家。",
-                operation="writing_service.generate_sample",
-            )
-            if not result_text:
-                raise ValueError("AI 生成范文失败：返回内容为空")
-
-            english_essay, chinese_translation = self._parse_essay_with_translation(result_text)
-            word_count = self._count_english_words(english_essay)
-            logger.info("作文范文生成尝试 %s/3，字数=%s", attempt + 1, word_count)
-
-            if SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS:
-                break
-            prompt = (
-                f"{prompt}\n\n"
-                f"⚠️ 上一次英文范文约 {word_count} 词，不符合要求。请重新生成，并将英文部分控制在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间，"
-                "不要省略要点，也不要写成长篇教学范文。"
-            )
-            # 段落结构校验
-            template_para_count = self._parse_template_paragraph_count(template.structure if template else "")
-            if template_para_count > 0:
-                essay_para_count = self._count_paragraphs(english_essay)
-                if essay_para_count != template_para_count:
-                    logger.warning(
-                        "范文段落数(%s)与模板(%s)不一致, task_id=%s",
-                        essay_para_count, template_para_count, task.id,
-                    )
-                    if attempt < 2:
-                        prompt += (
-                            f"\n\n⚠️ 上一次范文有 {essay_para_count} 个段落，"
-                            f"但模板要求 {template_para_count} 个段落。请严格对齐。"
-                        )
-
-        revision_round = 0
-        while english_essay and not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS) and revision_round < 3:
-            english_essay, word_count = await self._revise_essay_length(
-                essay=english_essay,
-                task=task,
-                category=task.category,
-                major_category=task.major_category,
-                group_category=task.group_category,
-                min_words=SAMPLE_MIN_WORDS,
-                max_words=SAMPLE_MAX_WORDS,
-            )
-            revision_round += 1
-
-        if english_essay and not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS):
-            fallback_prompt = (
-                f"{self._build_sample_prompt(task, task.category, task.major_category, task.group_category, template.template_content if template else '', template.tips if template and template.tips else '', template.structure if template and template.structure else '')}\n\n"
-                f"⚠️ 最终要求再强调一次：只输出英文范文和中文翻译，英文部分必须在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间,"
-                "理想区间为 145-155 词。请适度增加细节、原因、感受和结尾升华。"
-            )
-            result_text = await self.ai_service.chat_async(
-                fallback_prompt,
-                system_prompt="你是严格执行字数要求的北京中考英语写作教学专家。",
-                operation="writing_service.generate_sample_fallback",
-            )
-            if result_text:
-                english_essay, chinese_translation = self._parse_essay_with_translation(result_text)
-                word_count = self._count_english_words(english_essay)
-
-        if not chinese_translation and english_essay:
-            translation_prompt = f"请将下面英文范文翻译成自然流畅的中文，保持段落对应：\n\n{english_essay}"
-            chinese_translation = await self.ai_service.chat_async(
-                translation_prompt,
-                system_prompt="你是专业英汉翻译。",
-                operation="writing_service.translate_sample",
-            )
-
-        if english_essay:
-            word_count = self._count_english_words(english_essay)
+        peer_samples = await self._load_peer_sample_contexts(
+            category_id=task.category_id,
+            exclude_task_id=task.id,
+            limit=3,
+        )
+        rendered_slots, english_essay, word_count, chinese_translation = await self._generate_slot_filled_official_sample(
+            task_content=task.task_content,
+            requirements=task.requirements or "",
+            word_limit=task.word_limit,
+            category=category,
+            major_category=major_category,
+            group_category=group_category,
+            template=template,
+            template_schema=template_schema,
+            operation_prefix="writing_service.official_sample",
+            peer_samples=peer_samples,
+        )
 
         if not english_essay or not english_essay.strip():
             raise ValueError("AI 生成范文失败：英文范文为空")
 
-        if not chinese_translation or not chinese_translation.strip():
-            raise ValueError("AI 生成范文失败：中文翻译为空")
+        if not self._validate_rendered_slots(template_schema, rendered_slots, category=category):
+            raise ValueError("AI 生成范文失败：槽位输出与模板骨架不一致")
 
         if not (SAMPLE_MIN_WORDS <= word_count <= SAMPLE_MAX_WORDS):
             raise ValueError(
                 f"AI 生成范文失败：英文范文字数 {word_count} 不在 {SAMPLE_MIN_WORDS}-{SAMPLE_MAX_WORDS} 词之间"
             )
 
+        await self.db.execute(delete(WritingSample).where(WritingSample.task_id == task.id))
+        await self.db.flush()
+
         sample = WritingSample(
             task_id=task.id,
             template_id=template.id if template else None,
-            sample_content=english_essay or result_text,
+            sample_content=english_essay,
             sample_type="AI生成",
             score_level=score_level,
             word_count=word_count,
             translation=chinese_translation,
+            rendered_slots_json=json.dumps(rendered_slots, ensure_ascii=False),
+            template_version=template.template_version or 1,
+            generation_mode=OFFICIAL_GENERATION_MODE,
+            quality_status=QUALITY_PASSED,
         )
         self.db.add(sample)
         await self.db.commit()
@@ -483,71 +1783,576 @@ class WritingService:
             )
         return examples
 
+    def _build_representative_task_context(
+        self,
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+    ) -> tuple[str, str]:
+        path = category.path or category.name
+        category_name = category.name
+        prompts = {
+            "邀请信": (
+                "假如你校将举办英语文化节，请给你的好友 Peter 写一封邀请信，邀请他参加。",
+                "内容包括：活动时间地点、主要活动、邀请理由以及期待回复。"
+            ),
+            "邀请回复信": (
+                "假如你收到了好友邀请你参加周末活动的邮件，请写一封英文回信回复。",
+                "内容包括：是否接受邀请、原因、你的安排以及礼貌收尾。"
+            ),
+            "活动邀请邮件": (
+                "假如你是李华，请给交换生 Jim 发一封活动邀请邮件，邀请他参加端午节体验活动。",
+                "内容包括：活动时间地点、体验内容、邀请原因和期待回复。"
+            ),
+            "建议信": (
+                "假如你的朋友在学习和运动之间很难平衡，请写一封建议信帮助他。",
+                "内容包括：问题背景、两到三条建议及建议带来的帮助。"
+            ),
+            "求助信": (
+                "假如你在英语学习上遇到了困难，请给外教写一封求助信。",
+                "内容包括：你遇到的问题、已做的尝试以及希望获得的帮助。"
+            ),
+            "问题解决建议": (
+                "围绕学生常见的时间管理问题写一篇英语建议短文。",
+                "内容包括：问题现象、解决建议、原因和预期效果。"
+            ),
+            "介绍信": (
+                "假如学校公众号正在征集英文稿件，请写一封介绍信介绍一个值得推荐的中国文化主题。",
+                "内容包括：介绍对象、核心信息、意义和推荐理由。"
+            ),
+            "人物介绍": (
+                "假如英文杂志正在征集“我的榜样”栏目文章，请介绍一位对你影响很大的人。",
+                "内容包括：人物身份、典型事例、对你的影响和感受。"
+            ),
+            "活动介绍": (
+                "假如你要向来访学生介绍你校的一项特色活动，请写一篇英文介绍。",
+                "内容包括：活动内容、安排、亮点和参与收获。"
+            ),
+            "演讲稿": (
+                "假如你要在学校英语角做一次英文演讲，请围绕一个积极校园主题写一篇演讲稿。",
+                "内容包括：背景、核心观点、例子和呼吁。"
+            ),
+            "通知": (
+                "假如学生会要发布一则英语通知，请写一篇通知。",
+                "内容包括：活动时间、地点、对象、要求和提醒。"
+            ),
+            "倡议书": (
+                "假如学校开展环保主题活动，请写一篇英文倡议书。",
+                "内容包括：问题背景、倡议内容、具体行动和号召。"
+            ),
+            "个人看法": (
+                "请围绕一个常见学习或生活话题写一篇表达个人看法的英语短文。",
+                "内容包括：你的观点、理由和总结。"
+            ),
+            "利弊分析": (
+                "请围绕一个校园生活现象写一篇英语利弊分析短文。",
+                "内容包括：优点、缺点和你的结论。"
+            ),
+            "现象评价": (
+                "请针对一个校园或社会现象写一篇英语评价短文。",
+                "内容包括：现象描述、你的评价和建议。"
+            ),
+            "方法介绍": (
+                "请写一篇英语短文介绍一种高效学习方法。",
+                "内容包括：方法步骤、具体做法和好处。"
+            ),
+            "流程说明": (
+                "请写一篇英语短文说明完成一项简单任务的流程。",
+                "内容包括：步骤顺序、关键细节和注意事项。"
+            ),
+            "规则说明": (
+                "请写一篇英语短文介绍一组校园规则。",
+                "内容包括：规则内容、原因和遵守后的好处。"
+            ),
+        }
+        if category_name in prompts:
+            return prompts[category_name]
+
+        if "记叙文" in path:
+            return (
+                f"请围绕“{category_name}”这一主题写一篇适合中考训练的英语记叙文。",
+                "内容包括：背景起因、经过细节、感受变化以及收获启发。"
+            )
+        if "应用文" in path:
+            return (
+                f"请围绕“{category_name}”这一子类写一篇代表性英语应用文。",
+                "内容包括：写作目的、核心信息、补充细节以及礼貌收尾。"
+            )
+        return (
+            f"请围绕“{group_category.name if group_category else category_name} / {major_category.name if major_category else category_name} / {category_name}”写一篇代表性英语范文。",
+            "内容包括：核心观点、细节展开和总结收束。"
+        )
+
     def _build_template_fallback(self, category: WritingCategory) -> Dict[str, object]:
         path = category.path or category.name
+        category_name = category.name
         is_letter = any(keyword in path for keyword in LETTER_CATEGORY_KEYWORDS)
         is_speech = any(keyword in path for keyword in SPEECH_CATEGORY_KEYWORDS)
 
-        if is_letter:
+        if category_name == "活动邀请邮件":
             template_content = (
                 "Dear [name],\n\n"
-                "I am writing to [purpose].\n"
-                "First of all, [key point 1]. Besides, [key point 2]. "
-                "What's more, [key point 3 or reason].\n"
-                "I hope [expectation]. Please let me know [reply request].\n\n"
+                "I am writing to invite you to [event].\n"
+                "It will be held [time and place].\n\n"
+                "First, we will [activity 1].\n"
+                "Then, you can [activity 2].\n"
+                "Besides, this activity will help you [value or meaning].\n"
+                "I think you will enjoy it because [reason].\n"
+                "Before coming, please [preparation 1].\n"
+                "You'd better also [preparation 2 or reminder].\n"
+                "I hope you can join us.\n"
+                "Please let me know whether you can come.\n\n"
                 "Best wishes,\n"
                 "Li Hua"
             )
             structure = "\n".join(
                 [
-                    "第1段：称呼并说明写作目的（30-40词）",
-                    f"第2段：围绕“{category.name}”展开核心信息和细节（70-80词）",
-                    "第3段：表达期待、收束全文并署名（30-40词）",
+                    "第1段：称呼并说明邀请目的、活动时间地点（35-45词）",
+                    "第2段：介绍活动内容、意义和邀请理由（80-90词）",
+                    "第3段：说明准备事项、表达期待并请求回复（30-40词）",
                 ]
             )
-        elif is_speech:
+            opening_sentences = [
+                "Dear [name],",
+                "I am writing to invite you to [event].",
+            ]
+            closing_sentences = [
+                "I hope you can join us.",
+                "Please let me know whether you can come.",
+            ]
+        elif category_name == "建议信":
+            template_content = (
+                "Dear [name],\n\n"
+                "I am sorry to hear that [problem or situation].\n"
+                "I understand how you feel about it.\n\n"
+                "First, I think you should [advice 1].\n"
+                "This can help because [reason 1].\n"
+                "Second, it is a good idea to [advice 2].\n"
+                "In this way, [expected result 2].\n"
+                "Third, you can also [advice 3].\n"
+                "Besides, [extra support or encouragement].\n"
+                "I hope my suggestions will be helpful.\n"
+                "I believe things will get better soon.\n\n"
+                "Best wishes,\n"
+                "Li Hua"
+            )
+            structure = "\n".join(
+                [
+                    "第1段：称呼并回应对方处境，表达理解（30-40词）",
+                    "第2段：给出两到三条建议并说明理由或效果（85-95词）",
+                    "第3段：鼓励对方、表达祝愿并署名（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "Dear [name],",
+                "I am sorry to hear that [problem or situation].",
+            ]
+            closing_sentences = [
+                "I hope my suggestions will be helpful.",
+                "I believe things will get better soon.",
+            ]
+        elif category_name == "回信":
+            template_content = (
+                "Dear [name],\n\n"
+                "Thanks for your email.\n"
+                "I am glad to answer your questions about [topic].\n\n"
+                "First, let me tell you [information point 1].\n"
+                "Then, [information point 2].\n"
+                "Besides, [information point 3].\n"
+                "I think [meaning, value or suggestion].\n"
+                "If you need more help, [offer or further support].\n"
+                "I hope this reply is useful to you.\n\n"
+                "Best wishes,\n"
+                "Li Hua"
+            )
+            structure = "\n".join(
+                [
+                    "第1段：称呼、回应来信并点明回复主题（30-40词）",
+                    "第2段：围绕来信问题逐条作答或介绍信息（85-95词）",
+                    "第3段：补充帮助、表达祝愿并署名（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "Dear [name],",
+                "Thanks for your email.",
+            ]
+            closing_sentences = [
+                "If you need more help, [offer or further support].",
+                "I hope this reply is useful to you.",
+            ]
+        elif category_name == "介绍信":
+            template_content = (
+                "I would like to introduce [subject].\n"
+                "It is [general background or feature].\n\n"
+                "First of all, [detail 1].\n"
+                "Then, [detail 2].\n"
+                "What's more, [detail 3].\n"
+                "This makes [subject] [value or special point].\n"
+                "I believe [subject] can [meaning or benefit].\n\n"
+                "I hope this introduction helps you know [subject] better.\n"
+                "If you have the chance, you can learn more about it yourself."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：点明介绍对象并概括背景（25-35词）",
+                    "第2段：介绍主要特点、细节和价值（85-95词）",
+                    "第3段：总结意义并自然收束（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "I would like to introduce [subject].",
+                "It is [general background or feature].",
+            ]
+            closing_sentences = [
+                "I hope this introduction helps you know [subject] better.",
+                "If you have the chance, you can learn more about it yourself.",
+            ]
+        elif category_name == "人物介绍":
+            template_content = (
+                "I would like to introduce [person].\n"
+                "[He/She] is [identity or relationship] and [general reason for admiration].\n\n"
+                "To begin with, [quality or characteristic 1].\n"
+                "For example, [specific example 1].\n"
+                "In addition, [quality or characteristic 2].\n"
+                "This has helped me [influence on me or others].\n"
+                "Because of this, I [feeling or attitude toward the person].\n\n"
+                "From [person], I have learned that [reflection].\n"
+                "I will try to [future action inspired by the person]."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：介绍人物身份并概括主要特点（25-35词）",
+                    "第2段：通过品质和事例展开人物形象与影响（80-95词）",
+                    "第3段：总结启发并表达个人态度（30-40词）",
+                ]
+            )
+            opening_sentences = [
+                "I would like to introduce [person].",
+                "[He/She] is [identity or relationship] and [general reason for admiration].",
+            ]
+            closing_sentences = [
+                "From [person], I have learned that [reflection].",
+                "I will try to [future action inspired by the person].",
+            ]
+        elif category_name == "活动介绍":
+            template_content = (
+                "Here I would like to introduce [activity].\n"
+                "It is held [time, place or background].\n\n"
+                "First, students can [activity detail 1].\n"
+                "Then, they usually [activity detail 2].\n"
+                "Besides, [highlight or feature].\n"
+                "This activity helps students [benefit 1].\n"
+                "It also makes our school life [benefit 2].\n\n"
+                "That is why many students enjoy [activity].\n"
+                "I hope more people can take part in it."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：点明活动名称并介绍背景（25-35词）",
+                    "第2段：介绍活动安排、亮点和收获（85-95词）",
+                    "第3段：总结活动价值并表达期待（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "Here I would like to introduce [activity].",
+                "It is held [time, place or background].",
+            ]
+            closing_sentences = [
+                "That is why many students enjoy [activity].",
+                "I hope more people can take part in it.",
+            ]
+        elif category_name == "通知":
+            template_content = (
+                "Notice\n"
+                "[date]\n\n"
+                "There will be [event or change of plan].\n"
+                "It will be held [time and place].\n\n"
+                "First, please know that [arrangement 1 or reason].\n"
+                "Then, [arrangement 2 or activity].\n"
+                "Besides, [rule or reminder 1].\n"
+                "Please also remember to [rule or reminder 2].\n"
+                "We hope everyone will [expected action or closing].\n\n"
+                "[organizer]"
+            )
+            structure = "\n".join(
+                [
+                    "第1段：通知标题、日期并点明事项（25-35词）",
+                    "第2段：介绍安排、要求和提醒（85-95词）",
+                    "第3段：总结提醒并署名单位（20-30词）",
+                ]
+            )
+            opening_sentences = [
+                "Notice",
+                "[date]",
+            ]
+            closing_sentences = [
+                "We hope everyone will [expected action or closing].",
+                "[organizer]",
+            ]
+        elif category_name == "演讲稿":
             template_content = (
                 "Hello everyone,\n\n"
-                "Today I want to talk about [topic].\n"
-                "First of all, [main point 1]. Then, [main point 2]. "
-                "Finally, [call to action or conclusion].\n\n"
+                "Today I would like to talk about [topic].\n"
+                "This topic matters because [background or importance].\n\n"
+                "First of all, [main point 1].\n"
+                "For example, [supporting detail 1].\n"
+                "Then, [main point 2].\n"
+                "In addition, [supporting detail 2].\n"
+                "As a result, [expected result or meaning].\n\n"
+                "I hope all of us can [call to action].\n"
                 "Thank you for listening."
             )
             structure = "\n".join(
                 [
-                    "第1段：开场点题，说明讲话目的（30-40词）",
-                    f"第2段：结合“{category.name}”展开主体内容（70-80词）",
-                    "第3段：总结观点并呼吁/致谢（30-40词）",
+                    "第1段：开场点题并说明演讲话题的重要性（35-45词）",
+                    "第2段：展开核心观点并给出例子（80-90词）",
+                    "第3段：总结观点并发出呼吁（25-35词）",
                 ]
             )
-        else:
+            opening_sentences = [
+                "Hello everyone,",
+                "Today I would like to talk about [topic].",
+            ]
+            closing_sentences = [
+                "I hope all of us can [call to action].",
+                "Thank you for listening.",
+            ]
+        elif category_name == "倡议书":
             template_content = (
-                "I would like to share [topic/event].\n"
-                "First of all, [background or main point]. Then, [detail or action]. "
-                "After that, [result or another detail].\n"
-                "In the end, I learned that [feeling or reflection]."
+                "Let's work together to [topic].\n"
+                "It is important because [background or problem].\n\n"
+                "First, we should [action 1].\n"
+                "This will help us [benefit 1].\n"
+                "Second, we can [action 2].\n"
+                "In this way, [benefit 2].\n"
+                "Third, please [action 3].\n"
+                "Small actions can make a big difference.\n\n"
+                "Let's start from now and make our school better together.\n"
+                "Thank you for your support."
             )
             structure = "\n".join(
                 [
-                    "第1段：引入主题，交代背景或观点（35-45词）",
-                    f"第2段：围绕“{category.name}”展开关键内容（65-80词）",
-                    "第3段：总结感受、启示或个人态度（30-40词）",
+                    "第1段：点明倡议主题并说明背景（30-40词）",
+                    "第2段：提出两到三条具体行动建议（85-95词）",
+                    "第3段：总结意义并号召大家行动（25-35词）",
                 ]
             )
+            opening_sentences = [
+                "Let's work together to [topic].",
+                "It is important because [background or problem].",
+            ]
+            closing_sentences = [
+                "Let's start from now and make our school better together.",
+                "Thank you for your support.",
+            ]
+        elif category_name == "问题解决建议":
+            template_content = (
+                "Many students have the problem that [problem].\n"
+                "Here are some useful ideas to solve it.\n\n"
+                "First, [suggestion 1].\n"
+                "This is helpful because [reason 1].\n"
+                "Second, [suggestion 2].\n"
+                "In this way, [result 2].\n"
+                "Third, [suggestion 3].\n"
+                "With these steps, [expected result].\n\n"
+                "I hope these ideas can make things easier.\n"
+                "Everyone can improve little by little."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：提出问题并点明写作目的（25-35词）",
+                    "第2段：给出具体解决建议和效果（85-95词）",
+                    "第3段：总结效果并鼓励读者（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "Many students have the problem that [problem].",
+                "Here are some useful ideas to solve it.",
+            ]
+            closing_sentences = [
+                "I hope these ideas can make things easier.",
+                "Everyone can improve little by little.",
+            ]
+        elif category_name == "意见反馈":
+            template_content = (
+                "I am glad to share my ideas about [topic].\n"
+                "Overall, I think [general opinion].\n\n"
+                "First, [feedback point 1].\n"
+                "This is important because [reason 1].\n"
+                "Second, [feedback point 2].\n"
+                "It would be better if [improvement].\n"
+                "In addition, [feedback point 3].\n"
+                "I hope these suggestions can be useful.\n\n"
+                "Thank you for listening to my ideas.\n"
+                "I am looking forward to a better result."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：说明反馈主题并概括总体看法（25-35词）",
+                    "第2段：提出主要意见、原因和改进建议（85-95词）",
+                    "第3段：礼貌收束并表达期待（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "I am glad to share my ideas about [topic].",
+                "Overall, I think [general opinion].",
+            ]
+            closing_sentences = [
+                "Thank you for listening to my ideas.",
+                "I am looking forward to a better result.",
+            ]
+        elif category_name == "规则说明":
+            template_content = (
+                "Here are some important rules for [topic].\n"
+                "Following them can make things better for everyone.\n\n"
+                "First, you should [rule 1].\n"
+                "This is because [reason 1].\n"
+                "Second, you must [rule 2].\n"
+                "This can help [benefit 2].\n"
+                "Third, don't [rule 3].\n"
+                "If everyone follows these rules, [result].\n\n"
+                "These rules are simple but useful.\n"
+                "I hope all of us can keep them in mind."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：点明规则主题和作用（25-35词）",
+                    "第2段：逐条说明规则与原因（85-95词）",
+                    "第3段：总结规则意义并自然收束（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "Here are some important rules for [topic].",
+                "Following them can make things better for everyone.",
+            ]
+            closing_sentences = [
+                "These rules are simple but useful.",
+                "I hope all of us can keep them in mind.",
+            ]
+        elif category_name == "行程安排":
+            template_content = (
+                "Hi [name],\n\n"
+                "I am leaving this note to tell you [purpose].\n"
+                "I am going to [place] with [person].\n\n"
+                "First, we will [activity 1].\n"
+                "Then, we plan to [activity 2].\n"
+                "After that, [activity 3 or other arrangement].\n"
+                "I will come back at [time].\n"
+                "I will return by [transportation].\n"
+                "Please don't worry about me.\n\n"
+                "Li Hua"
+            )
+            structure = "\n".join(
+                [
+                    "第1段：说明留言目的和去向（30-40词）",
+                    "第2段：介绍活动安排、回家时间和方式（80-90词）",
+                    "第3段：礼貌收束并署名（15-25词）",
+                ]
+            )
+            opening_sentences = [
+                "Hi [name],",
+                "I am leaving this note to tell you [purpose].",
+            ]
+            closing_sentences = [
+                "Please don't worry about me.",
+                "Li Hua",
+            ]
+        elif is_letter:
+            template_content = (
+                "Dear [name],\n\n"
+                "I am writing to [purpose].\n"
+                "I am glad to tell you that [activity background].\n"
+                "To begin with, [key point 1].\n"
+                "Besides, [key point 2].\n"
+                "What's more, [key point 3 or reason].\n"
+                "I think [personal reason or value].\n"
+                "If you come, [specific arrangement].\n"
+                "I hope [expectation].\n"
+                "Please let me know [reply request].\n\n"
+                "Best wishes,\n"
+                "Li Hua"
+            )
+            structure = "\n".join(
+                [
+                    "第1段：称呼并说明写作目的与背景（35-45词）",
+                    f"第2段：围绕“{category.name}”展开核心信息、原因与安排（75-90词）",
+                    "第3段：表达期待、请求回复并署名（30-40词）",
+                ]
+            )
+            opening_sentences = [
+                "Dear [name],",
+                "I am writing to [purpose].",
+            ]
+            closing_sentences = [
+                "I hope [expectation].",
+                "Please let me know [reply request].",
+            ]
+        elif is_speech:
+            template_content = (
+                "Hello everyone,\n\n"
+                "Today I want to talk about [topic].\n"
+                "This topic is important because [background].\n"
+                "First of all, [main point 1].\n"
+                "For example, [supporting example 1].\n"
+                "Then, [main point 2].\n"
+                "In addition, [supporting example 2].\n"
+                "As a result, [expected result].\n"
+                "I hope all of us can [call to action].\n\n"
+                "Thank you for listening."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：开场点题，说明讲话目的与背景（35-45词）",
+                    f"第2段：结合“{category.name}”展开主体观点和例子（75-90词）",
+                    "第3段：总结观点并发出呼吁/致谢（25-35词）",
+                ]
+            )
+            opening_sentences = [
+                "Hello everyone,",
+                "Today I want to talk about [topic].",
+            ]
+            closing_sentences = [
+                "I hope all of us can [call to action].",
+                "Thank you for listening.",
+            ]
+        else:
+            template_content = (
+                "I would like to share [topic/event].\n"
+                "It happened when [time or background].\n\n"
+                "At first, [detail or action 1].\n"
+                "Then, [detail or action 2].\n"
+                "After that, [detail or action 3].\n"
+                "Meanwhile, [feeling or challenge].\n"
+                "In the end, [result].\n\n"
+                "From this experience, I learned that [reflection].\n"
+                "I will always remember [final feeling or future action]."
+            )
+            structure = "\n".join(
+                [
+                    "第1段：引入主题，交代背景（25-35词）",
+                    f"第2段：围绕“{category.name}”展开经过、细节与感受（80-95词）",
+                    "第3段：总结结果、启示和个人态度（30-40词）",
+                ]
+            )
+            opening_sentences = [
+                "I would like to share [topic/event].",
+                "It happened when [time or background].",
+            ]
+            closing_sentences = [
+                "From this experience, I learned that [reflection].",
+                "I will always remember [final feeling or future action].",
+            ]
+
+        template_schema = self._build_schema_from_text_template(template_content, structure)
 
         return {
             "template_name": f"{category.name}通用模板",
             "template_content": template_content,
+            "template_schema_json": template_schema,
             "structure": structure,
             "tips": "紧扣题干信息点，优先覆盖场景、细节、原因与感受；句子保持自然可迁移。",
-            "opening_sentences": [
-                f"I would like to share something about {category.name}.",
-                "I'm glad to write about this topic today.",
-            ],
-            "closing_sentences": [
-                "I hope my ideas can be helpful.",
-                "This is how I would deal with the topic.",
-            ],
+            "opening_sentences": opening_sentences,
+            "closing_sentences": closing_sentences,
             "transition_words": ["First of all,", "Then,", "Besides,", "In the end,"],
             "advanced_vocabulary": [{"word": "meaningful", "basic": "good", "usage": "描述活动或经历有意义"}],
             "grammar_points": ["注意时态统一，根据信件或记叙场景选择一般现在时或一般过去时。"],
@@ -558,12 +2363,68 @@ class WritingService:
             },
         }
 
-    def _should_refresh_template(self, template: WritingTemplate, category: WritingCategory) -> bool:
+    def _template_schema_meets_bar(self, schema: Dict[str, Any], category: WritingCategory) -> bool:
+        if not schema.get("paragraphs"):
+            return False
+        slot_count = self._count_template_slots(schema)
+        if slot_count < self._minimum_slot_count(category):
+            return False
+
+        opening_slots = (schema.get("paragraphs") or [{}])[0].get("slots") or []
+        opening_patterns = " ".join(str(slot.get("fallback_pattern") or "") for slot in opening_slots)
+        path = category.path or category.name
+        is_letter = any(keyword in path for keyword in LETTER_CATEGORY_KEYWORDS)
+        is_speech = any(keyword in path for keyword in SPEECH_CATEGORY_KEYWORDS)
+        if is_letter and "Dear " not in opening_patterns:
+            return False
+        if not is_letter and re.search(r"(?i)\bDear\b", opening_patterns):
+            return False
+        if is_speech and re.search(r"(?i)\bDear\b", opening_patterns):
+            return False
+        return True
+
+    async def _populate_template_representative_sample(
+        self,
+        template: WritingTemplate,
+        category: WritingCategory,
+        major_category: Optional[WritingCategory],
+        group_category: Optional[WritingCategory],
+        template_schema: Dict[str, Any],
+    ) -> None:
+        task_content, requirements = self._build_representative_task_context(category, major_category, group_category)
+        rendered_slots, essay, word_count, translation = await self._generate_slot_filled_official_sample(
+            task_content=task_content,
+            requirements=requirements,
+            word_limit=f"{DEFAULT_WORD_TARGET}词左右",
+            category=category,
+            major_category=major_category,
+            group_category=group_category,
+            template=template,
+            template_schema=template_schema,
+            operation_prefix="writing_service.representative_sample",
+        )
+        template.representative_sample_content = essay
+        template.representative_translation = translation
+        template.representative_rendered_slots_json = json.dumps(rendered_slots, ensure_ascii=False)
+        template.representative_word_count = word_count
+        template.quality_status = QUALITY_PASSED
+
+    def _template_needs_repair(self, template: WritingTemplate, category: WritingCategory) -> bool:
         content = (template.template_content or "").strip()
         structure = (template.structure or "").strip()
         is_letter = any(keyword in (category.path or category.name) for keyword in LETTER_CATEGORY_KEYWORDS)
+        schema = self._normalize_template_schema(
+            template.template_schema_json,
+            fallback_content=content,
+            fallback_structure=structure,
+        )
+        slot_count = self._count_template_slots(schema)
 
         if not content:
+            return True
+        if not schema.get("paragraphs"):
+            return True
+        if slot_count < self._minimum_slot_count(category):
             return True
         if not is_letter and re.search(r"(?i)\bDear\b|\bBest wishes\b|\bYours\b", content):
             return True
@@ -571,14 +2432,54 @@ class WritingService:
             return True
         if not (template.opening_sentences and template.closing_sentences):
             return True
+        if (template.quality_status or "").strip() == QUALITY_FAILED:
+            return True
         return False
+
+    def _repair_template_locally_if_needed(
+        self,
+        template: WritingTemplate,
+        category: WritingCategory,
+    ) -> bool:
+        schema = self._normalize_template_schema(
+            template.template_schema_json,
+            fallback_content=template.template_content or "",
+            fallback_structure=template.structure or "",
+        )
+        rendered_content = self._render_template_content_from_schema(schema)
+        rendered_structure = self._render_structure_text_from_schema(schema)
+        opening_sentences, closing_sentences = self._extract_sentence_bank_from_schema(schema)
+
+        changed = False
+        schema_json = json.dumps(schema, ensure_ascii=False)
+        if (template.template_schema_json or "").strip() != schema_json:
+            template.template_schema_json = schema_json
+            changed = True
+        if (template.template_content or "").strip() != rendered_content:
+            template.template_content = rendered_content
+            changed = True
+        if (template.structure or "").strip() != rendered_structure:
+            template.structure = rendered_structure
+            changed = True
+        if not template.opening_sentences:
+            template.opening_sentences = json.dumps(opening_sentences, ensure_ascii=False)
+            changed = True
+        if not template.closing_sentences:
+            template.closing_sentences = json.dumps(closing_sentences, ensure_ascii=False)
+            changed = True
+        if not template.template_version:
+            template.template_version = 1
+            changed = True
+        elif changed:
+            template.template_version = (template.template_version or 1) + 1
+        return changed
 
     async def get_or_create_template(
         self,
         category_id: int,
         anchor_task: Optional[WritingTask] = None,
         force_refresh: bool = False,
-        refresh_if_stale: bool = True,
+        refresh_if_stale: bool = False,
     ) -> WritingTemplate:
         """按子类获取或创建模板。"""
         query = (
@@ -600,40 +2501,62 @@ class WritingService:
             raise ValueError(f"作文分类不存在: {category_id}")
 
         if template and not force_refresh:
-            if not refresh_if_stale:
-                return template
-            if not self._should_refresh_template(template, category):
+            needs_repair = self._template_needs_repair(template, category)
+            if not needs_repair or not refresh_if_stale:
                 return template
 
         parent = category.parent
         group = parent.parent if parent and parent.parent else parent
 
         example_tasks = await self._load_category_example_tasks(category_id, anchor_task=anchor_task, limit=5)
-        template_data = await self.ai_service.generate_writing_template_async(
-            category_name=category.name,
-            category_path=category.path,
-            prompt_hint=category.prompt_hint,
-            target_word_count=DEFAULT_WORD_TARGET,
-            group_name=group.name if group else None,
-            major_category_name=parent.name if parent else None,
-            task_examples=self._build_template_examples(example_tasks),
-            existing_template=template.template_content if template else None,
-        )
-        if not template_data or not template_data.get("template_content"):
+        if category.name in CANONICAL_TEMPLATE_CATEGORIES:
             template_data = self._build_template_fallback(category)
+        else:
+            template_data = await self.ai_service.generate_writing_template_async(
+                category_name=category.name,
+                category_path=category.path,
+                prompt_hint=category.prompt_hint,
+                target_word_count=DEFAULT_WORD_TARGET,
+                group_name=group.name if group else None,
+                major_category_name=parent.name if parent else None,
+                task_examples=self._build_template_examples(example_tasks),
+                existing_template=template.template_content if template else None,
+            )
+            if not template_data or not (
+                template_data.get("template_schema_json") or template_data.get("template_content")
+            ):
+                template_data = self._build_template_fallback(category)
 
         template_name = self._normalize_template_text(
             template_data.get("template_name", f"{category.name}通用模板")
         )
-        template_content = self._normalize_template_text(template_data.get("template_content", ""))
+        template_schema = self._normalize_template_schema(
+            template_data.get("template_schema_json"),
+            fallback_content=self._normalize_template_text(template_data.get("template_content", "")),
+            fallback_structure=self._normalize_template_text(template_data.get("structure", "")),
+        )
+        if not self._template_schema_meets_bar(template_schema, category):
+            template_data = self._build_template_fallback(category)
+            template_schema = self._normalize_template_schema(
+                template_data.get("template_schema_json"),
+                fallback_content=self._normalize_template_text(template_data.get("template_content", "")),
+                fallback_structure=self._normalize_template_text(template_data.get("structure", "")),
+            )
+        template_content = self._render_template_content_from_schema(template_schema)
         tips = self._normalize_template_text(template_data.get("tips", ""))
-        structure = self._normalize_template_text(template_data.get("structure", ""))
+        structure = self._render_structure_text_from_schema(template_schema)
         opening_sentences = self._normalize_template_json(template_data.get("opening_sentences"))
         closing_sentences = self._normalize_template_json(template_data.get("closing_sentences"))
         transition_words = self._normalize_template_json(template_data.get("transition_words"))
         advanced_vocabulary = self._normalize_template_json(template_data.get("advanced_vocabulary"))
         grammar_points = self._normalize_template_json(template_data.get("grammar_points"))
         scoring_criteria = self._normalize_template_json(template_data.get("scoring_criteria"))
+        template_schema_json = json.dumps(template_schema, ensure_ascii=False)
+        fallback_opening_sentences, fallback_closing_sentences = self._extract_sentence_bank_from_schema(template_schema)
+        if not opening_sentences and fallback_opening_sentences:
+            opening_sentences = json.dumps(fallback_opening_sentences, ensure_ascii=False)
+        if not closing_sentences and fallback_closing_sentences:
+            closing_sentences = json.dumps(fallback_closing_sentences, ensure_ascii=False)
 
         if template is None:
             template = WritingTemplate(
@@ -652,6 +2575,9 @@ class WritingService:
                 grammar_points=grammar_points,
                 scoring_criteria=scoring_criteria,
                 template_key=category.template_key,
+                template_schema_json=template_schema_json,
+                template_version=1,
+                quality_status=QUALITY_PASSED,
             )
             self.db.add(template)
         else:
@@ -669,7 +2595,11 @@ class WritingService:
             template.grammar_points = grammar_points
             template.scoring_criteria = scoring_criteria
             template.template_key = category.template_key
+            template.template_schema_json = template_schema_json
+            template.template_version = (template.template_version or 1) + 1
+            template.quality_status = QUALITY_PASSED
 
+        await self.db.flush()
         await self.db.commit()
         await self.db.refresh(template)
         return template
@@ -684,18 +2614,7 @@ class WritingService:
     ) -> tuple[WritingTask, WritingTemplate, WritingSample]:
         """确保作文在分类后拥有当前子类模板和对应范文。"""
         task_id = task_or_id.id if isinstance(task_or_id, WritingTask) else task_or_id
-        result = await self.db.execute(
-            select(WritingTask)
-            .options(
-                selectinload(WritingTask.samples),
-                selectinload(WritingTask.category),
-                selectinload(WritingTask.major_category),
-                selectinload(WritingTask.group_category),
-                selectinload(WritingTask.paper),
-            )
-            .where(WritingTask.id == task_id)
-        )
-        task = result.scalar_one_or_none()
+        task = await self.get_writing_detail(task_id)
 
         if not task:
             raise ValueError("作文不存在")
@@ -709,41 +2628,71 @@ class WritingService:
             task.category_id,
             anchor_task=task,
             force_refresh=force_template_refresh,
+            refresh_if_stale=force_template_refresh,
         )
+        template_id = template.id if template else None
 
         existing_sample = next(
-            (
-                sample
-                for sample in sorted(task.samples or [], key=lambda item: item.id or 0, reverse=True)
-                if sample.sample_type == "AI生成"
-            ),
+            iter(sorted(task.samples or [], key=lambda item: item.id or 0, reverse=True)),
             None,
         )
         if existing_sample and not regenerate_sample:
-            if self._sample_meets_quality_bar(existing_sample, expected_template_id=template.id):
+            if self._repair_sample_from_rendered_slots(existing_sample, template):
+                await self.db.commit()
+                await self.db.refresh(existing_sample)
+                await self.db.refresh(template)
+                refreshed_task = await self.get_writing_detail(task_id)
+                if refreshed_task:
+                    return refreshed_task, template, existing_sample
+            if self._sample_meets_quality_bar(
+                existing_sample,
+                expected_template_id=template.id,
+                template=template,
+            ):
                 return task, template, existing_sample
 
-            await self.db.delete(existing_sample)
+            await self.db.execute(delete(WritingSample).where(WritingSample.task_id == task_id))
             await self.db.flush()
 
         last_error: Optional[Exception] = None
         for attempt in range(1, 4):
             try:
+                if attempt > 1 and force_template_refresh:
+                    template = await self.get_or_create_template(
+                        task.category_id,
+                        anchor_task=task,
+                        force_refresh=True,
+                        refresh_if_stale=True,
+                    )
+                    template_id = template.id if template else None
                 sample = await self.generate_sample(
                     task_id=task.id,
-                    template_id=template.id,
+                    template_id=template_id,
                     score_level=score_level,
                     force_template_refresh=False,
                 )
-                return task, template, sample
+                refreshed_task = await self.get_writing_detail(task.id)
+                return refreshed_task or task, template, sample
             except Exception as exc:
                 last_error = exc
+                await self.db.rollback()
                 logger.warning(
                     "作文范文生成重试 %s/3 失败 task_id=%s: %s",
                     attempt,
-                    task.id,
+                    task_id,
                     exc,
                 )
+                task = await self.get_writing_detail(task_id)
+                if not task:
+                    break
+                if template_id is None and task.category_id:
+                    template = await self.get_or_create_template(
+                        task.category_id,
+                        anchor_task=task,
+                        force_refresh=False,
+                        refresh_if_stale=False,
+                    )
+                    template_id = template.id if template else None
 
         raise ValueError(f"作文范文生成失败: {last_error}") from last_error
 
@@ -799,6 +2748,166 @@ class WritingService:
             grade_counts[grade_value] = grade_count.scalar() or 0
 
         return items, total, grade_counts
+
+    async def get_template_list(
+        self,
+        *,
+        page: int = 1,
+        size: int = 20,
+        grade: Optional[str] = None,
+        semester: Optional[str] = None,
+        exam_type: Optional[str] = None,
+        group_category_id: Optional[int] = None,
+        major_category_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        search: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """按模板维度返回作文汇编列表。"""
+        category_result = await self.db.execute(select(WritingCategory))
+        category_map = {item.id: item for item in category_result.scalars().all()}
+        filters = []
+        if grade:
+            filters.append(WritingTask.grade == grade)
+        if semester:
+            filters.append(WritingTask.semester == semester)
+        if exam_type:
+            filters.append(WritingTask.exam_type == exam_type)
+        if group_category_id:
+            filters.append(WritingTask.group_category_id == group_category_id)
+        if major_category_id:
+            filters.append(WritingTask.major_category_id == major_category_id)
+        if category_id:
+            filters.append(WritingTask.category_id == category_id)
+        if search:
+            filters.append(WritingTask.task_content.contains(search))
+
+        template_ids_query = (
+            select(WritingTemplate.id)
+            .join(WritingCategory, WritingTemplate.category_id == WritingCategory.id)
+            .join(WritingTask, WritingTask.category_id == WritingTemplate.category_id)
+            .where(*filters)
+            .group_by(WritingTemplate.id)
+        )
+        total_result = await self.db.execute(select(func.count()).select_from(template_ids_query.subquery()))
+        total = total_result.scalar() or 0
+
+        query = (
+            select(
+                WritingTemplate,
+                WritingCategory,
+                func.count(func.distinct(WritingTask.paper_id)).label("paper_count"),
+                func.count(func.distinct(WritingTask.id)).label("task_count"),
+            )
+            .join(WritingCategory, WritingTemplate.category_id == WritingCategory.id)
+            .join(WritingTask, WritingTask.category_id == WritingTemplate.category_id)
+            .where(*filters)
+            .group_by(WritingTemplate.id, WritingCategory.id)
+            .order_by(
+                WritingCategory.path.asc(),
+                func.coalesce(WritingTemplate.updated_at, WritingTemplate.created_at).desc(),
+                WritingTemplate.id.desc(),
+            )
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        result = await self.db.execute(query)
+        items: List[Dict[str, Any]] = []
+        for template, category, paper_count, task_count in result.all():
+            major_category = category_map.get(category.parent_id) if category.parent_id else None
+            group_category = category_map.get(major_category.parent_id) if major_category and major_category.parent_id else major_category
+            items.append(
+                {
+                    "template": template,
+                    "category": category,
+                    "major_category": major_category,
+                    "group_category": group_category,
+                    "paper_count": paper_count or 0,
+                    "task_count": task_count or 0,
+                }
+            )
+        return items, total
+
+    async def get_template_papers(self, template_id: int) -> Dict[str, Any]:
+        """获取某个模板覆盖的试卷列表。"""
+        template_result = await self.db.execute(
+            select(WritingTemplate)
+            .options(selectinload(WritingTemplate.category).selectinload(WritingCategory.parent).selectinload(WritingCategory.parent))
+            .where(WritingTemplate.id == template_id)
+        )
+        template = template_result.scalar_one_or_none()
+        if not template:
+            raise ValueError("模板不存在")
+
+        result = await self.db.execute(
+            select(
+                ExamPaper,
+                func.count(WritingTask.id).label("task_count"),
+            )
+            .join(WritingTask, WritingTask.paper_id == ExamPaper.id)
+            .where(WritingTask.category_id == template.category_id)
+            .group_by(ExamPaper.id)
+            .order_by(ExamPaper.year.desc().nullslast(), ExamPaper.id.desc())
+        )
+        papers = []
+        for paper, task_count in result.all():
+            papers.append(
+                {
+                    "paper_id": paper.id,
+                    "filename": paper.filename,
+                    "year": paper.year,
+                    "region": paper.region,
+                    "school": paper.school,
+                    "grade": paper.grade,
+                    "exam_type": paper.exam_type,
+                    "semester": paper.semester,
+                    "task_count": task_count or 0,
+                }
+            )
+
+        category = template.category
+        major_category = category.parent
+        group_category = major_category.parent if major_category and major_category.parent else major_category
+        return {
+            "template": template,
+            "category": category,
+            "major_category": major_category,
+            "group_category": group_category,
+            "papers": papers,
+        }
+
+    async def get_template_paper_detail(self, template_id: int, paper_id: int) -> Dict[str, Any]:
+        """获取模板下某一张试卷的全部作文题与正式范文。"""
+        template_payload = await self.get_template_papers(template_id)
+        template = template_payload["template"]
+        expected_category_id = template_payload["category"].id
+
+        task_result = await self.db.execute(
+            select(WritingTask)
+            .options(
+                selectinload(WritingTask.paper),
+                selectinload(WritingTask.samples),
+                selectinload(WritingTask.group_category),
+                selectinload(WritingTask.major_category),
+                selectinload(WritingTask.category),
+            )
+            .where(
+                WritingTask.paper_id == paper_id,
+                WritingTask.category_id == template_payload["category"].id,
+            )
+            .order_by(WritingTask.id.asc())
+        )
+        tasks = list(task_result.scalars().all())
+        if not tasks:
+            raise ValueError("该试卷下没有属于当前模板的作文题")
+
+        return {
+            "template": template,
+            "category": template_payload["category"],
+            "major_category": template_payload["major_category"],
+            "group_category": template_payload["group_category"],
+            "paper": tasks[0].paper,
+            "tasks": [task for task in tasks if task.category_id == expected_category_id],
+        }
 
     async def get_writing_detail(self, task_id: int) -> Optional[WritingTask]:
         """获取作文详情（含模板和范文）。"""
@@ -940,7 +3049,16 @@ class WritingService:
         samples = []
         sorted_tasks = sorted(tasks, key=lambda item: ((item.paper.year if item.paper else 0), item.id), reverse=True)
         for task in sorted_tasks:
-            for sample in task.samples:
+            official_sample = self._select_display_sample(
+                task.samples,
+                expected_template_id=template.id,
+                template=template,
+            )
+            if official_sample is None:
+                continue
+
+            if official_sample:
+                sample = official_sample
                 highlighted = self._parse_json(sample.highlights) if edition == "teacher" else []
                 samples.append(
                     {
@@ -972,7 +3090,7 @@ class WritingService:
                 "major_category_name": major_category.name,
                 "category_name": category.name,
                 "task_count": len(tasks),
-                "sample_count": sum(len(task.samples) for task in tasks),
+                "sample_count": sum(min(len(task.samples or []), 1) for task in tasks),
                 "recent_years": years[-3:],
                 "applicable_ranges": applicable_ranges,
             },

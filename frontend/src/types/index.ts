@@ -966,6 +966,13 @@ export interface WritingTemplate {
   template_content: string
   tips?: string
   structure?: string
+  template_schema_json?: string
+  template_version: number
+  quality_status: 'pending' | 'passed' | 'failed'
+  representative_sample_content?: string
+  representative_translation?: string
+  representative_rendered_slots_json?: string
+  representative_word_count?: number
   // === 新增专业要素字段 ===
   opening_sentences?: string    // 开头句型（JSON数组）
   closing_sentences?: string    // 结尾句型（JSON数组）
@@ -990,6 +997,10 @@ export interface WritingSample {
   grammar_analysis?: string   // 语法分析（JSON）
   issues?: string             // 存在问题（JSON数组，用于三档文）
   translation?: string        // 中文翻译
+  rendered_slots_json?: string
+  template_version: number
+  generation_mode: string
+  quality_status: 'pending' | 'passed' | 'failed'
   created_at: string
 }
 
@@ -1042,6 +1053,53 @@ export interface BatchGenerateResponse {
     sample_id?: number
     error?: string
   }>
+}
+
+export interface WritingTemplateListItem {
+  id: number
+  group_category: WritingCategoryNode
+  major_category: WritingCategoryNode
+  category: WritingCategoryNode
+  template_name: string
+  template_content: string
+  structure?: string
+  template_schema_json?: string
+  template_version: number
+  quality_status: 'pending' | 'passed' | 'failed'
+  representative_sample_content?: string
+  representative_translation?: string
+  representative_word_count?: number
+  paper_count: number
+  task_count: number
+  updated_at?: string
+}
+
+export interface WritingTemplateListResponse {
+  total: number
+  items: WritingTemplateListItem[]
+}
+
+export interface WritingTemplatePaperItem {
+  paper_id: number
+  filename: string
+  year?: number
+  region?: string
+  school?: string
+  grade?: string
+  exam_type?: string
+  semester?: string
+  task_count: number
+}
+
+export interface WritingTemplatePaperListResponse {
+  template: WritingTemplateListItem
+  papers: WritingTemplatePaperItem[]
+}
+
+export interface WritingTemplatePaperDetailResponse {
+  template: WritingTemplate
+  paper: SourceInfo
+  tasks: WritingTaskDetail[]
 }
 
 // ============================================================================

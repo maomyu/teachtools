@@ -169,8 +169,23 @@ async def _migrate_writing_schema(conn):
 
     await _ensure_column(conn, "writing_templates", "category_id", "INTEGER")
     await _ensure_column(conn, "writing_templates", "template_key", "VARCHAR(100)")
+    await _ensure_column(conn, "writing_templates", "template_schema_json", "TEXT")
+    await _ensure_column(conn, "writing_templates", "template_version", "INTEGER DEFAULT 1")
+    await _ensure_column(conn, "writing_templates", "quality_status", "VARCHAR(20) DEFAULT 'pending'")
+    await _ensure_column(conn, "writing_templates", "representative_sample_content", "TEXT")
+    await _ensure_column(conn, "writing_templates", "representative_translation", "TEXT")
+    await _ensure_column(conn, "writing_templates", "representative_rendered_slots_json", "TEXT")
+    await _ensure_column(conn, "writing_templates", "representative_word_count", "INTEGER")
+    await _ensure_column(conn, "writing_templates", "updated_at", "DATETIME")
+    await _ensure_column(conn, "writing_samples", "rendered_slots_json", "TEXT")
+    await _ensure_column(conn, "writing_samples", "template_version", "INTEGER DEFAULT 1")
+    await _ensure_column(conn, "writing_samples", "generation_mode", "VARCHAR(30) DEFAULT 'slot_fill'")
+    await _ensure_column(conn, "writing_samples", "quality_status", "VARCHAR(20) DEFAULT 'pending'")
 
     await _seed_writing_categories(conn)
+    await _dedupe_writing_templates(conn)
+    await _dedupe_writing_samples(conn)
+    await _ensure_writing_indexes(conn)
 
 
 async def _migrate_handout_fields(conn):
@@ -188,6 +203,85 @@ async def _ensure_column(conn, table_name: str, column_name: str, definition: st
         return
 
     await conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+
+async def _dedupe_writing_templates(conn) -> None:
+    """收敛为一子类一模板，保留最新一条。"""
+    await conn.exec_driver_sql(
+        """
+        DELETE FROM writing_templates
+        WHERE category_id IS NOT NULL
+          AND id NOT IN (
+            SELECT MAX(id)
+            FROM writing_templates
+            WHERE category_id IS NOT NULL
+            GROUP BY category_id
+          )
+        """
+    )
+    await conn.exec_driver_sql(
+        """
+        UPDATE writing_templates
+        SET template_version = COALESCE(NULLIF(template_version, 0), 1)
+        WHERE template_version IS NULL OR template_version = 0
+        """
+    )
+    await conn.exec_driver_sql(
+        """
+        UPDATE writing_templates
+        SET quality_status = COALESCE(NULLIF(quality_status, ''), 'pending')
+        WHERE quality_status IS NULL OR quality_status = ''
+        """
+    )
+
+
+async def _dedupe_writing_samples(conn) -> None:
+    """收敛为一题一篇正式范文，保留最新一条。"""
+    await conn.exec_driver_sql(
+        """
+        DELETE FROM writing_samples
+        WHERE task_id IS NOT NULL
+          AND id NOT IN (
+            SELECT MAX(id)
+            FROM writing_samples
+            WHERE task_id IS NOT NULL
+            GROUP BY task_id
+          )
+        """
+    )
+    await conn.exec_driver_sql(
+        """
+        UPDATE writing_samples
+        SET template_version = COALESCE(NULLIF(template_version, 0), 1)
+        WHERE template_version IS NULL OR template_version = 0
+        """
+    )
+    await conn.exec_driver_sql(
+        """
+        UPDATE writing_samples
+        SET generation_mode = COALESCE(NULLIF(generation_mode, ''), 'slot_fill'),
+            quality_status = COALESCE(NULLIF(quality_status, ''), 'pending')
+        WHERE generation_mode IS NULL OR generation_mode = '' OR quality_status IS NULL OR quality_status = ''
+        """
+    )
+
+
+async def _ensure_writing_indexes(conn) -> None:
+    """补充写作模块唯一索引。"""
+    await conn.exec_driver_sql(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_writing_templates_category_unique
+        ON writing_templates(category_id)
+        WHERE category_id IS NOT NULL
+        """
+    )
+    await conn.exec_driver_sql(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_writing_samples_task_unique
+        ON writing_samples(task_id)
+        WHERE task_id IS NOT NULL
+        """
+    )
 
 
 async def _seed_writing_categories(conn) -> None:

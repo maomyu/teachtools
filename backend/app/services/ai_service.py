@@ -233,12 +233,34 @@ class QwenService:
 
         letter_like = any(keyword in category_path for keyword in ("信", "邮件", "回信"))
         speech_like = any(keyword in category_path for keyword in ("演讲稿", "发言稿", "倡议书", "通知"))
+        invitation_like = any(keyword in category_path for keyword in ("邀请信", "邀请回复信", "活动邀请邮件"))
+        suggestion_like = any(keyword in category_path for keyword in ("建议信", "求助信", "问题解决建议"))
+        introduction_like = any(keyword in category_path for keyword in ("介绍信", "人物介绍", "活动介绍"))
+        narrative_like = "记叙文" in category_path
+        opinion_like = any(keyword in category_path for keyword in ("个人看法", "利弊分析", "现象评价"))
+        explanation_like = any(keyword in category_path for keyword in ("方法介绍", "流程说明", "规则说明"))
         if letter_like:
             format_rule = "这是书信/邮件子类，模板正文必须保留称呼、正文、结尾、署名等完整格式。"
         elif speech_like:
             format_rule = "这是通知/演讲/倡议类子类，模板要用演讲稿或通知格式，不要写成私人书信。"
         else:
             format_rule = "这不是书信/邮件子类，模板正文绝对不要出现 Dear、Best wishes、Yours 等书信格式。"
+        if invitation_like:
+            structure_rule = "模板必须固定为：称呼 -> 邀请目的 -> 时间地点 -> 活动安排/亮点 -> 邀请理由 -> 期待回复 -> 结尾署名。"
+        elif suggestion_like:
+            structure_rule = "模板必须固定为：问题背景 -> 建议1及理由 -> 建议2及理由 -> 建议3/补充建议 -> 鼓励或期待。"
+        elif introduction_like:
+            structure_rule = "模板必须固定为：介绍对象/写作目的 -> 2-3个核心信息点 -> 意义/推荐/期待。"
+        elif speech_like:
+            structure_rule = "模板必须固定为：称呼或开场 -> 主题背景 -> 主体观点1/2/3 -> 呼吁或总结。"
+        elif explanation_like:
+            structure_rule = "模板必须固定为：点题 -> 步骤/规则/方法主体 -> 结果或提醒。"
+        elif opinion_like:
+            structure_rule = "模板必须固定为：表明观点 -> 2-3个理由或利弊分析 -> 总结态度。"
+        elif narrative_like:
+            structure_rule = "模板必须固定为：背景起因 -> 经过发展 -> 结果感受 -> 收获启发。"
+        else:
+            structure_rule = "模板必须使用稳定的三段式结构，并确保每段功能清楚、句子顺序固定。"
         return f"""你是北京中考英语写作教学专家。请根据数据库给定的作文子类，生成一套适合学生背诵迁移的通用模板。
 
 ## 分类信息
@@ -260,11 +282,29 @@ class QwenService:
 2. 模板要贴合北京中考英语写作，语言自然、可迁移、可背诵。
 3. 必须体现该子类最常见的结构、功能句和收尾方式。
 4. {format_rule}
-5. 如果是记叙或表达类，要突出段落组织、叙事顺序或观点展开方式。
+5. {structure_rule}
 6. 高频表达要偏中考高频、学生可直接替换套用，避免虚浮大词。
-7. 输出结构要能直接用于教师讲义。
-8. template_content 必须是"通用模板"，要大量使用占位符，如 [event] / [reason] / [activity] / [feeling]，不要直接抄成某一道题的完整范文。template_content 的每个段落必须与 structure 数组中的段落一一对应。
-9. structure 必须输出 JSON 数组，每段包含 paragraph（段落序号）、purpose（段落功能）、word_range（建议词数范围）。不要输出 Python dict 字面量或纯文本。
+7. 模板句必须是真正自然的英文句子，禁止生成下面这些差模板表达：
+   - Dear the ...
+   - I hope my ideas can be taken.
+   - [event] is my dream and goal.
+   - To begin with ... 重复堆砌的补位句
+   - 只有占位符骨架、没有完整句法的“半句模板”
+8. 输出结构要能直接用于教师讲义。
+9. 必须额外输出 template_schema_json，它是系统真正用来渲染范文的严格槽位骨架；同一子类下所有题目都要共用这套骨架。
+10. template_schema_json 中每个 paragraph 的 slots 都必须按最终范文句子顺序排列，每个 slot 必须包含：
+   - slot_key: 唯一键，如 p1_s1
+   - purpose: 该句承担的功能
+   - required_points: 该句必须覆盖的信息点数组
+   - fallback_pattern: 英文模板句骨架，必须带占位符，例如 \"I am writing to invite you to [activity] on [date].\"
+   - placeholder_labels: 该句里出现的占位符数组，例如 [\"[activity]\", \"[date]\"]
+11. template_schema_json 的句槽数量必须足够支撑约 150 词的完整中考范文：
+   - 书信/邮件类：总句槽数至少 10 个
+   - 非书信类：总句槽数至少 9 个
+   - 每个 slot 都代表最终范文中的一个完整英文句子
+12. template_content 必须和 template_schema_json 完全对齐：段落顺序一致、句子顺序一致、占位符一致。
+13. structure 必须输出 JSON 数组，每段包含 paragraph（段落序号）、purpose（段落功能）、word_range（建议词数范围）。不要输出 Python dict 字面量或纯文本。
+14. 不要为了凑够句槽数而机械补句；每个 slot 都必须是教学上有意义的功能句。
 
 ## 输出格式（JSON）
 
@@ -272,6 +312,32 @@ class QwenService:
 {{
     "template_name": "该子类通用模板名称",
     "template_content": "可直接套用的英文模板正文，使用占位符",
+    "template_schema_json": {{
+        "format": "slot_template_v1",
+        "paragraphs": [
+            {{
+                "paragraph": 1,
+                "purpose": "称呼并说明写作目的",
+                "word_range": "30-40",
+                "slots": [
+                    {{
+                        "slot_key": "p1_s1",
+                        "purpose": "称呼",
+                        "required_points": ["收件人称呼"],
+                        "fallback_pattern": "Dear [recipient],",
+                        "placeholder_labels": ["[recipient]"]
+                    }},
+                    {{
+                        "slot_key": "p1_s2",
+                        "purpose": "写作目的",
+                        "required_points": ["写信目的", "活动或主题"],
+                        "fallback_pattern": "I am writing to [purpose].",
+                        "placeholder_labels": ["[purpose]"]
+                    }}
+                ]
+            }}
+        ]
+    }},
     "structure": [
         {{"paragraph": 1, "purpose": "称呼并说明写作目的", "word_range": "30-40"}},
         {{"paragraph": 2, "purpose": "围绕核心信息展开", "word_range": "70-80"}},
@@ -295,7 +361,8 @@ class QwenService:
             return {}
         result = json.loads(json_match.group())
         for key in ['opening_sentences', 'closing_sentences', 'transition_words',
-                    'advanced_vocabulary', 'grammar_points', 'scoring_criteria', 'structure']:
+                    'advanced_vocabulary', 'grammar_points', 'scoring_criteria', 'structure',
+                    'template_schema_json']:
             if key in result and isinstance(result[key], (list, dict)):
                 result[key] = json.dumps(result[key], ensure_ascii=False)
         return result

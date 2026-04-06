@@ -1,62 +1,75 @@
 /**
- * 作文列表页
+ * 作文列表页（模板驱动版）
  *
  * [INPUT]: 依赖 antd 组件、@/services/writingService、@/types
  * [OUTPUT]: 对外提供 WritingPage 组件
  * [POS]: frontend/src/pages 的作文列表页面
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Table,
+  Alert,
+  Badge,
   Card,
-  Select,
+  Col,
+  Descriptions,
+  Empty,
+  Grid,
   Input,
+  Radio,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Table,
   Tabs,
   Tag,
-  Space,
-  Button,
   Typography,
   message,
-  Popconfirm,
-  Badge,
-  Tooltip,
-  Progress,
-  Radio,
 } from 'antd'
 import {
-  EyeOutlined,
-  DeleteOutlined,
-  RobotOutlined,
-  FileTextOutlined,
   BookOutlined,
+  FileTextOutlined,
+  ReadOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import {
-  getWritings,
   getWritingFilters,
-  deleteWriting,
-  batchDeleteWritings,
-  batchGenerateSamples,
+  getWritingTemplatePaperDetail,
+  getWritingTemplatePapers,
+  getWritingTemplates,
 } from '@/services/writingService'
-import type { WritingTask, WritingFiltersResponse } from '@/types'
+import type {
+  WritingFilter,
+  WritingFiltersResponse,
+  WritingSample,
+  WritingTaskDetail,
+  WritingTemplateListItem,
+  WritingTemplatePaperDetailResponse,
+  WritingTemplatePaperItem,
+} from '@/types'
 import { WritingHandoutView } from '@/components/writingHandout/WritingHandoutView'
-import { WritingDetailContent } from '@/components/writing/WritingDetailContent'
 
-const { Title } = Typography
+const { Title, Text, Paragraph } = Typography
 const { Search } = Input
 
-// 抽屉打开时要隐藏的次要列
-const SECONDARY_COLUMN_KEYS = ['region', 'exam_type', 'semester', 'category_path', 'word_limit']
+function getQualityTag(status?: 'pending' | 'passed' | 'failed') {
+  if (status === 'passed') {
+    return <Tag color="green">质检通过</Tag>
+  }
+  if (status === 'failed') {
+    return <Tag color="red">需重建</Tag>
+  }
+  return <Tag color="gold">待生成</Tag>
+}
 
 export function WritingPage() {
+  const screens = Grid.useBreakpoint()
+  const stacked = !screens.xl
+
   const [viewMode, setViewMode] = useState<'list' | 'handout'>('list')
-  const [loading, setLoading] = useState(false)
-  const [writings, setWritings] = useState<WritingTask[]>([])
-  const [total, setTotal] = useState(0)
-  const [gradeCounts, setGradeCounts] = useState<Record<string, number>>({})
   const [filters, setFilters] = useState<WritingFiltersResponse>({
     grades: [],
     semesters: [],
@@ -65,156 +78,128 @@ export function WritingPage() {
     major_categories: [],
     categories: [],
   })
-
-  // 批量选择状态
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
-
-  // 批量生成状态
-  const [generating, setGenerating] = useState(false)
-  const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
-
-  // 抽屉状态
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [selectedWritingId, setSelectedWritingId] = useState<number | null>(null)
-
-  // 筛选条件
-  const [filter, setFilter] = useState({
+  const [filter, setFilter] = useState<WritingFilter>({
     page: 1,
     size: 20,
-    grade: undefined as string | undefined,
-    semester: undefined as string | undefined,
-    exam_type: undefined as string | undefined,
-    group_category_id: undefined as number | undefined,
-    major_category_id: undefined as number | undefined,
-    category_id: undefined as number | undefined,
-    search: undefined as string | undefined,
   })
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [loadingPapers, setLoadingPapers] = useState(false)
+  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [templateTotal, setTemplateTotal] = useState(0)
+  const [templates, setTemplates] = useState<WritingTemplateListItem[]>([])
+  const [papers, setPapers] = useState<WritingTemplatePaperItem[]>([])
+  const [detail, setDetail] = useState<WritingTemplatePaperDetailResponse | null>(null)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
+  const [selectedPaperId, setSelectedPaperId] = useState<number | null>(null)
+  const templateRequestSeq = useRef(0)
+  const paperRequestSeq = useRef(0)
+  const detailRequestSeq = useRef(0)
 
-  // 加载筛选项
   useEffect(() => {
     loadFilters()
   }, [])
 
-  // 加载作文列表
   useEffect(() => {
-    loadWritings()
+    loadTemplates()
   }, [filter])
+
+  useEffect(() => {
+    if (selectedTemplateId) {
+      loadTemplatePapers(selectedTemplateId)
+    } else {
+      setPapers([])
+      setSelectedPaperId(null)
+      setDetail(null)
+    }
+  }, [selectedTemplateId])
+
+  useEffect(() => {
+    if (selectedTemplateId && selectedPaperId) {
+      loadTemplatePaperDetail(selectedTemplateId, selectedPaperId)
+    } else {
+      setDetail(null)
+    }
+  }, [selectedTemplateId, selectedPaperId])
 
   const loadFilters = async () => {
     try {
       const response = await getWritingFilters()
       setFilters(response)
     } catch (error) {
-      console.error('加载筛选项失败:', error)
+      console.error('加载作文筛选项失败:', error)
+      message.error('加载作文筛选项失败')
     }
   }
 
-  const loadWritings = async () => {
-    setLoading(true)
+  const loadTemplates = async () => {
+    const requestId = ++templateRequestSeq.current
+    setLoadingTemplates(true)
     try {
-      const response = await getWritings(filter)
-      setWritings(response.items)
-      setTotal(response.total)
-      if (response.grade_counts) {
-        setGradeCounts(response.grade_counts)
-      }
-    } catch (error) {
-      message.error('加载作文列表失败')
-      console.error(error)
-    } finally {
-      setLoading(false)
-    }
-  }
+      const response = await getWritingTemplates(filter)
+      if (requestId !== templateRequestSeq.current) return
+      setTemplates(response.items)
+      setTemplateTotal(response.total)
 
-  // 打开抽屉查看详情
-  const handleView = (id: number) => {
-    setSelectedWritingId(id)
-    setDrawerOpen(true)
-  }
-
-  // 关闭抽屉
-  const handleCloseDrawer = () => {
-    setDrawerOpen(false)
-    setSelectedWritingId(null)
-  }
-
-  const handleSearch = (value: string) => {
-    setFilter({ ...filter, search: value || undefined, page: 1 })
-  }
-
-  const handleDelete = async (id: number) => {
-    try {
-      await deleteWriting(id)
-      message.success('删除成功')
-      loadWritings()
-    } catch (error) {
-      message.error('删除失败')
-      console.error(error)
-    }
-  }
-
-  // 批量删除
-  const handleBatchDelete = async () => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请选择要删除的作文')
-      return
-    }
-    try {
-      await batchDeleteWritings({ task_ids: selectedRowKeys as number[] })
-      message.success('批量删除成功')
-      setSelectedRowKeys([])
-      loadWritings()
-    } catch (error) {
-      message.error('批量删除失败')
-      console.error(error)
-    }
-  }
-
-  // 批量生成范文
-  const handleBatchGenerate = async () => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请选择要生成范文的作文')
-      return
-    }
-
-    setGenerating(true)
-    setGenerateProgress({ current: 0, total: selectedRowKeys.length })
-
-    try {
-      const result = await batchGenerateSamples({
-        task_ids: selectedRowKeys as number[],
-        score_level: '一档',
+      setSelectedTemplateId((current) => {
+        if (current && response.items.some((item) => item.id === current)) {
+          return current
+        }
+        return response.items[0]?.id ?? null
       })
-
-      message.success(`成功生成 ${result.success_count} 篇范文，失败 ${result.fail_count} 篇`)
-      setSelectedRowKeys([])
-      loadWritings()
     } catch (error) {
-      message.error('批量生成失败')
-      console.error(error)
+      if (requestId !== templateRequestSeq.current) return
+      console.error('加载模板列表失败:', error)
+      message.error('加载模板列表失败')
     } finally {
-      setGenerating(false)
+      if (requestId === templateRequestSeq.current) {
+        setLoadingTemplates(false)
+      }
     }
   }
 
-  // 表格行选择配置
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (newSelectedRowKeys: React.Key[]) => {
-      setSelectedRowKeys(newSelectedRowKeys)
-    },
+  const loadTemplatePapers = async (templateId: number) => {
+    const requestId = ++paperRequestSeq.current
+    setLoadingPapers(true)
+    try {
+      const response = await getWritingTemplatePapers(templateId)
+      if (requestId !== paperRequestSeq.current) return
+      setPapers(response.papers)
+      setSelectedPaperId((current) => {
+        if (current && response.papers.some((item) => item.paper_id === current)) {
+          return current
+        }
+        return response.papers[0]?.paper_id ?? null
+      })
+    } catch (error) {
+      if (requestId !== paperRequestSeq.current) return
+      console.error('加载模板试卷失败:', error)
+      setPapers([])
+      setSelectedPaperId(null)
+      setDetail(null)
+      message.error('加载模板试卷失败')
+    } finally {
+      if (requestId === paperRequestSeq.current) {
+        setLoadingPapers(false)
+      }
+    }
   }
 
-  const getGroupColor = (type?: string) => {
-    switch (type) {
-      case '应用文':
-        return 'blue'
-      case '记叙文':
-        return 'green'
-      case '表达拓展类':
-        return 'gold'
-      default:
-        return 'default'
+  const loadTemplatePaperDetail = async (templateId: number, paperId: number) => {
+    const requestId = ++detailRequestSeq.current
+    setLoadingDetail(true)
+    try {
+      const response = await getWritingTemplatePaperDetail(templateId, paperId)
+      if (requestId !== detailRequestSeq.current) return
+      setDetail(response)
+    } catch (error) {
+      if (requestId !== detailRequestSeq.current) return
+      console.error('加载试卷范文详情失败:', error)
+      setDetail(null)
+      message.error('加载试卷范文详情失败')
+    } finally {
+      if (requestId === detailRequestSeq.current) {
+        setLoadingDetail(false)
+      }
     }
   }
 
@@ -241,157 +226,147 @@ export function WritingPage() {
   const categoryTabItems = useMemo(
     () => [
       { key: 'all', label: '全部' },
-      ...availableCategories.map((item) => ({
-        key: String(item.id),
-        label: item.name,
-      })),
+      ...availableCategories.map((item) => ({ key: String(item.id), label: item.name })),
     ],
     [availableCategories]
   )
 
+  const matchedDetailTasks = useMemo(() => {
+    if (!detail) return []
+    const currentCategoryId = detail.template.category.id
+    return (detail.tasks || []).filter((task) => task.category?.id === currentCategoryId)
+  }, [detail])
+
   useEffect(() => {
     if (!filter.category_id) return
-    const categoryExists = availableCategories.some((item) => item.id === filter.category_id)
-    if (!categoryExists) {
-      setFilter((prev) => ({
-        ...prev,
-        category_id: undefined,
-        page: 1,
-      }))
+    const exists = availableCategories.some((item) => item.id === filter.category_id)
+    if (!exists) {
+      setFilter((prev) => ({ ...prev, category_id: undefined, page: 1 }))
     }
   }, [availableCategories, filter.category_id])
 
-  // 表格列定义
-  const columns: ColumnsType<WritingTask> = [
-    {
-      title: '年份',
-      key: 'year',
-      width: drawerOpen ? 60 : 80,
-      render: (_, record) => record.source?.year || '-',
-    },
-    {
-      title: '区县',
-      key: 'region',
-      width: 80,
-      render: (_, record) => record.source?.region || '-',
-    },
-    {
-      title: '学校',
-      key: 'school',
-      width: drawerOpen ? 100 : 120,
-      ellipsis: true,
-      render: (_, record) => (
-        <Tooltip title={record.source?.school}>
-          {record.source?.school || '-'}
-        </Tooltip>
-      ),
-    },
-    {
-      title: '年级',
-      dataIndex: 'grade',
-      key: 'grade',
-      width: drawerOpen ? 50 : 80,
-      render: (grade: string) => grade || '-',
-    },
-    {
-      title: '学期',
-      dataIndex: 'semester',
-      key: 'semester',
-      width: 90,
-      render: (semester: string) => semester || '-',
-    },
-    {
-      title: '考试类型',
-      dataIndex: 'exam_type',
-      key: 'exam_type',
-      width: 90,
-      render: (examType: string) => examType || '-',
-    },
+  const templateColumns: ColumnsType<WritingTemplateListItem> = [
     {
       title: '分类',
-      key: 'category_path',
-      width: drawerOpen ? 210 : 260,
+      key: 'category',
       render: (_, record) => (
         <Space direction="vertical" size={4}>
           <Space wrap size={[4, 4]}>
-            <Tag color={getGroupColor(record.group_category?.name)}>{record.group_category?.name || '未识别'}</Tag>
-            {record.major_category?.name && <Tag color="cyan">{record.major_category.name}</Tag>}
-            {record.category?.name && <Tag color="geekblue">{record.category.name}</Tag>}
+            <Tag color="blue">{record.group_category.name}</Tag>
+            <Tag color="cyan">{record.major_category.name}</Tag>
+            <Tag color="geekblue">{record.category.name}</Tag>
           </Space>
-          <span style={{ fontSize: 12, color: '#666' }}>
-            目标：150词左右
-          </span>
+          <Text strong>{record.template_name}</Text>
         </Space>
       ),
     },
     {
-      title: '题目预览',
-      dataIndex: 'task_content',
-      key: 'task_content',
-      ellipsis: true,
-      render: (content: string) => (
-        <Tooltip title={content}>
-          {content?.slice(0, drawerOpen ? 40 : 80)}...
-        </Tooltip>
-      ),
+      title: '试卷',
+      dataIndex: 'paper_count',
+      width: 70,
+      align: 'center',
     },
     {
-      title: '字数',
-      dataIndex: 'word_limit',
-      key: 'word_limit',
-      width: 80,
-      render: (limit: string) => limit || '-',
+      title: '题目',
+      dataIndex: 'task_count',
+      width: 70,
+      align: 'center',
     },
     {
-      title: '操作',
-      key: 'action',
-      width: drawerOpen ? 80 : 150,
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => handleView(record.id)}
-          >
-            {!drawerOpen && '查看'}
-          </Button>
-          {!drawerOpen && (
-            <Popconfirm
-              title="确定删除这篇作文吗？"
-              onConfirm={() => handleDelete(record.id)}
-              okText="确定"
-              cancelText="取消"
-            >
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                删除
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+      title: '状态',
+      dataIndex: 'quality_status',
+      width: 96,
+      align: 'center',
+      render: (value) => getQualityTag(value),
     },
   ]
 
-  // 响应式列：抽屉打开时隐藏次要列
-  const visibleColumns = useMemo(() => {
-    if (drawerOpen) {
-      return columns.filter(col => !SECONDARY_COLUMN_KEYS.includes(col.key as string))
-    }
-    return columns
-  }, [drawerOpen, columns])
+  const paperColumns: ColumnsType<WritingTemplatePaperItem> = [
+    {
+      title: '试卷',
+      key: 'paper',
+      render: (_, record) => (
+        <Space direction="vertical" size={2}>
+          <Text strong>{record.year || '-'} {record.region || ''}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {record.filename}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: '题目数',
+      dataIndex: 'task_count',
+      width: 88,
+      align: 'center',
+    },
+  ]
+
+  const renderTaskCard = (task: WritingTaskDetail, index: number) => {
+    const sample: WritingSample | undefined = task.samples?.[0]
+    return (
+      <Card
+        key={task.id}
+        title={`当前试卷题目 ${index + 1} 正式范文`}
+        size="small"
+        extra={<Tag color="blue">150词左右</Tag>}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <div>
+            <Text strong>题目</Text>
+            <Paragraph style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{task.task_content}</Paragraph>
+          </div>
+
+          {task.requirements && (
+            <div>
+              <Text strong>要求</Text>
+              <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>
+                {task.requirements}
+              </Paragraph>
+            </div>
+          )}
+
+          {sample ? (
+            <>
+              <div>
+                <Space wrap>
+                  <Tag color="green">当前试卷正式范文</Tag>
+                  {getQualityTag(sample.quality_status)}
+                  {sample.word_count ? <Tag>{sample.word_count} 词</Tag> : null}
+                  {sample.generation_mode ? <Tag>{sample.generation_mode}</Tag> : null}
+                </Space>
+                <Paragraph style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>
+                  {sample.sample_content}
+                </Paragraph>
+              </div>
+              {sample.translation && (
+                <div>
+                  <Text strong>中文翻译</Text>
+                  <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>
+                    {sample.translation}
+                  </Paragraph>
+                </div>
+              )}
+            </>
+          ) : (
+            <Alert
+              type="warning"
+              showIcon
+              message="当前题目的正式范文正在补齐"
+              description="这道题会按当前子类的模板正文单独生成自己的正式范文。稍后刷新即可。"
+            />
+          )}
+        </Space>
+      </Card>
+    )
+  }
 
   return (
     <div style={{ padding: 24, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      {/* 视图切换器 */}
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Radio.Group
-          value={viewMode}
-          onChange={(e) => setViewMode(e.target.value)}
-          buttonStyle="solid"
-        >
+        <Radio.Group value={viewMode} onChange={(e) => setViewMode(e.target.value)} buttonStyle="solid">
           <Radio.Button value="list">
-            <UnorderedListOutlined /> 列表视图
+            <UnorderedListOutlined /> 模板视图
           </Radio.Button>
           <Radio.Button value="handout">
             <BookOutlined /> 讲义视图
@@ -399,217 +374,225 @@ export function WritingPage() {
         </Radio.Group>
       </div>
 
-      {/* 讲义视图 */}
-      {viewMode === 'handout' && (
+      {viewMode === 'handout' ? (
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <WritingHandoutView />
         </div>
-      )}
-
-      {/* 列表视图 + 抽屉的 flex 容器 */}
-      {viewMode === 'list' && (
-        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: drawerOpen ? 16 : 0 }}>
-          {/* 左侧：列表 */}
-          <div style={{
-            flex: 1,
-            minWidth: 0,
-            transition: 'all 0.3s ease-in-out',
-          }}>
-            <Card>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          {/* 标题和统计 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-            <Space direction="vertical" size={6}>
-              <Title level={3} style={{ margin: 0 }}>
-                <FileTextOutlined style={{ marginRight: 8 }} />
-                作文汇编
-                <Badge count={total} style={{ marginLeft: 8 }} />
-              </Title>
-              <div style={{ color: '#667085', fontSize: 13 }}>
-                试卷导入后自动完成子类归类，并为当前作文补齐子类模板与 150 词左右范文。
+      ) : (
+        <Space direction="vertical" size="large" style={{ width: '100%', flex: 1, minHeight: 0 }}>
+          <Card>
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                <Space direction="vertical" size={6}>
+                  <Title level={3} style={{ margin: 0 }}>
+                    <FileTextOutlined style={{ marginRight: 8 }} />
+                    作文汇编
+                    <Badge count={templateTotal} style={{ marginLeft: 8 }} />
+                  </Title>
+                  <Text type="secondary">
+                    先看模板，再看该模板覆盖的试卷，最后查看每道作文题按模板逐槽位生成的正式范文。
+                  </Text>
+                </Space>
+                <Space wrap>
+                  <Tag color="purple">一个子类一套模板</Tag>
+                  <Tag color="green">一题一篇正式范文</Tag>
+                  <Tag color="blue">导入即归类</Tag>
+                </Space>
               </div>
-            </Space>
-            <Space wrap>
-              {Object.entries(gradeCounts).map(([grade, count]) => (
-                <Tag key={grade} color="blue">{grade}: {count}</Tag>
-              ))}
-              <Tag color="purple">子类模板驱动</Tag>
-              <Tag color="green">导入即生成范文</Tag>
-            </Space>
-          </div>
 
-          {/* 筛选器 */}
-          <Space wrap>
-            <Select
-              allowClear
-              placeholder="年级"
-              style={{ width: 120 }}
-              value={filter.grade}
-              onChange={(value) => setFilter({ ...filter, grade: value, page: 1 })}
-              options={filters.grades.map((g) => ({ value: g, label: g }))}
-            />
-            <Select
-              allowClear
-              placeholder="学期"
-              style={{ width: 120 }}
-              value={filter.semester}
-              onChange={(value) => setFilter({ ...filter, semester: value, page: 1 })}
-              options={filters.semesters.map((s) => ({ value: s, label: `${s}学期` }))}
-            />
-            <Select
-              allowClear
-              placeholder="考试类型"
-              style={{ width: 120 }}
-              value={filter.exam_type}
-              onChange={(value) => setFilter({ ...filter, exam_type: value, page: 1 })}
-              options={filters.exam_types.map((e) => ({ value: e, label: e }))}
-            />
-            <Select
-              allowClear
-              placeholder="文体组"
-              style={{ width: 120 }}
-              value={filter.group_category_id}
-              onChange={(value) => setFilter({
-                ...filter,
-                group_category_id: value,
-                major_category_id: undefined,
-                category_id: undefined,
-                page: 1,
-              })}
-              options={filters.groups.map((item) => ({ value: item.id, label: item.name }))}
-            />
-            <Select
-              allowClear
-              placeholder="主类"
-              style={{ width: 160 }}
-              value={filter.major_category_id}
-              onChange={(value) => setFilter({
-                ...filter,
-                major_category_id: value,
-                category_id: undefined,
-                page: 1,
-              })}
-              options={availableMajorCategories.map((item) => ({ value: item.id, label: item.name }))}
-            />
-            <Search
-              placeholder="搜索作文内容..."
-              allowClear
-              onSearch={handleSearch}
-              style={{ width: 250 }}
-            />
-          </Space>
-
-          <Tabs
-            activeKey={filter.category_id ? String(filter.category_id) : 'all'}
-            items={categoryTabItems}
-            onChange={(activeKey) =>
-              setFilter((prev) => ({
-                ...prev,
-                category_id: activeKey === 'all' ? undefined : Number(activeKey),
-                page: 1,
-              }))
-            }
-            tabBarStyle={{ marginBottom: 0 }}
-          />
-
-          {/* 批量操作栏 */}
-          {selectedRowKeys.length > 0 && (
-            <Card size="small" style={{ backgroundColor: '#f5f5f5' }}>
-              <Space>
-                <span>已选择 {selectedRowKeys.length} 篇</span>
-                <Button
-                  type="primary"
-                  icon={<RobotOutlined />}
-                  loading={generating}
-                  onClick={handleBatchGenerate}
-                >
-                  批量生成范文
-                </Button>
-                {generating && (
-                  <Progress
-                    percent={Math.round((generateProgress.current / generateProgress.total) * 100)}
-                    size="small"
-                    style={{ width: 100 }}
-                  />
-                )}
-                <Popconfirm
-                  title={`确定删除选中的 ${selectedRowKeys.length} 篇作文吗？`}
-                  onConfirm={handleBatchDelete}
-                  okText="确定"
-                  cancelText="取消"
-                >
-                  <Button danger icon={<DeleteOutlined />}>
-                    批量删除
-                  </Button>
-                </Popconfirm>
-                <Button onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+              <Space wrap>
+                <Select
+                  allowClear
+                  placeholder="年级"
+                  style={{ width: 120 }}
+                  value={filter.grade}
+                  onChange={(value) => setFilter((prev) => ({ ...prev, grade: value, page: 1 }))}
+                  options={filters.grades.map((item) => ({ value: item, label: item }))}
+                />
+                <Select
+                  allowClear
+                  placeholder="学期"
+                  style={{ width: 120 }}
+                  value={filter.semester}
+                  onChange={(value) => setFilter((prev) => ({ ...prev, semester: value, page: 1 }))}
+                  options={filters.semesters.map((item) => ({ value: item, label: `${item}学期` }))}
+                />
+                <Select
+                  allowClear
+                  placeholder="考试类型"
+                  style={{ width: 120 }}
+                  value={filter.exam_type}
+                  onChange={(value) => setFilter((prev) => ({ ...prev, exam_type: value, page: 1 }))}
+                  options={filters.exam_types.map((item) => ({ value: item, label: item }))}
+                />
+                <Select
+                  allowClear
+                  placeholder="文体组"
+                  style={{ width: 120 }}
+                  value={filter.group_category_id}
+                  onChange={(value) => setFilter((prev) => ({
+                    ...prev,
+                    group_category_id: value,
+                    major_category_id: undefined,
+                    category_id: undefined,
+                    page: 1,
+                  }))}
+                  options={filters.groups.map((item) => ({ value: item.id, label: item.name }))}
+                />
+                <Select
+                  allowClear
+                  placeholder="主类"
+                  style={{ width: 160 }}
+                  value={filter.major_category_id}
+                  onChange={(value) => setFilter((prev) => ({
+                    ...prev,
+                    major_category_id: value,
+                    category_id: undefined,
+                    page: 1,
+                  }))}
+                  options={availableMajorCategories.map((item) => ({ value: item.id, label: item.name }))}
+                />
+                <Search
+                  placeholder="搜索作文题目"
+                  allowClear
+                  style={{ width: 240 }}
+                  onSearch={(value) => setFilter((prev) => ({ ...prev, search: value || undefined, page: 1 }))}
+                />
               </Space>
-            </Card>
-          )}
 
-          {/* 表格 */}
-          <Table
-            rowSelection={rowSelection}
-            columns={visibleColumns}
-            dataSource={writings}
-            rowKey="id"
-            loading={loading}
-            onRow={(record) => ({
-              onClick: () => handleView(record.id),
-              style: { cursor: 'pointer' },
-            })}
-            pagination={{
-              current: filter.page,
-              pageSize: filter.size,
-              total,
-              showSizeChanger: true,
-              showTotal: (total) => `共 ${total} 篇`,
-              onChange: (page, size) => setFilter({ ...filter, page, size }),
-            }}
-          />
-        </Space>
-      </Card>
-          </div>
-
-          {/* 抽屉面板 */}
-          {drawerOpen && selectedWritingId && (
-            <div
-              style={{
-                width: '70%',
-                flexShrink: 0,
-                height: '100%',
-                overflow: 'hidden',
-                borderLeft: '3px solid #1890ff',
-                background: '#fafcff',
-                display: 'flex',
-                flexDirection: 'column',
-                animation: 'slideIn 0.3s ease-out',
-              }}
-            >
-              <WritingDetailContent
-                writingId={selectedWritingId}
-                onClose={handleCloseDrawer}
+              <Tabs
+                activeKey={filter.category_id ? String(filter.category_id) : 'all'}
+                items={categoryTabItems}
+                onChange={(key) => setFilter((prev) => ({
+                  ...prev,
+                  category_id: key === 'all' ? undefined : Number(key),
+                  page: 1,
+                }))}
+                tabBarStyle={{ marginBottom: 0 }}
               />
-            </div>
-          )}
-        </div>
+            </Space>
+          </Card>
+
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <Row gutter={16} style={{ height: '100%' }}>
+              <Col span={stacked ? 24 : 8} style={{ display: 'flex' }}>
+                <Card
+                  title={<><ReadOutlined /> 模板列表</>}
+                  style={{ width: '100%', height: '100%' }}
+                  bodyStyle={{ padding: 0, height: stacked ? 'auto' : 'calc(100% - 57px)', display: 'flex', flexDirection: 'column' }}
+                >
+                  <Table
+                    columns={templateColumns}
+                    dataSource={templates}
+                    rowKey="id"
+                    loading={loadingTemplates}
+                    pagination={{
+                      current: filter.page,
+                      pageSize: filter.size,
+                      total: templateTotal,
+                      onChange: (page, size) => setFilter((prev) => ({ ...prev, page, size })),
+                      showSizeChanger: true,
+                    }}
+                    rowClassName={(record) => (record.id === selectedTemplateId ? 'ant-table-row-selected' : '')}
+                    onRow={(record) => ({
+                      onClick: () => {
+                        setSelectedTemplateId(record.id)
+                        setSelectedPaperId(null)
+                        setDetail(null)
+                      },
+                      style: { cursor: 'pointer' },
+                    })}
+                    scroll={stacked ? undefined : { y: 'calc(100vh - 360px)' }}
+                  />
+                </Card>
+              </Col>
+
+              <Col span={stacked ? 24 : 6} style={{ display: 'flex' }}>
+                <Card
+                  title="模板下试卷"
+                  style={{ width: '100%', height: '100%' }}
+                  bodyStyle={{ padding: 0, height: stacked ? 'auto' : 'calc(100% - 57px)', display: 'flex', flexDirection: 'column' }}
+                >
+                  {!selectedTemplateId ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先选择左侧模板" style={{ marginTop: 48 }} />
+                  ) : (
+                    <Table
+                      columns={paperColumns}
+                      dataSource={papers}
+                      rowKey="paper_id"
+                      loading={loadingPapers}
+                      pagination={false}
+                      rowClassName={(record) => (record.paper_id === selectedPaperId ? 'ant-table-row-selected' : '')}
+                      onRow={(record) => ({
+                        onClick: () => setSelectedPaperId(record.paper_id),
+                        style: { cursor: 'pointer' },
+                      })}
+                      scroll={stacked ? undefined : { y: 'calc(100vh - 360px)' }}
+                      locale={{ emptyText: '当前模板下暂无试卷' }}
+                    />
+                  )}
+                </Card>
+              </Col>
+
+              <Col span={stacked ? 24 : 10} style={{ display: 'flex' }}>
+                <Card
+                  title="当前试卷题目正式范文"
+                  style={{ width: '100%', height: '100%' }}
+                  bodyStyle={{ height: stacked ? 'auto' : 'calc(100% - 57px)', overflow: 'auto' }}
+                >
+                  {loadingDetail ? (
+                    <div style={{ textAlign: 'center', padding: 48 }}>
+                      <Spin />
+                    </div>
+                  ) : !detail ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择中间试卷后查看题目范文" />
+                  ) : (
+                    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                      <Card size="small" title={detail.template.template_name}>
+                        <Descriptions size="small" column={1} bordered>
+                          <Descriptions.Item label="分类路径">
+                            {detail.template.category.path}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="模板状态">
+                            {getQualityTag(detail.template.quality_status)}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="模板版本">
+                            v{detail.template.template_version}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="模板结构">
+                            <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                              {detail.template.structure || '未提供结构说明'}
+                            </Paragraph>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="模板正文">
+                            <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                              {detail.template.template_content}
+                            </Paragraph>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="试卷">
+                            {detail.paper.year || '-'} {detail.paper.region || ''} {detail.paper.exam_type || ''} {detail.paper.filename || ''}
+                          </Descriptions.Item>
+                        </Descriptions>
+                      </Card>
+
+                      {matchedDetailTasks.length > 0 ? (
+                        matchedDetailTasks.map((task, index) => renderTaskCard(task, index))
+                      ) : (
+                        <Alert
+                          type="warning"
+                          showIcon
+                          message="当前试卷在该模板下没有匹配题目"
+                          description="这张试卷可能同时包含多个子类的作文题。页面这里只会显示当前模板所属子类对应的题目。"
+                        />
+                      )}
+                    </Space>
+                  )}
+                </Card>
+              </Col>
+            </Row>
+          </div>
+        </Space>
       )}
     </div>
   )
 }
-
-// CSS 动画
-const style = document.createElement('style')
-style.textContent = `
-  @keyframes slideIn {
-    from {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-`
-document.head.appendChild(style)

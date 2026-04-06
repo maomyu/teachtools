@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-03-28T12:44:28",
+  "updated_at": "2026-04-04T12:27:32",
   "records": {
     "/Users/maoyu/Downloads/personal/项目-code/teachtools/试卷库/docx-解析版/2007年北京市中考英语试题（解析版）.docx": {
       "filename": "2007年北京市中考英语试题（解析版）.docx",
@@ -5472,6 +5472,30 @@
       "failure_reason": null,
       "paper_id": 922,
       "updated_at": "2026-03-28T01:59:05"
+    },
+    "/Users/maoyu/personal/code/teachtools/试卷库/区校试卷_2023_初三秋季期末_密云_2023北京密云初三（上）期末英语（教师版）.docx": {
+      "filename": "区校试卷_2023_初三秋季期末_密云_2023北京密云初三（上）期末英语（教师版）.docx",
+      "status": "success",
+      "signature": {
+        "size": 64707,
+        "mtime_ns": 1774176142133542216
+      },
+      "attempts_used": 1,
+      "failure_reason": null,
+      "paper_id": 925,
+      "updated_at": "2026-04-04T12:05:45"
+    },
+    "/Users/maoyu/personal/code/teachtools/试卷库/区校试卷_2025_初二春季期中_通州_2025北京通州初二（下）期中英语（教师版）.docx": {
+      "filename": "区校试卷_2025_初二春季期中_通州_2025北京通州初二（下）期中英语（教师版）.docx",
+      "status": "success",
+      "signature": {
+        "size": 405554,
+        "mtime_ns": 1774176141087141328
+      },
+      "attempts_used": 1,
+      "failure_reason": null,
+      "paper_id": 926,
+      "updated_at": "2026-04-04T12:27:32"
     }
   }
 }

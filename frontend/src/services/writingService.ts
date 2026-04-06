@@ -17,6 +17,9 @@ import type {
   WritingSample,
   WritingGradeHandoutResponse,
   WritingHandoutCategorySummary,
+  WritingTemplateListResponse,
+  WritingTemplatePaperListResponse,
+  WritingTemplatePaperDetailResponse,
 } from '@/types'
 
 function buildHandoutParams(
@@ -54,6 +57,26 @@ export async function getWritingFilters(): Promise<WritingFiltersResponse> {
  */
 export async function getWritings(params: WritingFilter): Promise<WritingTaskListResponse> {
   const response = await api.get<WritingTaskListResponse>('/writings', { params })
+  return response.data
+}
+
+export async function getWritingTemplates(params: WritingFilter): Promise<WritingTemplateListResponse> {
+  const response = await api.get<WritingTemplateListResponse>('/writings/templates', { params })
+  return response.data
+}
+
+export async function getWritingTemplatePapers(templateId: number): Promise<WritingTemplatePaperListResponse> {
+  const response = await api.get<WritingTemplatePaperListResponse>(`/writings/templates/${templateId}/papers`)
+  return response.data
+}
+
+export async function getWritingTemplatePaperDetail(
+  templateId: number,
+  paperId: number
+): Promise<WritingTemplatePaperDetailResponse> {
+  const response = await api.get<WritingTemplatePaperDetailResponse>(
+    `/writings/templates/${templateId}/papers/${paperId}`
+  )
   return response.data
 }
 
