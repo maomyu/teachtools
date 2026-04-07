@@ -15,7 +15,7 @@ import { PaperScopeSelector } from '@/components/handout/PaperScopeSelector'
 import { GeneratedPaperList } from '@/components/handout/GeneratedPaperList'
 import { getWritingFilters } from '@/services/writingService'
 import { getHandoutStatus, batchUpdateHandoutStatus, resetHandoutStatus } from '@/services/paperService'
-import type { HandoutStatusResponse } from '@/types'
+import type { HandoutStatusResponse, WritingCategoryNode } from '@/types'
 
 const { Title, Text } = Typography
 
@@ -41,6 +41,14 @@ export function WritingHandoutView() {
   const [generatedSelectionToken, setGeneratedSelectionToken] = useState<string | null>(null)
   const [availableGrades, setAvailableGrades] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+
+  // 作文类别筛选状态
+  const [groupCategories, setGroupCategories] = useState<WritingCategoryNode[]>([])
+  const [majorCategories, setMajorCategories] = useState<WritingCategoryNode[]>([])
+  const [categories, setCategories] = useState<WritingCategoryNode[]>([])
+  const [groupCategoryId, setGroupCategoryId] = useState<number | undefined>(undefined)
+  const [majorCategoryId, setMajorCategoryId] = useState<number | undefined>(undefined)
+  const [categoryId, setCategoryId] = useState<number | undefined>(undefined)
 
   // === 生成记录追踪 ===
   const [activeTab, setActiveTab] = useState<TabKey>('not_generated')
@@ -83,6 +91,9 @@ export function WritingHandoutView() {
     if (!selectedGrade) {
       setAvailablePaperIds([])
     }
+    setGroupCategoryId(undefined)
+    setMajorCategoryId(undefined)
+    setCategoryId(undefined)
   }, [selectedGrade])
 
   const hasGenerated = generatedEdition !== null && generatedSelectionToken !== null
@@ -101,6 +112,9 @@ export function WritingHandoutView() {
     setActiveTab('not_generated')
     setHandoutStatus(null)
     setGeneratedCheckedIds([])
+    setGroupCategoryId(undefined)
+    setMajorCategoryId(undefined)
+    setCategoryId(undefined)
   }, [])
 
   // === 核心生成逻辑 ===
@@ -133,6 +147,9 @@ export function WritingHandoutView() {
       setLoading(true)
       const filters = await getWritingFilters()
       setAvailableGrades(filters.grades || [])
+      setGroupCategories(filters.groups || [])
+      setMajorCategories(filters.major_categories || [])
+      setCategories(filters.categories || [])
     } catch (error) {
       console.error('加载年级列表失败:', error)
     } finally {
@@ -217,6 +234,15 @@ export function WritingHandoutView() {
                       onAvailablePaperIdsChange={setAvailablePaperIds}
                       fillAvailableHeight={isSplitLayout}
                       excludePaperIds={generatedPaperIdList}
+                      groupCategories={groupCategories}
+                      majorCategories={majorCategories}
+                      categories={categories}
+                      groupCategoryId={groupCategoryId}
+                      majorCategoryId={majorCategoryId}
+                      categoryId={categoryId}
+                      onGroupCategoryIdChange={setGroupCategoryId}
+                      onMajorCategoryIdChange={setMajorCategoryId}
+                      onCategoryIdChange={setCategoryId}
                     />
                   ),
                 },

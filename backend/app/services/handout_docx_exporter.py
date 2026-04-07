@@ -323,7 +323,7 @@ class HandoutDocxExporter:
         for code in sorted(points_by_type.keys()):
             group = points_by_type.get(code) or {}
             document.add_heading(
-                f"{code} {self._safe_text(group.get('name'))} | {self._safe_text(group.get('category_name'))}",
+                f"{self._safe_text(group.get('name'))} | {self._safe_text(group.get('category_name'))}",
                 level=3,
             )
             for point in group.get("points", []):
@@ -445,7 +445,7 @@ class HandoutDocxExporter:
                 rp_reason = self._safe_text(
                     self._lookup(rp, "rejection_reason") or self._lookup(rp, "explanation")
                 )
-                display = f"[{rp_code}] {rp_reason}" if rp_code and rp_reason else (rp_reason or rp_code or "")
+                display = rp_reason or rp_code or ""
                 rejection_map[rp_word] = display
 
             table = document.add_table(rows=1, cols=3)

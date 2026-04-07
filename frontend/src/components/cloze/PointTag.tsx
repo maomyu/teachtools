@@ -148,9 +148,9 @@ export function PointTag({
     // 显示 "编码 名称" 格式，如 "D1 词义辨析"
     const displayName = getPointDisplayName(code)
     const actualCode = code?.split('_')[0] || code
-    // 如果编码是标准的 A1-E2 格式，显示 "编码 名称"
+    // 如果编码是标准的 A1-E2 格式，只显示中文名称
     if (/^[A-E][1-5]$/.test(actualCode)) {
-      return `${actualCode} ${displayName}`
+      return displayName
     }
     return displayName
   }

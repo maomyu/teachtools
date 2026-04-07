@@ -3,7 +3,7 @@ import { Button, Checkbox, Empty, Input, Select, Space, Spin, Tag, Typography } 
 
 import { listPapersByGrade } from '@/services/paperService'
 import type { ModuleType } from '@/services/paperService'
-import type { PaperSummary } from '@/types'
+import type { PaperSummary, WritingCategoryNode } from '@/types'
 
 const { Text } = Typography
 
@@ -16,6 +16,16 @@ interface PaperScopeSelectorProps {
   onAvailablePaperIdsChange?: (paperIds: number[]) => void
   fillAvailableHeight?: boolean
   excludePaperIds?: number[]  // 排除已生成的试卷 ID
+  // 作文类别筛选项（由 WritingHandoutView 传入）
+  groupCategories?: WritingCategoryNode[]
+  majorCategories?: WritingCategoryNode[]
+  categories?: WritingCategoryNode[]
+  groupCategoryId?: number
+  majorCategoryId?: number
+  categoryId?: number
+  onGroupCategoryIdChange?: (id: number | undefined) => void
+  onMajorCategoryIdChange?: (id: number | undefined) => void
+  onCategoryIdChange?: (id: number | undefined) => void
 }
 
 function formatPaperLabel(paper: PaperSummary): string {
@@ -31,6 +41,25 @@ function formatPaperLabel(paper: PaperSummary): string {
   return `${meta} · ${paper.filename}`
 }
 
+// 计算级联选项
+function useCascadingOptions(
+  groupCategories: WritingCategoryNode[] | undefined,
+  majorCategories: WritingCategoryNode[] | undefined,
+  categories: WritingCategoryNode[] | undefined,
+  groupCategoryId: number | undefined,
+  majorCategoryId: number | undefined
+) {
+  return useMemo(() => {
+    const majorOptions = groupCategoryId
+      ? (majorCategories || []).filter((m) => m.parent_id === groupCategoryId)
+      : []
+    const categoryOptions = majorCategoryId
+      ? (categories || []).filter((c) => c.parent_id === majorCategoryId)
+      : []
+    return { majorOptions, categoryOptions }
+  }, [groupCategories, majorCategories, categories, groupCategoryId, majorCategoryId])
+}
+
 export function PaperScopeSelector({
   grade,
   moduleType,
@@ -40,6 +69,15 @@ export function PaperScopeSelector({
   onAvailablePaperIdsChange,
   fillAvailableHeight = false,
   excludePaperIds = [],
+  groupCategories,
+  majorCategories,
+  categories,
+  groupCategoryId,
+  majorCategoryId,
+  categoryId,
+  onGroupCategoryIdChange,
+  onMajorCategoryIdChange,
+  onCategoryIdChange,
 }: PaperScopeSelectorProps) {
   const [papers, setPapers] = useState<PaperSummary[]>([])
   const [loading, setLoading] = useState(false)
@@ -53,6 +91,10 @@ export function PaperScopeSelector({
   })
   const initializedGradeRef = useRef<string | null>(null)
 
+  const { majorOptions, categoryOptions } = useCascadingOptions(
+    groupCategories, majorCategories, categories, groupCategoryId, majorCategoryId
+  )
+
   useEffect(() => {
     let alive = true
 
@@ -61,7 +103,9 @@ export function PaperScopeSelector({
         setLoading(true)
         onLoadingChange?.(true)
         onAvailablePaperIdsChange?.([])
-        const response = await listPapersByGrade(grade, 500, moduleType)
+        const response = await listPapersByGrade(
+          grade, 500, moduleType, categoryId, majorCategoryId, groupCategoryId
+        )
         if (!alive) return
         setPapers(response.items || [])
       } catch (error) {
@@ -82,7 +126,7 @@ export function PaperScopeSelector({
     return () => {
       alive = false
     }
-  }, [grade, onAvailablePaperIdsChange, onLoadingChange])
+  }, [grade, categoryId, majorCategoryId, groupCategoryId, onAvailablePaperIdsChange, onLoadingChange, moduleType])
 
   useEffect(() => {
     setKeyword('')
@@ -95,9 +139,17 @@ export function PaperScopeSelector({
     })
   }, [grade])
 
-  useEffect(() => {
-    onAvailablePaperIdsChange?.(papers.map((paper) => paper.id))
-  }, [onAvailablePaperIdsChange, papers])
+  // 级联清空：选中文体组时清空主类，选中主类时清空子类
+  const handleGroupChange = (id: number | undefined) => {
+    onGroupCategoryIdChange?.(id)
+    onMajorCategoryIdChange?.(undefined)
+    onCategoryIdChange?.(undefined)
+  }
+
+  const handleMajorChange = (id: number | undefined) => {
+    onMajorCategoryIdChange?.(id)
+    onCategoryIdChange?.(undefined)
+  }
 
   useEffect(() => {
     const allPaperIds = papers.map((paper) => paper.id)
@@ -214,6 +266,36 @@ export function PaperScopeSelector({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', minHeight: 0, flex: 1 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {/* 作文类别三级筛选 */}
+              <Select
+                placeholder="文体组"
+                allowClear
+                size="small"
+                style={{ width: 110 }}
+                value={groupCategoryId}
+                onChange={handleGroupChange}
+                options={(groupCategories || []).map((g) => ({ value: g.id, label: g.name }))}
+              />
+              <Select
+                placeholder="主类"
+                allowClear
+                size="small"
+                style={{ width: 110 }}
+                value={majorCategoryId}
+                onChange={handleMajorChange}
+                options={majorOptions.map((m) => ({ value: m.id, label: m.name }))}
+                disabled={!groupCategoryId}
+              />
+              <Select
+                placeholder="子类"
+                allowClear
+                size="small"
+                style={{ width: 110 }}
+                value={categoryId}
+                onChange={onCategoryIdChange}
+                options={categoryOptions.map((c) => ({ value: c.id, label: c.name }))}
+                disabled={!majorCategoryId}
+              />
               <Select
                 placeholder="年份"
                 allowClear

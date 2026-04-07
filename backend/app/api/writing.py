@@ -215,7 +215,7 @@ async def get_writing_templates(
 ):
     """按模板维度获取作文汇编列表。"""
     service = WritingService(db)
-    items, total = await service.get_template_list(
+    items, total, total_paper_count, total_task_count = await service.get_template_list(
         page=page,
         size=size,
         grade=grade,
@@ -228,6 +228,8 @@ async def get_writing_templates(
     )
     return WritingTemplateListResponse(
         total=total,
+        total_paper_count=total_paper_count,
+        total_task_count=total_task_count,
         items=[
             WritingTemplateListItem(
                 id=item["template"].id,

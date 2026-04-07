@@ -1343,6 +1343,9 @@ async def list_papers(
     has_cloze: Optional[bool] = None,
     has_reading: Optional[bool] = None,
     has_writing: Optional[bool] = None,
+    group_category_id: Optional[int] = None,
+    major_category_id: Optional[int] = None,
+    category_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """获取试卷列表"""
@@ -1366,12 +1369,15 @@ async def list_papers(
                 select(ReadingPassage.paper_id).where(ReadingPassage.paper_id.isnot(None))
             )
         )
-    if has_writing:
-        query = query.where(
-            ExamPaper.id.in_(
-                select(WritingTask.paper_id).where(WritingTask.paper_id.isnot(None))
-            )
-        )
+    if has_writing or group_category_id or major_category_id or category_id:
+        writing_query = select(WritingTask.paper_id).where(WritingTask.paper_id.isnot(None))
+        if group_category_id:
+            writing_query = writing_query.where(WritingTask.group_category_id == group_category_id)
+        if major_category_id:
+            writing_query = writing_query.where(WritingTask.major_category_id == major_category_id)
+        if category_id:
+            writing_query = writing_query.where(WritingTask.category_id == category_id)
+        query = query.where(ExamPaper.id.in_(writing_query))
 
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)

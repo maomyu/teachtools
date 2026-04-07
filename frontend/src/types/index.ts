@@ -1076,6 +1076,8 @@ export interface WritingTemplateListItem {
 
 export interface WritingTemplateListResponse {
   total: number
+  total_paper_count: number
+  total_task_count: number
   items: WritingTemplateListItem[]
 }
 
@@ -1172,6 +1174,7 @@ export interface WritingHandoutCategorySection {
   frameworks: WritingFramework[]
   expressions: HighFrequencyExpression[]
   samples: HandoutSample[]
+  template_content?: string
 }
 
 /** 作文讲义一级分组 */

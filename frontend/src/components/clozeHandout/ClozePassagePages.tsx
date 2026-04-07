@@ -428,9 +428,7 @@ function buildOptionData(point: ClozePoint, correctWord: string): OptionRow[] {
   rejectionPoints.forEach(rp => {
     const code = rp.rejection_code || rp.point_code || ''
     const reason = rp.rejection_reason || rp.explanation || ''
-    const displayReason = reason
-      ? `${code ? `[${code}] ` : ''}${reason}`
-      : code
+    const displayReason = reason || code
     rejectionMap.set(rp.option_word, displayReason)
   })
 

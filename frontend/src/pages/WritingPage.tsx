@@ -86,6 +86,8 @@ export function WritingPage() {
   const [loadingPapers, setLoadingPapers] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [templateTotal, setTemplateTotal] = useState(0)
+  const [filteredPaperTotal, setFilteredPaperTotal] = useState(0)
+  const [filteredTaskTotal, setFilteredTaskTotal] = useState(0)
   const [templates, setTemplates] = useState<WritingTemplateListItem[]>([])
   const [papers, setPapers] = useState<WritingTemplatePaperItem[]>([])
   const [detail, setDetail] = useState<WritingTemplatePaperDetailResponse | null>(null)
@@ -119,7 +121,7 @@ export function WritingPage() {
     } else {
       setDetail(null)
     }
-  }, [selectedTemplateId, selectedPaperId])
+  }, [selectedPaperId])
 
   const loadFilters = async () => {
     try {
@@ -139,6 +141,8 @@ export function WritingPage() {
       if (requestId !== templateRequestSeq.current) return
       setTemplates(response.items)
       setTemplateTotal(response.total)
+      setFilteredPaperTotal(response.total_paper_count)
+      setFilteredTaskTotal(response.total_task_count)
 
       setSelectedTemplateId((current) => {
         if (current && response.items.some((item) => item.id === current)) {
@@ -160,6 +164,7 @@ export function WritingPage() {
   const loadTemplatePapers = async (templateId: number) => {
     const requestId = ++paperRequestSeq.current
     setLoadingPapers(true)
+    setDetail(null)
     try {
       const response = await getWritingTemplatePapers(templateId)
       if (requestId !== paperRequestSeq.current) return
@@ -387,13 +392,17 @@ export function WritingPage() {
                   <Title level={3} style={{ margin: 0 }}>
                     <FileTextOutlined style={{ marginRight: 8 }} />
                     作文汇编
-                    <Badge count={templateTotal} style={{ marginLeft: 8 }} />
                   </Title>
                   <Text type="secondary">
                     先看模板，再看该模板覆盖的试卷，最后查看每道作文题按模板逐槽位生成的正式范文。
                   </Text>
                 </Space>
                 <Space wrap>
+                  <Badge count={templateTotal} color="#722ed1" title="当前筛选下的模板数">
+                    <Tag color="purple">模板 {templateTotal}</Tag>
+                  </Badge>
+                  <Tag color="blue">试卷 {filteredPaperTotal}</Tag>
+                  <Tag color="geekblue">作文题 {filteredTaskTotal}</Tag>
                   <Tag color="purple">一个子类一套模板</Tag>
                   <Tag color="green">一题一篇正式范文</Tag>
                   <Tag color="blue">导入即归类</Tag>

@@ -29,8 +29,8 @@ from app.services.writing_category_classifier import WritingCategoryClassifier, 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WORD_TARGET = 150
-SAMPLE_MIN_WORDS = 130
-SAMPLE_MAX_WORDS = 170
+SAMPLE_MIN_WORDS = 120
+SAMPLE_MAX_WORDS = 180
 LETTER_CATEGORY_KEYWORDS = ("信", "邮件", "回信")
 SPEECH_CATEGORY_KEYWORDS = ("演讲稿", "发言稿", "倡议书", "通知")
 OFFICIAL_GENERATION_MODE = "slot_fill"
@@ -2761,7 +2761,7 @@ class WritingService:
         major_category_id: Optional[int] = None,
         category_id: Optional[int] = None,
         search: Optional[str] = None,
-    ) -> Tuple[List[Dict[str, Any]], int]:
+    ) -> Tuple[List[Dict[str, Any]], int, int, int]:
         """按模板维度返回作文汇编列表。"""
         category_result = await self.db.execute(select(WritingCategory))
         category_map = {item.id: item for item in category_result.scalars().all()}
@@ -2790,6 +2790,17 @@ class WritingService:
         )
         total_result = await self.db.execute(select(func.count()).select_from(template_ids_query.subquery()))
         total = total_result.scalar() or 0
+        aggregate_result = await self.db.execute(
+            select(
+                func.count(func.distinct(WritingTask.paper_id)).label("paper_count"),
+                func.count(func.distinct(WritingTask.id)).label("task_count"),
+            )
+            .select_from(WritingTask)
+            .where(*filters)
+        )
+        aggregate_row = aggregate_result.one()
+        total_paper_count = aggregate_row.paper_count or 0
+        total_task_count = aggregate_row.task_count or 0
 
         query = (
             select(
@@ -2825,7 +2836,7 @@ class WritingService:
                     "task_count": task_count or 0,
                 }
             )
-        return items, total
+        return items, total, total_paper_count, total_task_count
 
     async def get_template_papers(self, template_id: int) -> Dict[str, Any]:
         """获取某个模板覆盖的试卷列表。"""
@@ -3097,6 +3108,7 @@ class WritingService:
             "frameworks": [self._build_framework_from_template(category, template)],
             "expressions": self._build_expressions_from_template(template),
             "samples": samples,
+            "template_content": template.template_content or None,
         }
 
     def _build_framework_from_template(self, category: WritingCategory, template: WritingTemplate) -> Dict:

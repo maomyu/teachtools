@@ -6,12 +6,18 @@ export type ModuleType = 'reading' | 'cloze' | 'writing'
 export async function listPapersByGrade(
   grade: string,
   size: number = 500,
-  moduleType?: ModuleType
+  moduleType?: ModuleType,
+  categoryId?: number,
+  majorCategoryId?: number,
+  groupCategoryId?: number
 ): Promise<PaperListResponse> {
   const params: Record<string, unknown> = { grade, page: 1, size }
   if (moduleType === 'reading') params.has_reading = true
   else if (moduleType === 'cloze') params.has_cloze = true
   else if (moduleType === 'writing') params.has_writing = true
+  if (categoryId) params.category_id = categoryId
+  if (majorCategoryId) params.major_category_id = majorCategoryId
+  if (groupCategoryId) params.group_category_id = groupCategoryId
   const response = await api.get<PaperListResponse>('/papers/', { params })
   return response.data
 }

@@ -286,6 +286,7 @@ class WritingHandoutCategorySection(BaseModel):
     frameworks: List[WritingFramework] = []
     expressions: List[HighFrequencyExpression] = []
     samples: List[HandoutSample] = []
+    template_content: Optional[str] = None
 
 
 class WritingHandoutGroupResponse(BaseModel):
@@ -329,6 +330,8 @@ class WritingTemplateListResponse(BaseModel):
     """作文模板列表响应"""
 
     total: int
+    total_paper_count: int = 0
+    total_task_count: int = 0
     items: List[WritingTemplateListItem] = []
 
 

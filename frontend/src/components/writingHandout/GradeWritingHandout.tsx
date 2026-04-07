@@ -308,7 +308,6 @@ export function GradeWritingHandout({ grade, edition, paperIds, onBack }: GradeW
         <section className="handout-page cover-page writing-handout-page">
           <div className="cover-content">
             <Title level={1}>{grade}作文讲义</Title>
-            <Title level={3} type="secondary">分类树整理 · 子类模板迁移</Title>
             <Divider />
             <Text>包含 {flatSections.length} 个子类 · {handout.total_task_count} 道真题</Text>
             <br />
@@ -388,7 +387,7 @@ interface CategorySectionProps {
 }
 
 function CategorySection({ section, sectionIndex, edition }: CategorySectionProps) {
-  const { summary, frameworks, expressions, samples, major_category, category } = section
+  const { summary, frameworks, expressions, samples, major_category, category, template_content } = section
   const frameworkPages = paginateByLineBudget(
     frameworks,
     estimateFrameworkLines,
@@ -441,6 +440,26 @@ function CategorySection({ section, sectionIndex, edition }: CategorySectionProp
             </section>
           ))}
         </>
+      )}
+
+      {template_content && (
+        <section className="handout-page part-page writing-handout-page">
+          <Title level={3}>二、模板原文</Title>
+          <Divider />
+          <Card size="small" style={{ background: '#fafafa' }}>
+            <pre style={{
+              margin: 0,
+              fontFamily: 'Georgia, "Times New Roman", serif',
+              fontSize: 13,
+              lineHeight: 1.8,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              color: '#262626',
+            }}>
+              {template_content}
+            </pre>
+          </Card>
+        </section>
       )}
 
       {expressions.length > 0 && (

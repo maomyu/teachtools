@@ -773,7 +773,7 @@ class LLMDocumentParser:
             return []
 
         marker_pattern = re.compile(
-            r'(?im)^\s*(题目\s*[①②③④⑤⑥⑦⑧⑨⑩]|题目\s*[1-9]|作文\s*[①②③④⑤⑥⑦⑧⑨⑩]|作文\s*[1-9]|第一题|第二题|第三题|Task\s*[1-9])[\s：:]*'
+            r'(?im)^\s*(题目\s*[①②③④⑤⑥⑦⑧⑨⑩]|题目\s*[1-9]|作文\s*[①②③④⑤⑥⑦⑧⑨⑩]|作文\s*[1-9]|第一题|第二题|第三题|Task\s*[1-9]|写作[一二三123])[\s：:]*'
         )
         matches = list(marker_pattern.finditer(content))
         if len(matches) < 2:
@@ -856,7 +856,8 @@ class LLMDocumentParser:
 
         matches = self._find_writing_task_markers(section_text)
         if len(matches) < 2:
-            return []
+            single_task = self._build_single_writing_task_from_section(section_text)
+            return [single_task] if single_task else []
 
         shared_prefix = section_text[:matches[0].start()].strip()
         shared_requirements = shared_prefix
@@ -895,16 +896,33 @@ class LLMDocumentParser:
 
         return dedupe_writing_tasks(tasks)
 
+    def _build_single_writing_task_from_section(self, section_text: str) -> Optional[WritingExtractTask]:
+        """当作文区只包含一道题时，直接按整段构造单题结果。"""
+        normalized = re.sub(r"\s+", " ", section_text or "").strip()
+        if not normalized or not self._looks_like_writing_prompt_segment(normalized[:600]):
+            return None
+
+        writing_type, application_type = self._infer_writing_type_from_text(normalized)
+        return WritingExtractTask(
+            content=section_text.strip(),
+            requirements=section_text.strip(),
+            word_limit=self._extract_word_limit(section_text),
+            writing_type=writing_type,
+            application_type=application_type,
+            task_label="",
+        )
+
     def _find_writing_task_markers(self, section_text: str) -> List[re.Match]:
         """查找作文小题起始标记，兼容题目①/②和老卷中的 15．/16． 这类编号格式。"""
         marker_pattern = re.compile(
-            r'(?im)^\s*(题目\s*[①②③④⑤⑥⑦⑧⑨⑩]|题目\s*[1-9]|题目\s+[1-9]|作文\s*[①②③④⑤⑥⑦⑧⑨⑩]|作文\s*[1-9]|作文\s+[1-9]|第一题|第二题|第三题|Task\s*[1-9])[\s：:]*'
+            r'(?im)^\s*(题目\s*[①②③④⑤⑥⑦⑧⑨⑩]|题目\s*[1-9]|题目\s+[1-9]|作文\s*[①②③④⑤⑥⑦⑧⑨⑩]|作文\s*[1-9]|作文\s+[1-9]|第一题|第二题|第三题|Task\s*[1-9]|写作[一二三123])[\s：:]*'
         )
         matches = list(marker_pattern.finditer(section_text))
         if len(matches) >= 2:
             return matches
 
-        numbered_pattern = re.compile(r'(?im)^\s*(\d{1,2})[．\.、]\s*(?:（\d+分）)?')
+        # 兜底仅接受两位题号（如 19. / 39. / 52.），避免把题干内部的 1、2、3 小点误判成独立作文题。
+        numbered_pattern = re.compile(r'(?im)^\s*(\d{2})[．\.、]\s*(?:（\d+分）)?')
         numbered_matches: List[re.Match] = []
         for match in numbered_pattern.finditer(section_text):
             line_end = section_text.find("\n", match.start())
@@ -913,7 +931,7 @@ class LLMDocumentParser:
             line_text = section_text[match.start():line_end].strip()
             if len(re.findall(r"[\u4e00-\u9fff]", line_text)) < 8 and "题目" not in line_text:
                 continue
-            if any(cue in line_text for cue in ("提示问题", "提示词", "一档文", "二档文", "三档文", "评分")):
+            if any(cue in line_text for cue in ("提示问题", "提示词", "一档文", "二档文", "三档文", "评分", "【解答】")):
                 continue
             segment_end = section_text.find("\n", line_end + 1)
             if segment_end == -1:
@@ -964,6 +982,7 @@ class LLMDocumentParser:
             return ""
 
         section_cutoff_patterns = [
+            r'(?im)^\s*(?:单项选择|单项填空|选择填空|完形填空|阅读理解|阅读短文|任务型阅读|语法填空|词汇运用|根据短文内容回答问题|补全对话|听力理解)\b',
             r'(?im)^\s*[一二三四五六七八九十百]+[、\.．]\s*(?:单项选择|选择填空|完形填空|阅读理解|阅读短文|任务型阅读|语法填空|词汇运用|根据短文内容回答问题|补全对话|听力理解)\b',
             r'(?im)^\s*\d+\s*[、\.．]\s*(?:单项选择|选择填空|完形填空|阅读理解|阅读短文|任务型阅读|语法填空|词汇运用)\b',
             r'(?im)^\s*(?:十一|十二|十三|十四|十五)[、\.．]\s*',
