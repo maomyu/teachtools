@@ -268,6 +268,47 @@ class WritingCategoryClassifier:
             normalized,
             ["room", "bed", "desk", "books", "computer", "family", "家人", "房间", "my room", "room like"],
         )
+        matched_person_intro_keywords = self._contains_any(
+            normalized,
+            [
+                "guiding star",
+                "role model",
+                "hero",
+                "teacher",
+                "scientist",
+                "inventor",
+                "mother",
+                "father",
+                "friend",
+                "person",
+                "he/she",
+                "who is your",
+                "榜样",
+                "启发你的人",
+                "影响你的人",
+            ],
+        )
+        matched_general_intro_topic_keywords = self._contains_any(
+            normalized,
+            [
+                "book",
+                "story",
+                "reading",
+                "museum",
+                "place",
+                "city",
+                "hometown",
+                "festival",
+                "holiday",
+                "home",
+                "school day",
+                "english learning",
+                "learning experience",
+                "favorite place",
+                "my home",
+                "my room",
+            ],
+        )
         matched_notice_format_keywords = self._contains_any(
             normalized,
             ["notice", "student union", "students' union", "dear foreign students", "学生会"],
@@ -466,15 +507,28 @@ class WritingCategoryClassifier:
                     matched_keywords=matched_intro_info_keywords + matched_room_keywords,
                 )
 
-        if matched_submission_keywords and matched_room_keywords:
-            candidates = self._filter_by_names(leaves, ["介绍信"])
+        if matched_submission_keywords and not matched_strict_letter_context and matched_person_intro_keywords:
+            candidates = self._filter_by_names(leaves, ["人物介绍"])
+            if candidates:
+                return candidates, WritingCategoryResult(
+                    success=True,
+                    category=candidates[0],
+                    confidence=0.95,
+                    reasoning="命中征文投稿且主题为人物/榜样介绍，归入人物介绍",
+                    matched_keywords=matched_submission_keywords + matched_person_intro_keywords,
+                )
+
+        if matched_submission_keywords and not matched_strict_letter_context and (
+            matched_room_keywords or matched_general_intro_topic_keywords
+        ):
+            candidates = self._filter_by_names(leaves, ["活动介绍"])
             if candidates:
                 return candidates, WritingCategoryResult(
                     success=True,
                     category=candidates[0],
                     confidence=0.94,
-                    reasoning="命中征文投稿且主题为房间/家居介绍，归入介绍信",
-                    matched_keywords=matched_submission_keywords + matched_room_keywords,
+                    reasoning="命中征文投稿且主题为介绍说明类短文，归入活动介绍",
+                    matched_keywords=matched_submission_keywords + matched_room_keywords + matched_general_intro_topic_keywords,
                 )
 
         if matched_submission_keywords and matched_advice_keywords and matched_activity_info_keywords:

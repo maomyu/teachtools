@@ -673,6 +673,24 @@ class WritingService:
                 inferred[placeholder] = value
         return inferred
 
+    def _matches_relaxed_slot_pattern(
+        self,
+        schema_slot: Dict[str, Any],
+        rendered_text: str,
+    ) -> bool:
+        fallback_pattern = self._cleanup_rendered_text(str(schema_slot.get("fallback_pattern") or "").strip())
+        normalized_text = self._cleanup_rendered_text(str(rendered_text or "").strip())
+        if not fallback_pattern or not normalized_text:
+            return False
+
+        relaxed_patterns = {
+            "It is about [background or key context].": r"(?i)^It is .+\.$",
+            "This helps us [benefit 1].": r"(?i)^This helps (me|us|students?|people|readers?) .+\.$",
+            "It also makes us [benefit 2].": r"(?i)^It also makes .+\.$",
+        }
+        pattern = relaxed_patterns.get(fallback_pattern)
+        return bool(pattern and re.match(pattern, normalized_text))
+
     def _render_slot_text_from_template(
         self,
         schema_slot: Dict[str, Any],
@@ -687,6 +705,11 @@ class WritingService:
         ]
 
         if placeholder_labels:
+            if not placeholder_values and source_rendered_text.strip() and self._matches_relaxed_slot_pattern(
+                schema_slot,
+                source_rendered_text,
+            ):
+                return self._cleanup_rendered_text(source_rendered_text.strip())
             rendered_text = fallback_pattern
             for placeholder in placeholder_labels:
                 rendered_text = rendered_text.replace(
@@ -1029,6 +1052,17 @@ class WritingService:
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
+    def _is_allowed_speech_salutation(self, text: str) -> bool:
+        normalized = str(text or "").strip()
+        if not normalized:
+            return False
+        return bool(
+            re.match(
+                r"(?i)^(hello everyone|hello, everyone|dear .+|good (morning|afternoon|evening)(, everyone)?|ladies and gentlemen)[,.! ]*$",
+                normalized,
+            )
+        )
+
     def _validate_rendered_slots(
         self,
         template_schema: Dict[str, Any],
@@ -1087,13 +1121,14 @@ class WritingService:
                     placeholder_values,
                     rendered_text,
                 )
-                if expected_text != self._cleanup_rendered_text(rendered_text):
+                relaxed_match = self._matches_relaxed_slot_pattern(schema_slot, rendered_text)
+                if expected_text != self._cleanup_rendered_text(rendered_text) and not relaxed_match:
                     return False
                 if any(
                     not placeholder_values.get(self._normalize_placeholder_key(str(label)))
                     for label in (schema_slot.get("placeholder_labels") or [])
                     if str(label).strip()
-                ):
+                ) and not relaxed_match:
                     return False
                 ordered_slot_texts.append(rendered_text)
 
@@ -1113,10 +1148,11 @@ class WritingService:
                 ):
                     return False
             else:
-                if re.search(r"(?i)^Dear\b", ordered_text):
+                first_line = ordered_slot_texts[0].strip() if ordered_slot_texts else ""
+                if re.search(r"(?i)^Dear\b", ordered_text) and not (
+                    is_speech and self._is_allowed_speech_salutation(first_line)
+                ):
                     return False
-            if is_speech and re.search(r"(?i)^Dear\b", ordered_text):
-                return False
         return True
 
     def _detect_quality_issues(
@@ -1154,6 +1190,7 @@ class WritingService:
             issues.append("存在重复句")
 
         is_letter = any(keyword in (category.path or category.name) for keyword in LETTER_CATEGORY_KEYWORDS)
+        is_speech = any(keyword in (category.path or category.name) for keyword in SPEECH_CATEGORY_KEYWORDS)
         if is_letter:
             if not essay.strip().startswith("Dear "):
                 issues.append("书信类缺少自然称呼")
@@ -1162,7 +1199,10 @@ class WritingService:
             if not re.search(r"(?im)^(Best wishes,|Yours sincerely,|Yours,|Sincerely,|Best regards,)\s*$", essay):
                 issues.append("书信类缺少自然收尾")
         else:
-            if re.search(r"(?im)^Dear\b", essay):
+            first_line = essay.strip().splitlines()[0].strip() if essay.strip() else ""
+            if re.search(r"(?im)^Dear\b", essay) and not (
+                is_speech and self._is_allowed_speech_salutation(first_line)
+            ):
                 issues.append("非书信类误用了书信格式")
 
         if not self._validate_rendered_slots(template_schema, rendered_slots, category=category):
@@ -1283,7 +1323,8 @@ class WritingService:
         )
 
         last_issues: List[str] = []
-        for attempt in range(3):
+        for attempt in range(5):
+            issues: List[str] = []
             result_text = await self.ai_service.chat_async(
                 prompt,
                 system_prompt="你是严格执行模板骨架的北京中考英语写作专家。",
@@ -1294,6 +1335,7 @@ class WritingService:
                 self._parse_slot_fill_result(result_text),
             )
             if not self._validate_rendered_slots(template_schema, rendered_slots, category=category):
+                last_issues = ["槽位结构与模板骨架不一致"]
                 prompt += "\n\n⚠️ 上一次输出没有严格遵守模板槽位顺序，请逐 paragraph / slot_key 原样重试。"
                 continue
 
@@ -1353,6 +1395,8 @@ class WritingService:
                         rendered_slots=rendered_slots,
                         peer_samples=peer_samples,
                     )
+                else:
+                    issues = ["槽位结构与模板骨架不一致"]
             if not issues:
                 translation = await self._translate_essay(essay)
                 if not translation or not translation.strip():
@@ -2036,30 +2080,32 @@ class WritingService:
             ]
         elif category_name == "活动介绍":
             template_content = (
-                "Here I would like to introduce [activity].\n"
-                "It is held [time, place or background].\n\n"
-                "First, students can [activity detail 1].\n"
-                "Then, they usually [activity detail 2].\n"
+                "Here I would like to introduce [topic].\n"
+                "It is about [background or key context].\n\n"
+                "First, [detail 1].\n"
+                "Then, [detail 2].\n"
                 "Besides, [highlight or feature].\n"
-                "This activity helps students [benefit 1].\n"
-                "It also makes our school life [benefit 2].\n\n"
-                "That is why many students enjoy [activity].\n"
-                "I hope more people can take part in it."
+                "This helps us [benefit 1].\n"
+                "It also makes us [benefit 2].\n"
+                "Sharing this brings me great joy, and I sincerely hope you will enjoy it as much as I do.\n\n"
+                "That is why I want to share [topic].\n"
+                "I hope it can inspire more people.\n"
+                "I am more than happy to share this with you, as it has always been close to my heart."
             )
             structure = "\n".join(
                 [
-                    "第1段：点明活动名称并介绍背景（25-35词）",
-                    "第2段：介绍活动安排、亮点和收获（85-95词）",
-                    "第3段：总结活动价值并表达期待（25-35词）",
+                    "第1段：点明介绍对象并概括背景（25-35词）",
+                    "第2段：介绍关键信息、亮点和收获（85-95词）",
+                    "第3段：总结意义并表达期待（25-35词）",
                 ]
             )
             opening_sentences = [
-                "Here I would like to introduce [activity].",
-                "It is held [time, place or background].",
+                "Here I would like to introduce [topic].",
+                "It is about [background or key context].",
             ]
             closing_sentences = [
-                "That is why many students enjoy [activity].",
-                "I hope more people can take part in it.",
+                "That is why I want to share [topic].",
+                "I hope it can inspire more people.",
             ]
         elif category_name == "通知":
             template_content = (
