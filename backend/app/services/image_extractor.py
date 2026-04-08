@@ -74,7 +74,7 @@ class ImageExtractor:
     )
     SINGLE_OPTION_LABEL_PATTERN = re.compile(r"^\s*([A-D])(?:\s*[\.、．])?\s*$")
     SINGLE_OPTION_WITH_TEXT_PATTERN = re.compile(
-        r"^\s*([A-D])(?:\s*[\.、．])\s*(.+?)\s*$"
+        r"^\s*([A-D])(?:\s*[\.、．]\s*|\s+)(.+?)\s*$"
     )
 
     STOP_TEXT_PATTERNS = [
@@ -188,7 +188,14 @@ class ImageExtractor:
                     question["question_text"] = merged_question_text
                     question["has_question_images"] = True
 
-                if not has_option_markers and matched_count == 0:
+                has_text_options = self._has_text_option_values(options)
+                has_letter_answer = self._has_letter_answer(question.get("correct_answer"))
+                if (
+                    not has_option_markers
+                    and matched_count == 0
+                    and not has_text_options
+                    and not has_letter_answer
+                ):
                     question["is_open_ended"] = True
 
         warnings = self.validate_extraction(option_images, questions)
@@ -198,6 +205,28 @@ class ImageExtractor:
                 question.pop("_image_key", None)
 
         return option_images, warnings
+
+    @staticmethod
+    def _has_text_option_values(options: Dict[str, str] | None) -> bool:
+        """判断题目是否已经有非图片占位的文本选项。"""
+        if not options:
+            return False
+        for key in ("A", "B", "C", "D"):
+            value = options.get(key)
+            if not isinstance(value, str):
+                continue
+            normalized = value.strip()
+            if not normalized:
+                continue
+            if re.fullmatch(r"\[IMAGE(?::[^\]]+)?\]", normalized):
+                continue
+            return True
+        return False
+
+    @staticmethod
+    def _has_letter_answer(correct_answer: Optional[str]) -> bool:
+        """判断答案是否是标准 A-D 选项。"""
+        return str(correct_answer or "").strip().upper() in {"A", "B", "C", "D"}
 
     def analyze_question_blocks(
         self,

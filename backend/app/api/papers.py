@@ -108,6 +108,11 @@ def infer_question_type_from_payload(question_data: Dict[str, Any]) -> str:
     option_count = count_non_empty_options(options)
     text_option_count = count_text_options(options)
     question_text = question_data.get("question_text", "")
+    has_letter_answer = correct_answer in {"A", "B", "C", "D"}
+
+    # 只要已经有足够的客观证据表明这是选择题，就不要再被 open_ended 标记覆盖。
+    if option_count >= 2 or (has_letter_answer and text_option_count >= 1):
+        return "multiple_choice"
 
     if question_data.get("is_open_ended"):
         return "open_ended"
@@ -115,14 +120,14 @@ def infer_question_type_from_payload(question_data: Dict[str, Any]) -> str:
     if (
         looks_like_open_ended_question(question_text)
         and text_option_count == 0
-        and (correct_answer not in {"A", "B", "C", "D"} or option_count < 2)
+        and (not has_letter_answer or option_count < 2)
     ):
         return "open_ended"
 
     if (
         not question_data.get("has_image_options")
         and option_count == 0
-        and correct_answer not in {"A", "B", "C", "D"}
+        and not has_letter_answer
     ):
         return "open_ended"
 
