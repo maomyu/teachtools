@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
+import re
 from typing import Any, Iterable, Optional
 
 from docx import Document
@@ -20,6 +22,12 @@ from docx.shared import Mm, Pt
 
 class HandoutDocxExporter:
     """将讲义数据导出为可编辑的 DOCX。"""
+
+    IMAGE_TOKEN_PATTERN = re.compile(r"\[IMAGE:(.+?)\]")
+    PENDING_IMAGE_TOKEN_PATTERN = re.compile(r"\[IMAGE\]")
+
+    def __init__(self, static_root: Optional[str | Path] = None) -> None:
+        self.static_root = Path(static_root) if static_root else Path(__file__).resolve().parents[2] / "static"
 
     def build_reading_grade_docx(
         self,
@@ -293,11 +301,23 @@ class HandoutDocxExporter:
                 document.add_paragraph("题目：")
                 for question in questions:
                     q_text = f"{self._safe_text(question.get('number'))}. {self._safe_text(question.get('text'))}".strip()
-                    document.add_paragraph(q_text, style="List Number")
+                    self._add_rich_multiline_text(
+                        document,
+                        q_text,
+                        style="List Number",
+                        image_max_width=Mm(85),
+                        image_indent=Mm(8),
+                    )
                     for option_key in ("A", "B", "C", "D"):
                         option_value = (question.get("options") or {}).get(option_key)
                         if option_value:
-                            document.add_paragraph(f"{option_key}. {option_value}", style="List Bullet")
+                            self._add_rich_multiline_text(
+                                document,
+                                f"{option_key}. {option_value}",
+                                style="List Bullet",
+                                image_max_width=Mm(70),
+                                image_indent=Mm(14),
+                            )
                     if edition == "teacher":
                         answer = self._safe_text(question.get("correct_answer"))
                         explanation = self._safe_text(question.get("explanation"))
@@ -569,10 +589,93 @@ class HandoutDocxExporter:
         cleaned = self._safe_text(text)
         if not cleaned:
             return
-        for line in cleaned.splitlines():
-            line = line.strip()
-            if line:
-                document.add_paragraph(line)
+        self._add_rich_multiline_text(document, cleaned)
+
+    def _add_rich_multiline_text(
+        self,
+        document: Document,
+        text: Any,
+        style: Optional[str] = None,
+        image_max_width: Any = Mm(120),
+        image_indent: Optional[Any] = None,
+    ) -> None:
+        cleaned = self._safe_text(text)
+        if not cleaned:
+            return
+
+        for raw_line in cleaned.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            self._add_rich_line(
+                document,
+                line,
+                style=style,
+                image_max_width=image_max_width,
+                image_indent=image_indent,
+            )
+
+    def _add_rich_line(
+        self,
+        document: Document,
+        line: str,
+        style: Optional[str] = None,
+        image_max_width: Any = Mm(120),
+        image_indent: Optional[Any] = None,
+    ) -> None:
+        text_content, image_urls, pending_image_count = self._parse_rich_line(line)
+
+        if text_content:
+            document.add_paragraph(text_content, style=style)
+
+        for image_url in image_urls:
+            image_path = self._resolve_image_path(image_url)
+            if image_path and image_path.exists():
+                document.add_picture(str(image_path), width=image_max_width)
+                image_paragraph = document.paragraphs[-1]
+                if image_indent is not None:
+                    image_paragraph.paragraph_format.left_indent = image_indent
+            else:
+                fallback = document.add_paragraph(f"[图片缺失: {image_url}]")
+                if image_indent is not None:
+                    fallback.paragraph_format.left_indent = image_indent
+
+        for _ in range(pending_image_count):
+            placeholder = document.add_paragraph("[图片待提取]")
+            if image_indent is not None:
+                placeholder.paragraph_format.left_indent = image_indent
+
+    def _parse_rich_line(self, line: str) -> tuple[str, list[str], int]:
+        image_urls: list[str] = []
+        pending_image_count = len(self.PENDING_IMAGE_TOKEN_PATTERN.findall(line))
+        text_content = self.IMAGE_TOKEN_PATTERN.sub(
+            lambda match: self._replace_image_token(match, image_urls),
+            line,
+        )
+        text_content = self.PENDING_IMAGE_TOKEN_PATTERN.sub(" ", text_content)
+        text_content = re.sub(r"\s+", " ", text_content).strip()
+        return text_content, image_urls, pending_image_count
+
+    def _replace_image_token(self, match: re.Match[str], image_urls: list[str]) -> str:
+        image_url = str(match.group(1) or "").strip()
+        if image_url:
+            image_urls.append(image_url)
+        return " "
+
+    def _resolve_image_path(self, image_url: str) -> Optional[Path]:
+        normalized = str(image_url or "").strip()
+        if not normalized:
+            return None
+        if normalized.startswith(("http://", "https://")):
+            return None
+        if normalized.startswith("/static/"):
+            return self.static_root / normalized.removeprefix("/static/")
+        candidate = Path(normalized)
+        if candidate.is_absolute():
+            return candidate
+        if normalized.startswith("static/"):
+            return self.static_root.parent / normalized
+        return self.static_root / normalized.lstrip("/")
 
     def _format_passage_ref(self, passage: dict[str, Any]) -> str:
         passage_type = self._safe_text(self._lookup(passage, "type"))
