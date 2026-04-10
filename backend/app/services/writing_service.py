@@ -2811,21 +2811,15 @@ class WritingService:
         """按模板维度返回作文汇编列表。"""
         category_result = await self.db.execute(select(WritingCategory))
         category_map = {item.id: item for item in category_result.scalars().all()}
-        filters = []
-        if grade:
-            filters.append(WritingTask.grade == grade)
-        if semester:
-            filters.append(WritingTask.semester == semester)
-        if exam_type:
-            filters.append(WritingTask.exam_type == exam_type)
-        if group_category_id:
-            filters.append(WritingTask.group_category_id == group_category_id)
-        if major_category_id:
-            filters.append(WritingTask.major_category_id == major_category_id)
-        if category_id:
-            filters.append(WritingTask.category_id == category_id)
-        if search:
-            filters.append(WritingTask.task_content.contains(search))
+        filters = self._build_template_task_filters(
+            grade=grade,
+            semester=semester,
+            exam_type=exam_type,
+            group_category_id=group_category_id,
+            major_category_id=major_category_id,
+            category_id=category_id,
+            search=search,
+        )
 
         template_ids_query = (
             select(WritingTemplate.id)
@@ -2884,7 +2878,52 @@ class WritingService:
             )
         return items, total, total_paper_count, total_task_count
 
-    async def get_template_papers(self, template_id: int) -> Dict[str, Any]:
+    def _build_template_task_filters(
+        self,
+        *,
+        template_category_id: Optional[int] = None,
+        paper_id: Optional[int] = None,
+        grade: Optional[str] = None,
+        semester: Optional[str] = None,
+        exam_type: Optional[str] = None,
+        group_category_id: Optional[int] = None,
+        major_category_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        search: Optional[str] = None,
+    ) -> List[Any]:
+        filters: List[Any] = []
+        if template_category_id is not None:
+            filters.append(WritingTask.category_id == template_category_id)
+        if paper_id is not None:
+            filters.append(WritingTask.paper_id == paper_id)
+        if grade:
+            filters.append(WritingTask.grade == grade)
+        if semester:
+            filters.append(WritingTask.semester == semester)
+        if exam_type:
+            filters.append(WritingTask.exam_type == exam_type)
+        if group_category_id is not None:
+            filters.append(WritingTask.group_category_id == group_category_id)
+        if major_category_id is not None:
+            filters.append(WritingTask.major_category_id == major_category_id)
+        if category_id is not None:
+            filters.append(WritingTask.category_id == category_id)
+        if search:
+            filters.append(WritingTask.task_content.contains(search))
+        return filters
+
+    async def get_template_papers(
+        self,
+        template_id: int,
+        *,
+        grade: Optional[str] = None,
+        semester: Optional[str] = None,
+        exam_type: Optional[str] = None,
+        group_category_id: Optional[int] = None,
+        major_category_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        search: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """获取某个模板覆盖的试卷列表。"""
         template_result = await self.db.execute(
             select(WritingTemplate)
@@ -2895,13 +2934,23 @@ class WritingService:
         if not template:
             raise ValueError("模板不存在")
 
+        filters = self._build_template_task_filters(
+            template_category_id=template.category_id,
+            grade=grade,
+            semester=semester,
+            exam_type=exam_type,
+            group_category_id=group_category_id,
+            major_category_id=major_category_id,
+            category_id=category_id,
+            search=search,
+        )
         result = await self.db.execute(
             select(
                 ExamPaper,
                 func.count(WritingTask.id).label("task_count"),
             )
             .join(WritingTask, WritingTask.paper_id == ExamPaper.id)
-            .where(WritingTask.category_id == template.category_id)
+            .where(*filters)
             .group_by(ExamPaper.id)
             .order_by(ExamPaper.year.desc().nullslast(), ExamPaper.id.desc())
         )
@@ -2932,11 +2981,43 @@ class WritingService:
             "papers": papers,
         }
 
-    async def get_template_paper_detail(self, template_id: int, paper_id: int) -> Dict[str, Any]:
+    async def get_template_paper_detail(
+        self,
+        template_id: int,
+        paper_id: int,
+        *,
+        grade: Optional[str] = None,
+        semester: Optional[str] = None,
+        exam_type: Optional[str] = None,
+        group_category_id: Optional[int] = None,
+        major_category_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        search: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """获取模板下某一张试卷的全部作文题与正式范文。"""
-        template_payload = await self.get_template_papers(template_id)
+        template_payload = await self.get_template_papers(
+            template_id,
+            grade=grade,
+            semester=semester,
+            exam_type=exam_type,
+            group_category_id=group_category_id,
+            major_category_id=major_category_id,
+            category_id=category_id,
+            search=search,
+        )
         template = template_payload["template"]
         expected_category_id = template_payload["category"].id
+        filters = self._build_template_task_filters(
+            template_category_id=expected_category_id,
+            paper_id=paper_id,
+            grade=grade,
+            semester=semester,
+            exam_type=exam_type,
+            group_category_id=group_category_id,
+            major_category_id=major_category_id,
+            category_id=category_id,
+            search=search,
+        )
 
         task_result = await self.db.execute(
             select(WritingTask)
@@ -2947,15 +3028,12 @@ class WritingService:
                 selectinload(WritingTask.major_category),
                 selectinload(WritingTask.category),
             )
-            .where(
-                WritingTask.paper_id == paper_id,
-                WritingTask.category_id == template_payload["category"].id,
-            )
+            .where(*filters)
             .order_by(WritingTask.id.asc())
         )
         tasks = list(task_result.scalars().all())
         if not tasks:
-            raise ValueError("该试卷下没有属于当前模板的作文题")
+            raise ValueError("该试卷下没有符合当前筛选条件且属于当前模板的作文题")
 
         return {
             "template": template,

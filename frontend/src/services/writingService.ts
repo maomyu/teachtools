@@ -65,17 +65,24 @@ export async function getWritingTemplates(params: WritingFilter): Promise<Writin
   return response.data
 }
 
-export async function getWritingTemplatePapers(templateId: number): Promise<WritingTemplatePaperListResponse> {
-  const response = await api.get<WritingTemplatePaperListResponse>(`/writings/templates/${templateId}/papers`)
+export async function getWritingTemplatePapers(
+  templateId: number,
+  params?: WritingFilter
+): Promise<WritingTemplatePaperListResponse> {
+  const response = await api.get<WritingTemplatePaperListResponse>(`/writings/templates/${templateId}/papers`, {
+    params,
+  })
   return response.data
 }
 
 export async function getWritingTemplatePaperDetail(
   templateId: number,
-  paperId: number
+  paperId: number,
+  params?: WritingFilter
 ): Promise<WritingTemplatePaperDetailResponse> {
   const response = await api.get<WritingTemplatePaperDetailResponse>(
-    `/writings/templates/${templateId}/papers/${paperId}`
+    `/writings/templates/${templateId}/papers/${paperId}`,
+    { params }
   )
   return response.data
 }

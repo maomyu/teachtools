@@ -255,11 +255,30 @@ async def get_writing_templates(
 
 
 @router.get("/templates/{template_id}/papers", response_model=WritingTemplatePaperListResponse)
-async def get_writing_template_papers(template_id: int, db: AsyncSession = Depends(get_db)):
+async def get_writing_template_papers(
+    template_id: int,
+    grade: Optional[str] = Query(None),
+    semester: Optional[str] = Query(None),
+    exam_type: Optional[str] = Query(None),
+    group_category_id: Optional[int] = Query(None),
+    major_category_id: Optional[int] = Query(None),
+    category_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     """获取某个模板下的试卷列表。"""
     service = WritingService(db)
     try:
-        payload = await service.get_template_papers(template_id)
+        payload = await service.get_template_papers(
+            template_id,
+            grade=grade,
+            semester=semester,
+            exam_type=exam_type,
+            group_category_id=group_category_id,
+            major_category_id=major_category_id,
+            category_id=category_id,
+            search=search,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -301,11 +320,32 @@ async def get_writing_template_papers(template_id: int, db: AsyncSession = Depen
 
 
 @router.get("/templates/{template_id}/papers/{paper_id}", response_model=WritingTemplatePaperDetailResponse)
-async def get_writing_template_paper_detail(template_id: int, paper_id: int, db: AsyncSession = Depends(get_db)):
+async def get_writing_template_paper_detail(
+    template_id: int,
+    paper_id: int,
+    grade: Optional[str] = Query(None),
+    semester: Optional[str] = Query(None),
+    exam_type: Optional[str] = Query(None),
+    group_category_id: Optional[int] = Query(None),
+    major_category_id: Optional[int] = Query(None),
+    category_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     """获取某个模板下某张试卷的全部作文题与正式范文。"""
     service = WritingService(db)
     try:
-        payload = await service.get_template_paper_detail(template_id, paper_id)
+        payload = await service.get_template_paper_detail(
+            template_id,
+            paper_id,
+            grade=grade,
+            semester=semester,
+            exam_type=exam_type,
+            group_category_id=group_category_id,
+            major_category_id=major_category_id,
+            category_id=category_id,
+            search=search,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

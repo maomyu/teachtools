@@ -113,7 +113,7 @@ export function WritingPage() {
       setSelectedPaperId(null)
       setDetail(null)
     }
-  }, [selectedTemplateId])
+  }, [selectedTemplateId, filter])
 
   useEffect(() => {
     if (selectedTemplateId && selectedPaperId) {
@@ -164,9 +164,11 @@ export function WritingPage() {
   const loadTemplatePapers = async (templateId: number) => {
     const requestId = ++paperRequestSeq.current
     setLoadingPapers(true)
+    setPapers([])
+    setSelectedPaperId(null)
     setDetail(null)
     try {
-      const response = await getWritingTemplatePapers(templateId)
+      const response = await getWritingTemplatePapers(templateId, filter)
       if (requestId !== paperRequestSeq.current) return
       setPapers(response.papers)
       setSelectedPaperId((current) => {
@@ -193,7 +195,7 @@ export function WritingPage() {
     const requestId = ++detailRequestSeq.current
     setLoadingDetail(true)
     try {
-      const response = await getWritingTemplatePaperDetail(templateId, paperId)
+      const response = await getWritingTemplatePaperDetail(templateId, paperId, filter)
       if (requestId !== detailRequestSeq.current) return
       setDetail(response)
     } catch (error) {
