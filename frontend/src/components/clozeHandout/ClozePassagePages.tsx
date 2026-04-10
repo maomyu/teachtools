@@ -10,7 +10,7 @@
  */
 import { Typography, Divider, Tag, Space, Table } from 'antd'
 import type { ClozeHandoutPassage, ClozePoint } from '@/types'
-import { CATEGORY_COLORS, LEGACY_TO_NEW_CODE } from '@/types'
+import { CATEGORY_COLORS, LEGACY_TO_NEW_CODE, POINT_TYPE_BY_CODE } from '@/types'
 
 const { Title, Text } = Typography
 
@@ -39,6 +39,35 @@ function getPointColor(pointType?: string): string {
   }
 
   return 'default'
+}
+
+function getPointDisplayName(pointType?: string): string {
+  if (!pointType) return ''
+
+  const normalizedCode = pointType.split('_')[0]
+  const mappedCode = POINT_TYPE_BY_CODE[normalizedCode]
+    ? normalizedCode
+    : LEGACY_TO_NEW_CODE[pointType]
+
+  if (mappedCode && POINT_TYPE_BY_CODE[mappedCode]) {
+    return POINT_TYPE_BY_CODE[mappedCode].name
+  }
+
+  return pointType
+}
+
+function normalizePointLabelsInText(text?: string): string {
+  if (!text) return ''
+
+  let normalized = text
+  Object.entries(POINT_TYPE_BY_CODE).forEach(([code, definition]) => {
+    const label = definition.name
+    normalized = normalized.replace(new RegExp(`([（(])\\s*${code}\\s*([）)])`, 'g'), `$1${label}$2`)
+    normalized = normalized.replace(new RegExp(`(?<![A-Z0-9])${code}(?=\\s*[\\u4e00-\\u9fff])`, 'g'), '')
+    normalized = normalized.replace(new RegExp(`(?<![A-Z0-9])${code}(?![A-Z0-9])`, 'g'), label)
+  })
+
+  return normalized.replace(/\s{2,}/g, ' ').trim()
 }
 
 // ============================================================================
@@ -318,6 +347,8 @@ interface PointExplanationCardProps {
 
 function PointExplanationCard({ point }: PointExplanationCardProps) {
   const correctWord = point.correct_word || point.correct_answer || '-'
+  const formattedExplanation = normalizePointLabelsInText(point.explanation)
+  const formattedTips = normalizePointLabelsInText(point.tips)
 
   // 构建选项数据：选项词 + 排除理由
   const optionData = buildOptionData(point, correctWord)
@@ -381,15 +412,15 @@ function PointExplanationCard({ point }: PointExplanationCardProps) {
       />
 
       {/* 2. 解析 */}
-      {point.explanation && (
+      {formattedExplanation && (
         <div style={{ marginBottom: 8 }}>
           <Text type="secondary" style={{ fontSize: '11pt' }}>解析：</Text>
-          <Text style={{ fontSize: '11pt' }}>{point.explanation}</Text>
+          <Text style={{ fontSize: '11pt' }}>{formattedExplanation}</Text>
         </div>
       )}
 
       {/* 3. 解题技巧 */}
-      {point.tips && (
+      {formattedTips && (
         <div style={{
           marginTop: 8,
           padding: '8px 12px',
@@ -398,7 +429,7 @@ function PointExplanationCard({ point }: PointExplanationCardProps) {
           borderLeft: '3px solid #1890ff'
         }}>
           <Text type="secondary" style={{ fontSize: '11pt' }}>解题技巧：</Text>
-          <Text style={{ fontSize: '11pt', marginLeft: 4 }}>{point.tips}</Text>
+          <Text style={{ fontSize: '11pt', marginLeft: 4 }}>{formattedTips}</Text>
         </div>
       )}
     </div>
@@ -419,7 +450,6 @@ interface OptionRow {
 
 function buildOptionData(point: ClozePoint, correctWord: string): OptionRow[] {
   const options = point.options || {}
-  const wordAnalysis = point.word_analysis || {}
   const rejectionPoints = point.rejection_points || []
 
   // 构建排错点映射：option_word -> rejection_reason + rejection_code
@@ -427,8 +457,8 @@ function buildOptionData(point: ClozePoint, correctWord: string): OptionRow[] {
   const rejectionMap = new Map<string, string>()
   rejectionPoints.forEach(rp => {
     const code = rp.rejection_code || rp.point_code || ''
-    const reason = rp.rejection_reason || rp.explanation || ''
-    const displayReason = reason || code
+    const reason = normalizePointLabelsInText(rp.rejection_reason || rp.explanation || '')
+    const displayReason = reason || getPointDisplayName(code)
     rejectionMap.set(rp.option_word, displayReason)
   })
 

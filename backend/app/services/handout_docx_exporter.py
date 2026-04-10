@@ -25,6 +25,24 @@ class HandoutDocxExporter:
 
     IMAGE_TOKEN_PATTERN = re.compile(r"\[IMAGE:(.+?)\]")
     PENDING_IMAGE_TOKEN_PATTERN = re.compile(r"\[IMAGE\]")
+    POINT_CODE_TO_NAME = {
+        "A1": "上下文语义推断",
+        "A2": "复现与照应",
+        "A3": "代词指代",
+        "A4": "情节/行为顺序",
+        "A5": "情感态度",
+        "B1": "并列一致",
+        "B2": "转折对比",
+        "B3": "因果关系",
+        "B4": "其他逻辑关系",
+        "C1": "词性与句子成分",
+        "C2": "固定搭配",
+        "C3": "语法形式限制",
+        "D1": "常规词义辨析",
+        "D2": "熟词僻义",
+        "E1": "生活常识/场景常识",
+        "E2": "主题主旨与人物共情",
+    }
 
     def __init__(self, static_root: Optional[str | Path] = None) -> None:
         self.static_root = Path(static_root) if static_root else Path(__file__).resolve().parents[2] / "static"
@@ -130,12 +148,18 @@ class HandoutDocxExporter:
                 title = f"{summary.get('major_category_name', '')} / {summary.get('category_name', '')}"
                 document.add_heading(self._safe_text(title), level=2)
                 self._add_writing_topic_stats(document, summary)
-                self._add_writing_frameworks(document, section.get("frameworks", []))
-                self._add_writing_expressions(document, section.get("expressions", []))
+                self._add_writing_frameworks(document, section.get("frameworks", []), title="Part 2 写作框架")
+                self._add_writing_template_content(
+                    document,
+                    section.get("template_content"),
+                    title="Part 3 模板原文",
+                )
+                self._add_writing_expressions(document, section.get("expressions", []), title="Part 4 高频表达")
                 self._add_writing_samples(
                     document,
                     section.get("samples", []),
                     edition,
+                    title="Part 5 范文展示",
                 )
 
         return self._to_bytes(document)
@@ -365,7 +389,9 @@ class HandoutDocxExporter:
                         document.add_paragraph(f"示例：{self._safe_text(self._lookup(first, 'sentence'))}")
                         analysis = self._lookup(first, "analysis")
                         if self._lookup(analysis, "explanation"):
-                            document.add_paragraph(f"解析：{self._safe_text(self._lookup(analysis, 'explanation'))}")
+                            document.add_paragraph(
+                                f"解析：{self._normalize_point_labels_in_text(self._safe_text(self._lookup(analysis, 'explanation')))}"
+                            )
 
             document.add_paragraph()
 
@@ -465,7 +491,7 @@ class HandoutDocxExporter:
                 rp_reason = self._safe_text(
                     self._lookup(rp, "rejection_reason") or self._lookup(rp, "explanation")
                 )
-                display = rp_reason or rp_code or ""
+                display = self._normalize_point_labels_in_text(rp_reason) or self._format_point_label(rp_code)
                 rejection_map[rp_word] = display
 
             table = document.add_table(rows=1, cols=3)
@@ -485,12 +511,12 @@ class HandoutDocxExporter:
         # 解析
         explanation = self._lookup(point, "explanation")
         if explanation:
-            document.add_paragraph(f"解析：{self._safe_text(explanation)}")
+            document.add_paragraph(f"解析：{self._normalize_point_labels_in_text(self._safe_text(explanation))}")
 
         # 解题技巧
         tips = self._lookup(point, "tips")
         if tips:
-            document.add_paragraph(f"解题技巧：{self._safe_text(tips)}")
+            document.add_paragraph(f"解题技巧：{self._normalize_point_labels_in_text(self._safe_text(tips))}")
 
         document.add_paragraph()
 
@@ -509,8 +535,13 @@ class HandoutDocxExporter:
                 document.add_paragraph(self._safe_text(item), style="List Bullet")
         document.add_paragraph()
 
-    def _add_writing_frameworks(self, document: Document, frameworks: list[dict[str, Any]]) -> None:
-        self._add_section_heading(document, "Part 2 写作框架")
+    def _add_writing_frameworks(
+        self,
+        document: Document,
+        frameworks: list[dict[str, Any]],
+        title: str = "Part 2 写作框架",
+    ) -> None:
+        self._add_section_heading(document, title)
         if not frameworks:
             document.add_paragraph("暂无写作框架。")
             return
@@ -527,8 +558,28 @@ class HandoutDocxExporter:
 
         document.add_paragraph()
 
-    def _add_writing_expressions(self, document: Document, expressions: list[dict[str, Any]]) -> None:
-        self._add_section_heading(document, "Part 3 高频表达")
+    def _add_writing_template_content(
+        self,
+        document: Document,
+        template_content: Any,
+        title: str = "Part 3 模板原文",
+    ) -> None:
+        self._add_section_heading(document, title)
+        content = self._safe_text(template_content)
+        if not content:
+            document.add_paragraph("暂无模板原文。")
+            return
+
+        self._add_multiline_text(document, content)
+        document.add_paragraph()
+
+    def _add_writing_expressions(
+        self,
+        document: Document,
+        expressions: list[dict[str, Any]],
+        title: str = "Part 3 高频表达",
+    ) -> None:
+        self._add_section_heading(document, title)
         if not expressions:
             document.add_paragraph("暂无高频表达。")
             return
@@ -544,9 +595,10 @@ class HandoutDocxExporter:
         self,
         document: Document,
         samples: list[dict[str, Any]],
-        edition: str
+        edition: str,
+        title: str = "Part 4 范文展示",
     ) -> None:
-        self._add_section_heading(document, "Part 4 范文展示")
+        self._add_section_heading(document, title)
         if not samples:
             document.add_paragraph("暂无范文。")
             return
@@ -704,6 +756,38 @@ class HandoutDocxExporter:
             "cloze": "完形",
         }
         return mapping.get(str(source_type), self._safe_text(source_type))
+
+    def _format_point_label(self, point_code: Any) -> str:
+        raw_code = self._safe_text(point_code)
+        if not raw_code:
+            return ""
+        normalized = raw_code.split("_", 1)[0]
+        return self.POINT_CODE_TO_NAME.get(normalized, self.POINT_CODE_TO_NAME.get(raw_code, raw_code))
+
+    def _normalize_point_labels_in_text(self, text: Any) -> str:
+        normalized_text = self._safe_text(text)
+        if not normalized_text:
+            return ""
+
+        for code, label in self.POINT_CODE_TO_NAME.items():
+            normalized_text = re.sub(
+                rf"([（(])\s*{re.escape(code)}\s*([）)])",
+                rf"\1{label}\2",
+                normalized_text,
+            )
+            normalized_text = re.sub(
+                rf"(?<![A-Z0-9]){re.escape(code)}(?=\s*[\u4e00-\u9fff])",
+                "",
+                normalized_text,
+            )
+            normalized_text = re.sub(
+                rf"(?<![A-Z0-9]){re.escape(code)}(?![A-Z0-9])",
+                label,
+                normalized_text,
+            )
+
+        normalized_text = re.sub(r"\s{2,}", " ", normalized_text)
+        return normalized_text.strip()
 
     def _safe_text(self, value: Any) -> str:
         if value is None:
