@@ -280,6 +280,7 @@ async def async_chat_completion(
     temperature: float | None = None,
     max_tokens: int | None = None,
     timeout_seconds: float = 120.0,
+    max_retries: int | None = None,
     extra_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
@@ -315,6 +316,7 @@ async def async_chat_completion(
         model=model,
         operation=operation,
         func=_call,
+        max_retries=max_retries,
     )
 
 

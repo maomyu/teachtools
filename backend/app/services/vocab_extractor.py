@@ -9,6 +9,7 @@ AI词汇提取服务
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 import json
+import re
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 
@@ -40,6 +41,21 @@ class VocabExtractor:
     """基于AI的词汇提取器"""
 
     API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    STOPWORDS = {
+        "about", "after", "again", "against", "all", "also", "among", "and", "any", "are",
+        "around", "because", "been", "before", "being", "between", "both", "but", "came",
+        "can", "could", "did", "does", "doing", "done", "down", "during", "each", "even",
+        "every", "few", "first", "for", "from", "get", "got", "had", "has", "have", "having",
+        "her", "here", "hers", "him", "his", "how", "into", "its", "itself", "just", "like",
+        "made", "make", "many", "may", "might", "more", "most", "much", "must", "need",
+        "never", "next", "now", "off", "often", "one", "only", "other", "our", "ours",
+        "out", "over", "people", "said", "same", "she", "should", "since", "some", "such",
+        "than", "that", "the", "their", "theirs", "them", "then", "there", "these", "they",
+        "this", "those", "through", "time", "too", "under", "until", "very", "was", "were",
+        "what", "when", "where", "which", "while", "who", "will", "with", "would", "your",
+        "yours", "you", "ourselves", "themselves", "himself", "herself", "it", "we", "us",
+        "is", "am", "as", "at", "be", "by", "if", "in", "of", "on", "or", "so", "to", "up",
+    }
 
     def __init__(self, min_length: int = 3, min_frequency: int = 1):
         self.min_length = min_length
@@ -97,17 +113,18 @@ class VocabExtractor:
                 operation="vocab_extractor.extract_async",
                 temperature=0.3,
                 max_tokens=2000,
-                timeout_seconds=60.0,
+                timeout_seconds=25.0,
+                max_retries=1,
             )
             ai_content = result['choices'][0]['message']['content']
-
-            return self._parse_ai_response(ai_content, content)
+            extracted = self._parse_ai_response(ai_content, content)
+            if extracted:
+                return extracted
+            return self._extract_locally(content)
 
         except Exception as e:
             print(f"AI词汇提取异常: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
+            return self._extract_locally(content)
 
     def _parse_ai_response(self, ai_content: str, original_content: str) -> List[ExtractedWord]:
         """解析AI返回的JSON"""
@@ -230,6 +247,53 @@ class VocabExtractor:
 
         sentence = content[start:end].strip()
         return sentence if sentence else ""
+
+    def _extract_locally(self, content: str) -> List[ExtractedWord]:
+        """AI 失败时的本地兜底抽取，确保导入链路能完整落库。"""
+        tokens = list(re.finditer(r"[A-Za-z][A-Za-z'-]{1,}", content))
+        word_occurrences: Dict[str, List[WordOccurrence]] = {}
+
+        for index, match in enumerate(tokens):
+            raw_word = match.group(0)
+            word = raw_word.lower()
+            if len(word) < self.min_length:
+                continue
+            if word in self.STOPWORDS:
+                continue
+            if word.endswith("'s"):
+                word = word[:-2]
+            if len(word) < self.min_length or word in self.STOPWORDS:
+                continue
+
+            sentence = self._extract_sentence(content, match.start())
+            if not sentence:
+                continue
+
+            word_occurrences.setdefault(word, []).append(
+                WordOccurrence(
+                    word=word,
+                    sentence=sentence,
+                    char_position=match.start(),
+                    end_position=match.end(),
+                    word_position=index,
+                )
+            )
+
+        ranked_words = sorted(
+            word_occurrences.items(),
+            key=lambda item: (-len(item[1]), item[1][0].char_position),
+        )[:12]
+
+        return [
+            ExtractedWord(
+                word=word,
+                lemma=word,
+                frequency=len(occurrences),
+                definition="",
+                occurrences=occurrences,
+            )
+            for word, occurrences in ranked_words
+        ]
 
     def extract(self, content: str) -> List[ExtractedWord]:
         """同步提取方法（兼容旧接口）"""
