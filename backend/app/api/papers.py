@@ -173,6 +173,10 @@ def normalize_paper_filename(filename: str) -> str:
         parts = normalized.split("_", 4)
         if len(parts) == 5 and parts[4]:
             normalized = parts[4]
+    elif normalized.startswith("官方真题_"):
+        parts = normalized.split("_", 3)
+        if len(parts) >= 3 and parts[-1]:
+            normalized = parts[-1]
 
     normalized = normalized.replace("（", "(").replace("）", ")")
     return re.sub(r"\s+", "", normalized)
@@ -481,6 +485,20 @@ async def upload_paper_with_progress(
                                        "cloze_analyze", "topic_classify", "vocab_extract"]:
                             reporter.skip_step(step_id, "试卷已存在")
                         yield emit()
+                        result_data = {
+                            "status": "success" if existing_paper.import_status == "completed" else existing_paper.import_status,
+                            "filename": file.filename,
+                            "paper_id": existing_paper.id,
+                            "passages_created": 0,
+                            "questions_created": 0,
+                            "metadata": metadata,
+                            "parse_strategy": existing_paper.parse_strategy,
+                            "confidence": existing_paper.confidence,
+                        }
+                        final_event = reporter.to_dict()
+                        final_event["type"] = "completed"
+                        final_event["result"] = result_data
+                        yield f"data: {json.dumps(final_event, ensure_ascii=False)}\n\n"
                         return
                     # 强制模式：先删除关联记录，再删除主记录
                     # 1. 删除阅读文章的词汇关联

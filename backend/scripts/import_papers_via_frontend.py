@@ -359,6 +359,24 @@ def fetch_all(conn: sqlite3.Connection, query: str, params: tuple[Any, ...]) -> 
     return cursor.fetchall()
 
 
+def fetch_latest_paper_status(conn: sqlite3.Connection, filename: str) -> str | None:
+    row = fetch_one(
+        conn,
+        """
+        SELECT import_status
+        FROM exam_papers
+        WHERE filename = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (filename,),
+    )
+    if row is None:
+        return None
+    status = row["import_status"]
+    return str(status) if status is not None else None
+
+
 def has_any_option(question_row: sqlite3.Row) -> bool:
     for key in ("option_a", "option_b", "option_c", "option_d"):
         value = question_row[key]
@@ -589,7 +607,13 @@ def verify_paper_in_db(
     checks["reading_passages_count"] = len(reading_passages)
     expected_passages = None
     expected_questions = None
-    if upload_result:
+    # 只在真正新导入（SSE 实际创建了数据）时才用 SSE 返回数做比对；
+    # 试卷已存在时 SSE 返回 passages_created=0，不应与 DB 已有数据比较。
+    was_new_import = bool(
+        upload_result
+        and upload_result.get("passages_created", 0) > 0
+    )
+    if was_new_import:
         expected_passages = upload_result.get("passages_created")
         expected_questions = upload_result.get("questions_created")
 
@@ -895,11 +919,19 @@ def process_file(
 
     for attempt in range(1, retries + 1):
         attempt_started_at = datetime.now().isoformat(timespec="seconds")
-        upload = upload_once(client, base_url, file_path, force=force)
+        existing_status = fetch_latest_paper_status(conn, file_path.name)
+        attempt_force = force or (
+            attempt > 1
+            and existing_status is not None
+            and existing_status != "completed"
+        )
+        upload = upload_once(client, base_url, file_path, force=attempt_force)
 
         attempt_record: dict[str, Any] = {
             "attempt": attempt,
             "started_at": attempt_started_at,
+            "force": attempt_force,
+            "existing_status_before_attempt": existing_status,
             "upload_ok": upload.ok,
             "upload_duration_seconds": upload.duration_seconds,
             "upload_error": upload.error,
